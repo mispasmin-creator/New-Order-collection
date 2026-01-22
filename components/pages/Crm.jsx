@@ -7,14 +7,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { X, Search, CheckCircle2, Loader2, Upload } from "lucide-react"
+import { X, Search, CheckCircle2, Loader2, Calendar } from "lucide-react"
 import { format } from "date-fns"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec"
-const FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-"
 
-export default function WetmanEntryPage({ user }) {
+export default function CRMDonePage({ user }) {
   const [orders, setOrders] = useState([])
   const [historyOrders, setHistoryOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -23,12 +26,8 @@ export default function WetmanEntryPage({ user }) {
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
   const [formData, setFormData] = useState({
-    imageOfSlip: null,
-    imageOfSlip2: null,
-    imageOfSlip3: null,
+    status: "",
     remarks: "",
-    actualQtyLoadedInTruck: "",
-    actualQtyAsPerWeighmentSlip: "",
   })
 
   useEffect(() => {
@@ -50,7 +49,7 @@ export default function WetmanEntryPage({ user }) {
           const historyOrders = getHistoryOrders(deliveryData.data)
           setHistoryOrders(historyOrders)
           
-          console.log("Pending orders:", pendingOrders.length, "History orders:", historyOrders.length)
+          console.log("Pending CRM orders:", pendingOrders.length, "History CRM orders:", historyOrders.length)
         }
       }
       
@@ -61,7 +60,7 @@ export default function WetmanEntryPage({ user }) {
     }
   }
 
-  // Get pending orders from DELIVERY sheet where Planned1 has value but Actual1 is empty
+  // Get pending orders from DELIVERY sheet where Planned4 has value but Actual4 is empty
   const getPendingOrders = (sheetData) => {
     if (!sheetData || sheetData.length < 2) return []
     
@@ -106,15 +105,16 @@ export default function WetmanEntryPage({ user }) {
       givingFromWhere: headers.findIndex(h => h.toLowerCase().includes("giving from where")),
       planned1: headers.findIndex(h => h.toLowerCase().includes("planned 1")),
       actual1: headers.findIndex(h => h.toLowerCase().includes("actual 1")),
-      imageOfSlip: headers.findIndex(h => h.toLowerCase().includes("image of slip") && !h.toLowerCase().includes("2") && !h.toLowerCase().includes("3")),
-      imageOfSlip2: headers.findIndex(h => h.toLowerCase().includes("image of slip2")),
-      imageOfSlip3: headers.findIndex(h => h.toLowerCase().includes("image of slip3")),
-      remarks: headers.findIndex(h => h.toLowerCase().includes("remarks")),
-      actualQtyLoadedInTruck: headers.findIndex(h => h.toLowerCase().includes("actual qty loaded in truck")),
-      actualQtyAsPerWeighmentSlip: headers.findIndex(h => h.toLowerCase().includes("actual qty as per weighment slip")),
+      planned2: headers.findIndex(h => h.toLowerCase().includes("planned 2")),
+      actual2: headers.findIndex(h => h.toLowerCase().includes("actual 2")),
+      planned3: headers.findIndex(h => h.toLowerCase().includes("planned 3")),
+      actual3: headers.findIndex(h => h.toLowerCase().includes("actual3")),
+      planned4: headers.findIndex(h => h.toLowerCase().includes("planned4")),
+      actual4: headers.findIndex(h => h.toLowerCase().includes("actual4")),
+      delay4: headers.findIndex(h => h.toLowerCase().includes("delay4")),
     }
     
-    console.log("DELIVERY Column indices:", indices)
+    console.log("DELIVERY Column indices for Planned4:", indices)
     
     const pendingOrders = []
     
@@ -130,13 +130,13 @@ export default function WetmanEntryPage({ user }) {
         return ""
       }
       
-      const planned1 = getVal(indices.planned1)
-      const actual1 = getVal(indices.actual1)
+      const planned4 = getVal(indices.planned4)
+      const actual4 = getVal(indices.actual4)
       const billNo = getVal(indices.billNo)
       const deliveryOrderNo = getVal(indices.deliveryOrderNo)
       
-      // Check if Planned1 has value, Actual1 is empty, and there's a Bill No (invoice completed)
-      if (planned1 && planned1 !== "" && (!actual1 || actual1 === "") && billNo && billNo !== "") {
+      // Check if Planned4 has value, Actual4 is empty, and there's a Bill No
+      if (planned4 && planned4 !== "" && (!actual4 || actual4 === "") && billNo && billNo !== "") {
         const order = {
           id: i,
           rowIndex: i + 1, // Google Sheets row number (1-indexed)
@@ -154,31 +154,26 @@ export default function WetmanEntryPage({ user }) {
           vehicleNumber: getVal(indices.vehicleNumber),
           biltyNumber: getVal(indices.biltyNumber),
           givingFromWhere: getVal(indices.givingFromWhere),
-          planned1: planned1,
-          actual1: actual1,
-          hasImageOfSlip: getVal(indices.imageOfSlip) !== "",
-          hasImageOfSlip2: getVal(indices.imageOfSlip2) !== "",
-          hasImageOfSlip3: getVal(indices.imageOfSlip3) !== "",
-          remarks: getVal(indices.remarks),
-          actualQtyLoadedInTruck: getVal(indices.actualQtyLoadedInTruck),
-          actualQtyAsPerWeighmentSlip: getVal(indices.actualQtyAsPerWeighmentSlip),
+          planned1: getVal(indices.planned1),
+          actual1: getVal(indices.actual1),
+          planned2: getVal(indices.planned2),
+          actual2: getVal(indices.actual2),
+          planned3: getVal(indices.planned3),
+          actual3: getVal(indices.actual3),
+          planned4: planned4,
+          actual4: actual4,
+          delay4: getVal(indices.delay4),
         }
         
-        // Filter by user firm if not master
-        if (user.role === "master") {
-          pendingOrders.push(order)
-        } else {
-          // You might need to add firm filtering if available in the data
-          pendingOrders.push(order)
-        }
+        pendingOrders.push(order)
       }
     }
     
-    console.log("Total pending orders found:", pendingOrders.length)
+    console.log("Total pending CRM orders found:", pendingOrders.length)
     return pendingOrders
   }
 
-  // Get history orders from DELIVERY sheet where Actual1 has value
+  // Get history orders from DELIVERY sheet where Actual4 has value
   const getHistoryOrders = (sheetData) => {
     if (!sheetData || sheetData.length < 2) return []
     
@@ -223,12 +218,13 @@ export default function WetmanEntryPage({ user }) {
       givingFromWhere: headers.findIndex(h => h.toLowerCase().includes("giving from where")),
       planned1: headers.findIndex(h => h.toLowerCase().includes("planned 1")),
       actual1: headers.findIndex(h => h.toLowerCase().includes("actual 1")),
-      imageOfSlip: headers.findIndex(h => h.toLowerCase().includes("image of slip") && !h.toLowerCase().includes("2") && !h.toLowerCase().includes("3")),
-      imageOfSlip2: headers.findIndex(h => h.toLowerCase().includes("image of slip2")),
-      imageOfSlip3: headers.findIndex(h => h.toLowerCase().includes("image of slip3")),
-      remarks: headers.findIndex(h => h.toLowerCase().includes("remarks")),
-      actualQtyLoadedInTruck: headers.findIndex(h => h.toLowerCase().includes("actual qty loaded in truck")),
-      actualQtyAsPerWeighmentSlip: headers.findIndex(h => h.toLowerCase().includes("actual qty as per weighment slip")),
+      planned2: headers.findIndex(h => h.toLowerCase().includes("planned 2")),
+      actual2: headers.findIndex(h => h.toLowerCase().includes("actual 2")),
+      planned3: headers.findIndex(h => h.toLowerCase().includes("planned 3")),
+      actual3: headers.findIndex(h => h.toLowerCase().includes("actual3")),
+      planned4: headers.findIndex(h => h.toLowerCase().includes("planned4")),
+      actual4: headers.findIndex(h => h.toLowerCase().includes("actual4")),
+      delay4: headers.findIndex(h => h.toLowerCase().includes("delay4")),
     }
     
     const historyOrders = []
@@ -245,19 +241,14 @@ export default function WetmanEntryPage({ user }) {
         return ""
       }
       
-      const actual1 = getVal(indices.actual1)
+      const actual4 = getVal(indices.actual4)
       const billNo = getVal(indices.billNo)
       const deliveryOrderNo = getVal(indices.deliveryOrderNo)
       
-      // Check if Actual1 has value (wetman entry completed) and there's a Bill No
-      if (actual1 && actual1 !== "" && billNo && billNo !== "") {
-        const imageOfSlip = getVal(indices.imageOfSlip)
-        const imageOfSlip2 = getVal(indices.imageOfSlip2)
-        const imageOfSlip3 = getVal(indices.imageOfSlip3)
-        
+      // Check if Actual4 has value (CRM done completed) and there's a Bill No
+      if (actual4 && actual4 !== "" && billNo && billNo !== "") {
         const historyOrder = {
           id: i,
-          rowIndex: i + 1,
           timestamp: getVal(indices.timestamp),
           billDate: getVal(indices.billDate),
           deliveryOrderNo: deliveryOrderNo,
@@ -272,30 +263,16 @@ export default function WetmanEntryPage({ user }) {
           vehicleNumber: getVal(indices.vehicleNumber),
           biltyNumber: getVal(indices.biltyNumber),
           givingFromWhere: getVal(indices.givingFromWhere),
-          planned1: getVal(indices.planned1),
-          actual1: actual1,
-          imageOfSlip: imageOfSlip,
-          imageOfSlip2: imageOfSlip2,
-          imageOfSlip3: imageOfSlip3,
-          hasImageOfSlip: imageOfSlip !== "",
-          hasImageOfSlip2: imageOfSlip2 !== "",
-          hasImageOfSlip3: imageOfSlip3 !== "",
-          remarks: getVal(indices.remarks),
-          actualQtyLoadedInTruck: getVal(indices.actualQtyLoadedInTruck),
-          actualQtyAsPerWeighmentSlip: getVal(indices.actualQtyAsPerWeighmentSlip),
+          planned4: getVal(indices.planned4),
+          actual4: actual4,
+          delay4: getVal(indices.delay4),
         }
         
-        // Filter by user firm if not master
-        if (user.role === "master") {
-          historyOrders.push(historyOrder)
-        } else {
-          // You might need to add firm filtering if available in the data
-          historyOrders.push(historyOrder)
-        }
+        historyOrders.push(historyOrder)
       }
     }
     
-    console.log("Total history orders found:", historyOrders.length)
+    console.log("Total history CRM done entries found:", historyOrders.length)
     return historyOrders
   }
 
@@ -313,24 +290,11 @@ export default function WetmanEntryPage({ user }) {
     ? searchFilteredOrders(orders) 
     : searchFilteredOrders(historyOrders)
 
-  const handleWetman = (order) => {
+  const handleCRMDone = (order) => {
     setSelectedOrder(order)
     setFormData({
-      imageOfSlip: null,
-      imageOfSlip2: null,
-      imageOfSlip3: null,
+      status: "Completed",
       remarks: "",
-      actualQtyLoadedInTruck: order.actualQtyLoadedInTruck || "",
-      actualQtyAsPerWeighmentSlip: order.actualQtyAsPerWeighmentSlip || "",
-    })
-  }
-
-  const fileToBase64 = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = error => reject(error)
     })
   }
 
@@ -341,46 +305,7 @@ export default function WetmanEntryPage({ user }) {
       setSubmitting(true)
       
       const now = new Date()
-      const actual1Date = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
-      
-      // Handle file uploads
-      const uploadedFiles = []
-      const fileFields = [
-        { field: formData.imageOfSlip, name: "image_of_slip", type: "Image Of Slip" },
-        { field: formData.imageOfSlip2, name: "image_of_slip2", type: "Image Of Slip2" },
-        { field: formData.imageOfSlip3, name: "image_of_slip3", type: "Image Of Slip3" },
-      ]
-      
-      for (const fileField of fileFields) {
-        if (fileField.field) {
-          try {
-            const base64Data = await fileToBase64(fileField.field)
-            
-            const formDataToSend = new FormData()
-            formDataToSend.append('action', 'uploadFile')
-            formDataToSend.append('base64Data', base64Data)
-            formDataToSend.append('fileName', `${fileField.name}_${selectedOrder.billNo}_${Date.now()}.${fileField.field.name.split('.').pop()}`)
-            formDataToSend.append('mimeType', fileField.field.type)
-            formDataToSend.append('folderId', FOLDER_ID)
-            
-            const uploadResponse = await fetch(SCRIPT_URL, {
-              method: 'POST',
-              body: formDataToSend,
-            })
-            
-            const uploadResult = await uploadResponse.json()
-            
-            if (uploadResult.success && uploadResult.fileUrl) {
-              uploadedFiles.push({
-                type: fileField.type,
-                url: uploadResult.fileUrl
-              })
-            }
-          } catch (uploadError) {
-            console.error(`Error uploading ${fileField.type}:`, uploadError)
-          }
-        }
-      }
+      const actual4Date = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} 18:00:00`
       
       // Get current row data from DELIVERY sheet
       const response = await fetch(`${SCRIPT_URL}?sheet=DELIVERY`)
@@ -398,32 +323,13 @@ export default function WetmanEntryPage({ user }) {
       // Ensure we have enough columns
       while (updatedRow.length < 40) updatedRow.push("")
       
-      // Update wetman entry columns
-      // Column 17: Planned 1 (index 16) - keep as is
-      // Column 18: Actual 1 (index 17)
-      updatedRow[17] = actual1Date
+      // Update CRM done columns
+      // Column 34: Planned4 (index 33) - keep as is
+      // Column 35: Actual4 (index 34)
+      updatedRow[34] = actual4Date
       
-      // Column 19: Delay 1 (index 18) - leave as is or calculate if needed
-      // Column 20: Image Of Slip (index 19)
-      const existingImageOfSlip = updatedRow[19]?.toString().trim()
-      updatedRow[19] = uploadedFiles.find(f => f.type === "Image Of Slip")?.url || existingImageOfSlip || ""
-      
-      // Column 21: Image Of Slip2 (index 20)
-      const existingImageOfSlip2 = updatedRow[20]?.toString().trim()
-      updatedRow[20] = uploadedFiles.find(f => f.type === "Image Of Slip2")?.url || existingImageOfSlip2 || ""
-      
-      // Column 22: Image Of Slip3 (index 21)
-      const existingImageOfSlip3 = updatedRow[21]?.toString().trim()
-      updatedRow[21] = uploadedFiles.find(f => f.type === "Image Of Slip3")?.url || existingImageOfSlip3 || ""
-      
-      // Column 23: Remarks (index 22)
-      updatedRow[22] = formData.remarks || ""
-      
-      // Column 24: Actual Qty loaded In Truck (Total Qty) (index 23)
-      updatedRow[23] = formData.actualQtyLoadedInTruck || ""
-      
-      // Column 25: Actual Qty As Per Weighment Slip (index 24)
-      updatedRow[24] = formData.actualQtyAsPerWeighmentSlip || ""
+      // Column 36: Delay4 (index 35) - set to 0
+      updatedRow[35] = "0"
 
       // Update the row in DELIVERY sheet
       const updateResponse = await fetch(SCRIPT_URL, {
@@ -447,21 +353,17 @@ export default function WetmanEntryPage({ user }) {
         await fetchData()
         setSelectedOrder(null)
         setFormData({
-          imageOfSlip: null,
-          imageOfSlip2: null,
-          imageOfSlip3: null,
+          status: "",
           remarks: "",
-          actualQtyLoadedInTruck: "",
-          actualQtyAsPerWeighmentSlip: "",
         })
         
-        alert(`✓ Wetman entry submitted successfully!\nActual1 Date: ${actual1Date}`)
+        alert(`✓ CRM Done marked successfully!\nActual4 Date: ${actual4Date.split(' ')[0]}`)
       } else {
         throw new Error(updateResult.error || "Update failed")
       }
       
     } catch (error) {
-      console.error("Error submitting wetman entry:", error)
+      console.error("Error marking CRM done:", error)
       alert(`✗ Failed to submit: ${error.message}`)
     } finally {
       setSubmitting(false)
@@ -471,12 +373,8 @@ export default function WetmanEntryPage({ user }) {
   const handleCancel = () => {
     setSelectedOrder(null)
     setFormData({
-      imageOfSlip: null,
-      imageOfSlip2: null,
-      imageOfSlip3: null,
+      status: "",
       remarks: "",
-      actualQtyLoadedInTruck: "",
-      actualQtyAsPerWeighmentSlip: "",
     })
   }
 
@@ -484,7 +382,7 @@ export default function WetmanEntryPage({ user }) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
         <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
-        <span className="text-gray-600">Loading wetman data...</span>
+        <span className="text-gray-600">Loading CRM data...</span>
       </div>
     )
   }
@@ -492,13 +390,13 @@ export default function WetmanEntryPage({ user }) {
   return (
     <div className="space-y-6">
       <div className="lg:hidden">
-        <h1 className="text-2xl font-bold text-gray-900">Wetman Entry</h1>
-        <p className="text-sm text-gray-600 mt-1">Manage wetman weighment entries</p>
+        <h1 className="text-2xl font-bold text-gray-900">CRM Done</h1>
+        <p className="text-sm text-gray-600 mt-1">Mark orders as CRM completed</p>
       </div>
 
       <Card className="border-0 shadow-lg">
         <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Wetman Entry Management</CardTitle>
+          <CardTitle className="text-xl">CRM Done Management</CardTitle>
           <p className="text-sm text-gray-500 mt-1">
             Pending: {orders.length} | Completed: {historyOrders.length}
           </p>
@@ -548,27 +446,23 @@ export default function WetmanEntryPage({ user }) {
                     {activeTab === "pending" && (
                       <TableHead className="font-semibold text-gray-900 py-4 px-6">Action</TableHead>
                     )}
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Bill Date</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Bill No.</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Bill Date</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Delivery Order No.</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Party Name</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Product Name</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Quantity</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned1 Date</TableHead>
                     {activeTab === "pending" && (
                       <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Logistic No.</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Transporter</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Vehicle No.</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned4 Date</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Rate</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Total Amount</TableHead>
                       </>
                     )}
                     {activeTab === "history" && (
                       <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual1 Date</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Truck Qty</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Weighment Qty</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Slips</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Remarks</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual4 Date</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Status</TableHead>
                       </>
                     )}
                   </TableRow>
@@ -577,10 +471,10 @@ export default function WetmanEntryPage({ user }) {
                   {displayOrders.length === 0 ? (
                     <TableRow>
                       <TableCell 
-                        colSpan={activeTab === "pending" ? 12 : 13} 
+                        colSpan={activeTab === "pending" ? 11 : 8} 
                         className="text-center py-8 text-gray-500"
                       >
-                        No {activeTab === "pending" ? "pending" : "completed"} wetman entries found
+                        No {activeTab === "pending" ? "pending" : "completed"} CRM orders found
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -590,21 +484,21 @@ export default function WetmanEntryPage({ user }) {
                           <TableCell className="py-4 px-6">
                             <Button
                               size="sm"
-                              onClick={() => handleWetman(order)}
-                              className="bg-blue-600 hover:bg-blue-700"
+                              onClick={() => handleCRMDone(order)}
+                              className="bg-indigo-600 hover:bg-indigo-700"
                               disabled={submitting}
                             >
-                              Wetman Entry
+                              CRM Done
                             </Button>
                           </TableCell>
                         )}
                         <TableCell className="py-4 px-6">
-                          {order.billDate ? order.billDate.split(' ')[0] : "N/A"}
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
                           <Badge className="bg-green-500 text-white rounded-full">
                             {order.billNo}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="py-4 px-6">
+                          {order.billDate ? order.billDate.split(' ')[0] : "N/A"}
                         </TableCell>
                         <TableCell className="py-4 px-6">
                           <span className="font-medium">{order.deliveryOrderNo}</span>
@@ -616,37 +510,27 @@ export default function WetmanEntryPage({ user }) {
                           </div>
                         </TableCell>
                         <TableCell className="py-4 px-6 font-medium">{order.quantityDelivered}</TableCell>
-                        <TableCell className="py-4 px-6">{order.planned1 || "N/A"}</TableCell>
                         {activeTab === "pending" && (
                           <>
-                            <TableCell className="py-4 px-6">{order.logisticNo || "N/A"}</TableCell>
-                            <TableCell className="py-4 px-6">{order.transporterName || "N/A"}</TableCell>
-                            <TableCell className="py-4 px-6">{order.vehicleNumber || "N/A"}</TableCell>
+                            <TableCell className="py-4 px-6">{order.planned4 || "N/A"}</TableCell>
+                            <TableCell className="py-4 px-6">₹{order.rateOfMaterial || "0"}</TableCell>
+                            <TableCell className="py-4 px-6 font-bold">
+                              ₹{(
+                                parseFloat(order.quantityDelivered || 0) * 
+                                parseFloat(order.rateOfMaterial || 0)
+                              ).toFixed(2)}
+                            </TableCell>
                           </>
                         )}
                         {activeTab === "history" && (
                           <>
-                            <TableCell className="py-4 px-6">{order.actual1}</TableCell>
-                            <TableCell className="py-4 px-6">{order.actualQtyLoadedInTruck || "N/A"}</TableCell>
-                            <TableCell className="py-4 px-6">{order.actualQtyAsPerWeighmentSlip || "N/A"}</TableCell>
                             <TableCell className="py-4 px-6">
-                              <div className="flex gap-1">
-                                {order.hasImageOfSlip && (
-                                  <Badge className="bg-blue-500 text-white text-xs">Slip1</Badge>
-                                )}
-                                {order.hasImageOfSlip2 && (
-                                  <Badge className="bg-blue-500 text-white text-xs">Slip2</Badge>
-                                )}
-                                {order.hasImageOfSlip3 && (
-                                  <Badge className="bg-blue-500 text-white text-xs">Slip3</Badge>
-                                )}
-                                {!order.hasImageOfSlip && !order.hasImageOfSlip2 && !order.hasImageOfSlip3 && (
-                                  <span className="text-gray-400 text-xs">No slips</span>
-                                )}
-                              </div>
+                              {order.actual4 ? order.actual4.split(' ')[0] : "N/A"}
                             </TableCell>
-                            <TableCell className="py-4 px-6 max-w-[150px]">
-                              <span className="truncate block">{order.remarks || "N/A"}</span>
+                            <TableCell className="py-4 px-6">
+                              <Badge className="bg-green-500 text-white">
+                                Completed
+                              </Badge>
                             </TableCell>
                           </>
                         )}
@@ -662,7 +546,7 @@ export default function WetmanEntryPage({ user }) {
               <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
                 {displayOrders.length === 0 ? (
                   <p className="text-center text-gray-500 py-8">
-                    No {activeTab === "pending" ? "pending" : "completed"} wetman entries found
+                    No {activeTab === "pending" ? "pending" : "completed"} CRM orders found
                   </p>
                 ) : (
                   displayOrders.map((order) => (
@@ -671,26 +555,28 @@ export default function WetmanEntryPage({ user }) {
                         <div>
                           {activeTab === "history" && (
                             <p className="text-green-600 font-medium text-sm mb-1">
-                              Actual: {order.actual1}
+                              Actual4: {order.actual4 ? order.actual4.split(' ')[0] : "N/A"}
                             </p>
                           )}
                           <p className="font-semibold text-gray-900">{order.partyName}</p>
                           <p className="text-xs text-gray-500">
                             Bill: {order.billNo} | DO: {order.deliveryOrderNo}
                           </p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            Planned: {order.planned1 || "N/A"}
-                          </p>
+                          {activeTab === "pending" && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Planned4: {order.planned4 || "N/A"}
+                            </p>
+                          )}
                         </div>
                         <div className="text-right">
                           {activeTab === "pending" ? (
                             <Button
                               size="sm"
-                              onClick={() => handleWetman(order)}
-                              className="bg-blue-600 hover:bg-blue-700"
+                              onClick={() => handleCRMDone(order)}
+                              className="bg-indigo-600 hover:bg-indigo-700"
                               disabled={submitting}
                             >
-                              Entry
+                              Done
                             </Button>
                           ) : (
                             <Badge className="bg-green-500 text-white">
@@ -706,56 +592,35 @@ export default function WetmanEntryPage({ user }) {
                           <span>{order.productName}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600">Quantity:</span>
-                          <span className="font-medium">{order.quantityDelivered}</span>
-                        </div>
-                        <div className="flex justify-between">
                           <span className="text-gray-600">Bill Date:</span>
                           <span>{order.billDate ? order.billDate.split(' ')[0] : "N/A"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Quantity:</span>
+                          <span className="font-medium">{order.quantityDelivered}</span>
                         </div>
                         {activeTab === "pending" && (
                           <>
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Logistic No:</span>
-                              <span>{order.logisticNo || "N/A"}</span>
+                              <span className="text-gray-600">Rate:</span>
+                              <span>₹{order.rateOfMaterial || "0"}</span>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Transporter:</span>
-                              <span>{order.transporterName || "N/A"}</span>
+                              <span className="text-gray-600">Total Amount:</span>
+                              <span className="font-bold">
+                                ₹{(
+                                  parseFloat(order.quantityDelivered || 0) * 
+                                  parseFloat(order.rateOfMaterial || 0)
+                                ).toFixed(2)}
+                              </span>
                             </div>
                           </>
                         )}
                         {activeTab === "history" && (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Truck Qty:</span>
-                              <span>{order.actualQtyLoadedInTruck || "N/A"}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Weighment Qty:</span>
-                              <span>{order.actualQtyAsPerWeighmentSlip || "N/A"}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Slips:</span>
-                              <div className="flex gap-1">
-                                {order.hasImageOfSlip && (
-                                  <Badge className="bg-blue-500 text-white text-xs">1</Badge>
-                                )}
-                                {order.hasImageOfSlip2 && (
-                                  <Badge className="bg-blue-500 text-white text-xs">2</Badge>
-                                )}
-                                {order.hasImageOfSlip3 && (
-                                  <Badge className="bg-blue-500 text-white text-xs">3</Badge>
-                                )}
-                              </div>
-                            </div>
-                            {order.remarks && (
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">Remarks:</span>
-                                <span className="text-right text-xs">{order.remarks}</span>
-                              </div>
-                            )}
-                          </>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Planned4:</span>
+                            <span>{order.planned4 || "N/A"}</span>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -771,12 +636,12 @@ export default function WetmanEntryPage({ user }) {
         </CardContent>
       </Card>
 
-      {/* Wetman Entry Form Modal */}
+      {/* CRM Done Form Modal */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
-              <CardTitle className="text-lg">Wetman Entry Form</CardTitle>
+              <CardTitle className="text-lg">Mark as CRM Done</CardTitle>
               <Button variant="ghost" size="sm" onClick={handleCancel} disabled={submitting}>
                 <X className="h-5 w-5" />
               </Button>
@@ -791,131 +656,36 @@ export default function WetmanEntryPage({ user }) {
                   </p>
                   <p className="text-sm text-gray-600">Product: {selectedOrder.productName}</p>
                   <p className="text-sm text-gray-600">
-                    Quantity: {selectedOrder.quantityDelivered} | Planned: {selectedOrder.planned1}
+                    Quantity: {selectedOrder.quantityDelivered} | Rate: ₹{selectedOrder.rateOfMaterial || "0"}
+                  </p>
+                  <p className="text-sm font-bold">
+                    Total: ₹{(
+                      parseFloat(selectedOrder.quantityDelivered || 0) * 
+                      parseFloat(selectedOrder.rateOfMaterial || 0)
+                    ).toFixed(2)}
                   </p>
                   <p className="text-sm text-green-600 font-medium mt-1">
-                    Actual1 will be set to: {format(new Date(), "dd/MM/yyyy")}
+                    Planned4: {selectedOrder.planned4}
                   </p>
                 </div>
 
                 <div className="space-y-3">
                   <div className="space-y-2">
-                    <Label className="text-sm">Actual Qty loaded In Truck (Total Qty) *</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={formData.actualQtyLoadedInTruck}
-                      onChange={(e) => setFormData(prev => ({ ...prev, actualQtyLoadedInTruck: e.target.value }))}
-                      className="h-10"
-                      placeholder="Enter truck quantity"
+                    <Label className="text-sm">Status *</Label>
+                    <Select
+                      value={formData.status}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}
                       disabled={submitting}
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label className="text-sm">Actual Qty As Per Weighment Slip *</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={formData.actualQtyAsPerWeighmentSlip}
-                      onChange={(e) => setFormData(prev => ({ ...prev, actualQtyAsPerWeighmentSlip: e.target.value }))}
-                      className="h-10"
-                      placeholder="Enter weighment quantity"
-                      disabled={submitting}
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label className="text-sm">Image Of Slip</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files[0]
-                          if (file) {
-                            if (file.size > 5 * 1024 * 1024) {
-                              alert("File size should be less than 5MB")
-                              e.target.value = ""
-                              return
-                            }
-                            setFormData(prev => ({ 
-                              ...prev, 
-                              imageOfSlip: file 
-                            }))
-                          }
-                        }}
-                        className="h-10"
-                        disabled={submitting}
-                      />
-                      {formData.imageOfSlip && (
-                        <span className="text-sm text-green-600 truncate">
-                          ✓ {formData.imageOfSlip.name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label className="text-sm">Image Of Slip2</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files[0]
-                          if (file) {
-                            if (file.size > 5 * 1024 * 1024) {
-                              alert("File size should be less than 5MB")
-                              e.target.value = ""
-                              return
-                            }
-                            setFormData(prev => ({ 
-                              ...prev, 
-                              imageOfSlip2: file 
-                            }))
-                          }
-                        }}
-                        className="h-10"
-                        disabled={submitting}
-                      />
-                      {formData.imageOfSlip2 && (
-                        <span className="text-sm text-green-600 truncate">
-                          ✓ {formData.imageOfSlip2.name}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label className="text-sm">Image Of Slip3</Label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files[0]
-                          if (file) {
-                            if (file.size > 5 * 1024 * 1024) {
-                              alert("File size should be less than 5MB")
-                              e.target.value = ""
-                              return
-                            }
-                            setFormData(prev => ({ 
-                              ...prev, 
-                              imageOfSlip3: file 
-                            }))
-                          }
-                        }}
-                        className="h-10"
-                        disabled={submitting}
-                      />
-                      {formData.imageOfSlip3 && (
-                        <span className="text-sm text-green-600 truncate">
-                          ✓ {formData.imageOfSlip3.name}
-                        </span>
-                      )}
-                    </div>
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Select Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Completed">Completed</SelectItem>
+                        <SelectItem value="Pending">Pending</SelectItem>
+                        <SelectItem value="On Hold">On Hold</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   
                   <div className="space-y-2">
@@ -927,6 +697,15 @@ export default function WetmanEntryPage({ user }) {
                       disabled={submitting}
                       className="min-h-[80px]"
                     />
+                  </div>
+                  
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm font-medium text-blue-800">
+                      Actual4 will be set to: {format(new Date(), "dd/MM/yyyy")}
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      Delay4 will be automatically calculated if needed
+                    </p>
                   </div>
                 </div>
 
@@ -941,10 +720,9 @@ export default function WetmanEntryPage({ user }) {
                     </Button>
                     <Button 
                       onClick={handleSubmit} 
-                      className="bg-blue-600 hover:bg-blue-700"
+                      className="bg-indigo-600 hover:bg-indigo-700"
                       disabled={
-                        !formData.actualQtyLoadedInTruck ||
-                        !formData.actualQtyAsPerWeighmentSlip ||
+                        !formData.status ||
                         submitting
                       }
                     >
@@ -954,7 +732,7 @@ export default function WetmanEntryPage({ user }) {
                           Submitting...
                         </>
                       ) : (
-                        `Submit Wetman Entry`
+                        `Mark as CRM Done`
                       )}
                     </Button>
                   </div>

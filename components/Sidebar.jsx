@@ -18,6 +18,7 @@ import {
   LogOut,
   User,
   X,
+                                                                                                 
 } from "lucide-react"
 
 const menuItems = [
@@ -28,9 +29,14 @@ const menuItems = [
   { name: "Check for Delivery", icon: Truck },
   { name: "Dispatch Planning", icon: Calendar },
   { name: "Logistic", icon: Package },
-  { name: "Test Report", icon: FileText },
-  { name: "Invoice", icon: Receipt },
+  { name: "Load Material", icon: Truck },
+  { name: "Invoice", icon: Receipt },   
+  { name: "Sales Form", icon: FileText },
   { name: "Wetman Entry", icon: Scale },
+  { name: "Fullkiting", icon: Layers },
+  { name: "Bilty Entry", icon: FileImage },
+  { name: "CRM", icon: Layers },
+  { name: "Test Report", icon: CheckSquare },
   { name: "MATERIAL RECEIPT", icon: Archive },
 ]
 

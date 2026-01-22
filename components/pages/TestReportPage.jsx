@@ -1,105 +1,573 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { X, Search, CheckCircle2, Calendar } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
+import { X, Search, CheckCircle2, Loader2, Upload, Eye, Trash2 } from "lucide-react"
 
-export default function TestReportPage({ user, orders, updateOrders }) {
+// Correct SCRIPT URL - using the same one from your reference code
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec"
+const DRIVE_FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-"
+
+export default function LoadMaterialPage({ user }) {
+  const [orders, setOrders] = useState([])
+  const [completedOrders, setCompletedOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
   const [formData, setFormData] = useState({
-    uniqueKey: "",
-    stepKey: "",
+    loadingImage1: null,
+    loadingImage2: null,
+    loadingImage3: null,
+    remarks: ""
   })
+  const [uploadingImages, setUploadingImages] = useState({
+    loadingImage1: false,
+    loadingImage2: false,
+    loadingImage3: false
+  })
+  const [uploadedUrls, setUploadedUrls] = useState({
+    loadingImage1: "",
+    loadingImage2: "",
+    loadingImage3: ""
+  })
+  
+  const fileInputRef1 = useRef(null)
+  const fileInputRef2 = useRef(null)
+  const fileInputRef3 = useRef(null)
 
-  // Filter orders based on user role and logistic completed
-  const getFilteredOrders = () => {
-    let filtered = orders.filter((order) => order.logisticCompleted)
-    if (user.role !== "master") {
-      filtered = filtered.filter((order) => order.firmName === user.firm)
+  useEffect(() => {
+    fetchLoadMaterialData()
+  }, [])
+
+  const fetchLoadMaterialData = async () => {
+    try {
+      setLoading(true)
+      
+      // Using the same fetch pattern from your reference code
+      const response = await fetch(`${SCRIPT_URL}?sheet=DISPATCH`)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      console.log("Raw DISPATCH API response:", data)
+      
+      if (data.success && data.data) {
+        const { pending, completed } = transformDispatchData(data.data)
+        setOrders(pending)
+        setCompletedOrders(completed)
+        console.log("Load Material data loaded:", pending.length, "pending,", completed.length, "completed")
+      } else {
+        console.error("Failed to load DISPATCH data:", data)
+      }
+    } catch (error) {
+      console.error("Error fetching load material data:", error)
+    } finally {
+      setLoading(false)
     }
-    return filtered
   }
 
-  const filteredOrders = getFilteredOrders()
-  const pendingOrders = filteredOrders.filter((order) => !order.testReportCompleted)
-  const historyOrders = filteredOrders.filter((order) => order.testReportCompleted)
+  const transformDispatchData = (sheetData) => {
+    if (!sheetData || sheetData.length === 0) {
+      console.log("No sheet data available")
+      return { pending: [], completed: [] }
+    }
+    
+    console.log("Raw DISPATCH sheet data length:", sheetData.length)
+    
+    // Find the header row using the same logic as reference code
+    let headerRowIndex = -1
+    let headers = []
+    
+    for (let i = 0; i < sheetData.length; i++) {
+      const row = sheetData[i]
+      if (row && row.length > 0) {
+        const hasTimestamp = row.some(cell => 
+          cell && cell.toString().trim().toLowerCase().includes("timestamp")
+        )
+        
+        if (hasTimestamp) {
+          headerRowIndex = i
+          headers = row.map(h => h?.toString().trim() || "")
+          console.log("Found headers row at index:", i)
+          console.log("Headers:", headers)
+          break
+        }
+      }
+    }
+    
+    if (headerRowIndex === -1) {
+      console.error("Could not find header row")
+      return { pending: [], completed: [] }
+    }
+    
+    // Find column indices - using the same pattern as reference code
+    const indices = {
+      timestamp: headers.findIndex(h => h.toLowerCase().includes("timestamp")),
+      dSrNumber: headers.findIndex(h => h.toLowerCase().includes("d-sr") || h.toLowerCase().includes("dsr")),
+      deliveryOrderNo: headers.findIndex(h => h.toLowerCase().includes("delivery order")),
+      partyName: headers.findIndex(h => h.toLowerCase().includes("party name")),
+      productName: headers.findIndex(h => h.toLowerCase().includes("product name")),
+      qtyToBeDispatched: headers.findIndex(h => h.toLowerCase().includes("qty to be")),
+      typeOfTransporting: headers.findIndex(h => h.toLowerCase().includes("type of transporting")),
+      transporterName: headers.findIndex(h => h.toLowerCase().includes("transporter name")),
+      truckNo: headers.findIndex(h => h.toLowerCase().includes("truck no")),
+      driverMobileNo: headers.findIndex(h => h.toLowerCase().includes("driver mobile")),
+      vehicleNoPlateImage: headers.findIndex(h => h.toLowerCase().includes("vehicle no")),
+      biltyNo: headers.findIndex(h => h.toLowerCase().includes("bilty no")),
+      lgstSrNumber: headers.findIndex(h => h.toLowerCase().includes("lgst-sr")),
+      actualTruckQty: headers.findIndex(h => h.toLowerCase().includes("actual truck qty")),
+      fixedAmount: headers.findIndex(h => h.toLowerCase().includes("fixed amount")),
+      planned2: headers.findIndex(h => h.toLowerCase().includes("planned2")),
+      actual2: headers.findIndex(h => h.toLowerCase().includes("actual2")),
+      delay2: headers.findIndex(h => h.toLowerCase().includes("delay2")),
+      loadingImage1: headers.findIndex(h => h.toLowerCase().includes("loading image 1")),
+      loadingImage2: headers.findIndex(h => h.toLowerCase().includes("loading image 2")),
+      loadingImage3: headers.findIndex(h => h.toLowerCase().includes("loading image 3")),
+      remarks: headers.findIndex(h => h.toLowerCase().includes("remarks"))
+    }
+    
+    console.log("DISPATCH Column indices:", indices)
+    
+    const pendingOrders = []
+    const completedOrders = []
+    
+    // Process data rows starting from the row after headers
+    for (let i = headerRowIndex + 1; i < sheetData.length; i++) {
+      const row = sheetData[i]
+      if (!row || row.length === 0) continue
+      
+      const getVal = (index) => {
+        if (index >= 0 && index < row.length && row[index] !== undefined && row[index] !== null) {
+          return row[index].toString().trim()
+        }
+        return ""
+      }
+      
+      // For Load Material, we need LGST-Sr Number
+      const lgstSrNumber = getVal(indices.lgstSrNumber)
+      
+      // Skip rows without LGST-Sr number
+      if (!lgstSrNumber || lgstSrNumber === "" || lgstSrNumber.toLowerCase() === "lgst-sr number") {
+        continue
+      }
+      
+      const planned2 = getVal(indices.planned2)
+      const actual2 = getVal(indices.actual2)
+      const loadingImage1 = getVal(indices.loadingImage1)
+      const loadingImage2 = getVal(indices.loadingImage2)
+      const loadingImage3 = getVal(indices.loadingImage3)
+      const remarks = getVal(indices.remarks)
+      
+      // Create order object
+      const order = {
+        id: i,
+        timestamp: getVal(indices.timestamp),
+        dSrNumber: getVal(indices.dSrNumber),
+        deliveryOrderNo: getVal(indices.deliveryOrderNo),
+        dispatchNo: getVal(indices.dSrNumber),
+        lgstSrNumber: lgstSrNumber,
+        partyName: getVal(indices.partyName),
+        productName: getVal(indices.productName),
+        qtyToBeDispatched: getVal(indices.qtyToBeDispatched),
+        actualTruckQty: getVal(indices.actualTruckQty),
+        typeOfTransporting: getVal(indices.typeOfTransporting),
+        transporterName: getVal(indices.transporterName),
+        truckNo: getVal(indices.truckNo),
+        driverMobileNo: getVal(indices.driverMobileNo),
+        vehicleNoPlateImage: getVal(indices.vehicleNoPlateImage),
+        biltyNo: getVal(indices.biltyNo),
+        fixedAmount: getVal(indices.fixedAmount),
+        planned2: planned2,
+        actual2: actual2,
+        delay2: getVal(indices.delay2),
+        loadingImage1: loadingImage1,
+        loadingImage2: loadingImage2,
+        loadingImage3: loadingImage3,
+        remarks: remarks
+      }
+      
+      // Debug log for each row
+      console.log(`Row ${i}: LGST=${lgstSrNumber}, Planned2="${planned2}", Actual2="${actual2}"`)
+      
+      // Check if Planned2 has value
+      const hasPlanned2 = planned2 !== "" && 
+                         planned2.toLowerCase() !== "n/a" && 
+                         planned2.toLowerCase() !== "null" &&
+                         !planned2.toLowerCase().includes("undefined")
+      
+      // Check if Actual2 has value
+      const hasActual2 = actual2 !== "" && 
+                        actual2.toLowerCase() !== "n/a" &&
+                        actual2.toLowerCase() !== "null" &&
+                        actual2 !== "0" &&
+                        !actual2.toLowerCase().includes("undefined")
+      
+      console.log(`  -> hasPlanned2: ${hasPlanned2}, hasActual2: ${hasActual2}`)
+      
+      // PENDING = Planned2 has value AND Actual2 is empty
+      if (hasPlanned2 && !hasActual2) {
+        order.isPending = true
+        order.isCompleted = false
+        pendingOrders.push(order)
+        console.log(`  -> ADDED to PENDING`)
+      }
+      // COMPLETED = Actual2 has value
+      else if (hasActual2) {
+        order.isPending = false
+        order.isCompleted = true
+        completedOrders.push(order)
+        console.log(`  -> ADDED to COMPLETED`)
+      }
+      else {
+        console.log(`  -> SKIPPED - Not a Load Material order`)
+      }
+    }
+    
+    console.log(`Transformation complete - Pending: ${pendingOrders.length}, Completed: ${completedOrders.length}`)
+    
+    return { pending: pendingOrders, completed: completedOrders }
+  }
 
-  // Apply search filter
+  // Filter pending and history orders
+  const pendingOrders = orders
+  const historyOrders = completedOrders
+
   const searchFilteredOrders = (ordersList) => {
+    if (!searchTerm) return ordersList
+    
     return ordersList.filter((order) =>
-      Object.values(order).some((value) => value?.toString().toLowerCase().includes(searchTerm.toLowerCase())),
+      Object.values(order).some((value) => 
+        value?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+      )
     )
   }
 
-  const displayOrders =
-    activeTab === "pending" ? searchFilteredOrders(pendingOrders) : searchFilteredOrders(historyOrders)
+  const displayOrders = activeTab === "pending" 
+    ? searchFilteredOrders(pendingOrders) 
+    : searchFilteredOrders(historyOrders)
 
-  const handleTest = (order) => {
+  const handleLoadMaterial = (order) => {
     setSelectedOrder(order)
     setFormData({
-      uniqueKey: "",
-      stepKey: "",
+      loadingImage1: null,
+      loadingImage2: null,
+      loadingImage3: null,
+      remarks: order.remarks || ""
+    })
+    setUploadedUrls({
+      loadingImage1: "",
+      loadingImage2: "",
+      loadingImage3: ""
     })
   }
 
-  const handleSubmit = () => {
-    if (!selectedOrder) return
-
-    const updatedOrders = orders.map((order) => {
-      if (order.id === selectedOrder.id) {
-        return {
-          ...order,
-          testReportCompleted: true,
-          testReportDate: new Date().toISOString().split("T")[0],
-          ...formData,
+  const handleFileSelect = async (event, imageNumber) => {
+    const file = event.target.files[0]
+    if (!file) return
+    
+    const imageKey = `loadingImage${imageNumber}`
+    
+    if (file.size > 5 * 1024 * 1024) {
+      alert("File size should be less than 5MB")
+      return
+    }
+    
+    if (!file.type.startsWith('image/')) {
+      alert("Please select an image file")
+      return
+    }
+    
+    setUploadingImages(prev => ({ ...prev, [imageKey]: true }))
+    
+    try {
+      const reader = new FileReader()
+      reader.onloadend = async () => {
+        const base64String = reader.result
+        
+        const uploadData = {
+          action: 'uploadFile',
+          base64Data: base64String,
+          fileName: `load_material_${selectedOrder.lgstSrNumber}_img${imageNumber}_${Date.now()}.${file.name.split('.').pop()}`,
+          mimeType: file.type,
+          folderId: DRIVE_FOLDER_ID
+        }
+        
+        const response = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams(uploadData)
+        })
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
+        const result = await response.json()
+        if (result.success) {
+          setUploadedUrls(prev => ({ ...prev, [imageKey]: result.fileUrl }))
+          setFormData(prev => ({ ...prev, [imageKey]: result.fileUrl }))
+          alert(`✓ Image ${imageNumber} uploaded successfully!`)
         }
       }
-      return order
-    })
+      
+      reader.readAsDataURL(file)
+    } catch (error) {
+      console.error("Error uploading file:", error)
+      alert(`✗ Failed to upload image ${imageNumber}`)
+    } finally {
+      setUploadingImages(prev => ({ ...prev, [imageKey]: false }))
+    }
+  }
 
-    updateOrders(updatedOrders)
-    setSelectedOrder(null)
-    setFormData({
-      uniqueKey: "",
-      stepKey: "",
-    })
+  const removeImage = (imageNumber) => {
+    const imageKey = `loadingImage${imageNumber}`
+    setFormData(prev => ({ ...prev, [imageKey]: null }))
+    setUploadedUrls(prev => ({ ...prev, [imageKey]: "" }))
+  }
+
+  const handleSubmit = async () => {
+    if (!selectedOrder) return
+
+    if (!formData.loadingImage1 && !formData.loadingImage2 && !formData.loadingImage3) {
+      alert("Please upload at least one loading image (Loading Image 1 is mandatory)")
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      
+      const now = new Date()
+      const actualDateTime = now.toLocaleString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }).replace(/(\d+)\/(\d+)\/(\d+), (\d+:\d+:\d+)/, '$1/$2/$3 $4')
+      
+      // Get the current sheet data to find correct column indices
+      const headersResponse = await fetch(`${SCRIPT_URL}?sheet=DISPATCH`)
+      if (!headersResponse.ok) {
+        throw new Error(`HTTP error! status: ${headersResponse.status}`)
+      }
+      
+      const headersData = await headersResponse.json()
+      
+      if (!headersData.success || !headersData.data) {
+        throw new Error("Failed to fetch sheet headers")
+      }
+      
+      // Find headers row
+      let headerRowIndex = -1
+      let headers = []
+      
+      for (let i = 0; i < headersData.data.length; i++) {
+        const row = headersData.data[i]
+        if (row && row.length > 0) {
+          const hasTimestamp = row.some(cell => 
+            cell && cell.toString().trim().toLowerCase().includes("timestamp")
+          )
+          
+          if (hasTimestamp) {
+            headerRowIndex = i
+            headers = row.map(h => h?.toString().trim() || "")
+            break
+          }
+        }
+      }
+      
+      if (headerRowIndex === -1) {
+        throw new Error("Could not find headers in DISPATCH sheet")
+      }
+      
+      // Find column indices
+      const findIndex = (patterns) => {
+        for (const pattern of patterns) {
+          const index = headers.findIndex(h => {
+            if (!h) return false
+            const headerLower = h.toString().toLowerCase().trim()
+            const patternLower = pattern.toLowerCase().trim()
+            return headerLower.includes(patternLower)
+          })
+          if (index !== -1) return index + 1 // +1 for Google Sheets 1-indexed columns
+        }
+        return -1
+      }
+      
+      const actual2ColIndex = findIndex(["actual2"])
+      const loadingImage1ColIndex = findIndex(["loading image 1"])
+      const loadingImage2ColIndex = findIndex(["loading image 2"])
+      const loadingImage3ColIndex = findIndex(["loading image 3"])
+      const remarksColIndex = findIndex(["remarks"])
+      
+      console.log("Column indices for update:", {
+        actual2ColIndex,
+        loadingImage1ColIndex,
+        loadingImage2ColIndex,
+        loadingImage3ColIndex,
+        remarksColIndex
+      })
+      
+      if (actual2ColIndex === -1) {
+        throw new Error("Could not find 'Actual2' column in DISPATCH sheet")
+      }
+      
+      // Update Actual2 column
+      const updateActual2Data = {
+        action: 'updateCell',
+        sheetName: 'DISPATCH',
+        rowIndex: selectedOrder.id + 1, // +1 for Google Sheets 1-indexed rows
+        columnIndex: actual2ColIndex,
+        value: actualDateTime
+      }
+      
+      console.log("Updating Actual2 column:", updateActual2Data)
+      
+      const actual2Response = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(updateActual2Data)
+      })
+
+      if (!actual2Response.ok) {
+        throw new Error(`HTTP error! status: ${actual2Response.status}`)
+      }
+
+      const actual2Result = await actual2Response.json()
+      console.log("Google Apps Script response for Actual2:", actual2Result)
+
+      // Update other columns if they exist
+      const updateColumns = [
+        { colIndex: loadingImage1ColIndex, value: formData.loadingImage1 || "" },
+        { colIndex: loadingImage2ColIndex, value: formData.loadingImage2 || "" },
+        { colIndex: loadingImage3ColIndex, value: formData.loadingImage3 || "" },
+        { colIndex: remarksColIndex, value: formData.remarks || "" }
+      ]
+
+      for (const column of updateColumns) {
+        if (column.colIndex !== -1 && column.value !== undefined) {
+          const updateData = {
+            action: 'updateCell',
+            sheetName: 'DISPATCH',
+            rowIndex: selectedOrder.id + 1,
+            columnIndex: column.colIndex,
+            value: column.value
+          }
+          
+          console.log(`Updating column ${column.colIndex}:`, updateData)
+          
+          const response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams(updateData)
+          })
+
+          if (!response.ok) {
+            console.warn(`Failed to update column ${column.colIndex}, but continuing...`)
+          }
+        }
+      }
+
+      if (actual2Result.success) {
+        // Refresh data
+        await fetchLoadMaterialData()
+        
+        // Clear form
+        setSelectedOrder(null)
+        setFormData({
+          loadingImage1: null,
+          loadingImage2: null,
+          loadingImage3: null,
+          remarks: ""
+        })
+        setUploadedUrls({
+          loadingImage1: "",
+          loadingImage2: "",
+          loadingImage3: ""
+        })
+        
+        alert("✓ Load Material submitted successfully!")
+      } else {
+        throw new Error(actual2Result.error || "Failed to submit to Google Sheets")
+      }
+      
+    } catch (error) {
+      console.error("Error submitting load material:", error)
+      alert(`✗ Failed to submit. Error: ${error.message}`)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleCancel = () => {
     setSelectedOrder(null)
     setFormData({
-      uniqueKey: "",
-      stepKey: "",
+      loadingImage1: null,
+      loadingImage2: null,
+      loadingImage3: null,
+      remarks: ""
     })
+    setUploadedUrls({
+      loadingImage1: "",
+      loadingImage2: "",
+      loadingImage3: ""
+    })
+  }
+
+  const openImage = (url) => {
+    if (url) {
+      window.open(url, '_blank')
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
+        <span className="text-gray-600">Loading material data...</span>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
-      {/* Desktop Header */}
       <div className="hidden lg:block">
-        <h1 className="text-3xl font-bold text-gray-900">Test Report</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Load Material</h1>
+        <p className="text-gray-600">Upload loading images and complete material loading process</p>
       </div>
 
-      {/* Mobile Header */}
       <div className="lg:hidden">
-        <h1 className="text-2xl font-bold text-gray-900">Test Report</h1>
-        <p className="text-sm text-gray-600 mt-1">Manage test reports</p>
+        <h1 className="text-2xl font-bold text-gray-900">Load Material</h1>
+        <p className="text-sm text-gray-600 mt-1">Upload loading images and complete material loading process</p>
       </div>
 
       <Card className="border-0 shadow-lg">
         <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Test Report Management</CardTitle>
+          <CardTitle className="text-xl">Load Material Management</CardTitle>
+          <p className="text-sm text-gray-500 mt-1">
+            Pending: {pendingOrders.length} | Completed: {historyOrders.length}
+          </p>
         </CardHeader>
         <CardContent className="p-0">
           <div className="space-y-0">
-            {/* Tabs */}
             <div className="flex bg-gray-100 p-1 rounded-t-lg">
               <button
                 onClick={() => setActiveTab("pending")}
@@ -123,7 +591,6 @@ export default function TestReportPage({ user, orders, updateOrders }) {
               </button>
             </div>
 
-            {/* Search Bar */}
             <div className="bg-white p-4 border-b border-gray-200">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -136,7 +603,6 @@ export default function TestReportPage({ user, orders, updateOrders }) {
               </div>
             </div>
 
-            {/* Desktop Table */}
             <div className="hidden lg:block overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -144,255 +610,483 @@ export default function TestReportPage({ user, orders, updateOrders }) {
                     {activeTab === "pending" && (
                       <TableHead className="font-semibold text-gray-900 py-4 px-6">Action</TableHead>
                     )}
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">DS-Number</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Serial No</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">LGST-SrN</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Firm Name</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Party PO Number</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-4 px-6">LGST-Sr Number</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Delivery Order No.</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Dispatch No.</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Party Name</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Type of Transporting</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Transporter Name</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Product Name</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Truck Qty</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Transporter</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Truck No</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Bilty No</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Type Of Rate</TableHead>
-                    {activeTab === "history" && (
+                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned2</TableHead>
+                    {activeTab === "pending" ? (
+                      <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual2</TableHead>
+                    ) : (
                       <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Unique Key</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Step Key</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual2</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Loading Images</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Remarks</TableHead>
                       </>
                     )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {displayOrders.map((order) => (
-                    <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
-                      {activeTab === "pending" && (
-                        <TableCell className="py-4 px-6">
-                          <Button
-                            size="sm"
-                            onClick={() => handleTest(order)}
-                            className="bg-blue-600 hover:bg-blue-700"
-                          >
-                            Test
-                          </Button>
-                        </TableCell>
-                      )}
-                      <TableCell className="font-medium py-4 px-6">{order.dsNumber}</TableCell>
-                      <TableCell className="py-4 px-6">{order.serialNo}</TableCell>
-                      <TableCell className="font-medium py-4 px-6">{order.lgstNumber}</TableCell>
-                      <TableCell className="py-4 px-6">
-                        <Badge variant="outline" className="rounded-full bg-blue-50 text-blue-700 border-blue-200">
-                          {order.firmName}
-                        </Badge>
+                  {displayOrders.length === 0 ? (
+                    <TableRow>
+                      <TableCell 
+                        colSpan={activeTab === "pending" ? 11 : 13} 
+                        className="text-center py-8 text-gray-500"
+                      >
+                        {activeTab === "pending" 
+                          ? "No pending load material orders found."
+                          : "No completed load material orders found."
+                        }
                       </TableCell>
-                      <TableCell className="py-4 px-6">{order.partyPONumber}</TableCell>
-                      <TableCell className="py-4 px-6">{order.partyName}</TableCell>
-                      <TableCell className="py-4 px-6">{order.typeOfTransporting}</TableCell>
-                      <TableCell className="py-4 px-6">{order.transporterName}</TableCell>
-                      <TableCell className="py-4 px-6">{order.truckNo}</TableCell>
-                      <TableCell className="py-4 px-6">{order.biltyNo}</TableCell>
-                      <TableCell className="py-4 px-6">
-                        <Badge className="bg-orange-500 text-white rounded-full">{order.typeOfRate}</Badge>
-                      </TableCell>
-                      {activeTab === "history" && (
-                        <>
-                          <TableCell className="py-4 px-6">
-                            <Badge className="bg-green-500 text-white rounded-full">{order.uniqueKey}</Badge>
-                          </TableCell>
-                          <TableCell className="py-4 px-6">
-                            <Badge className="bg-purple-500 text-white rounded-full">{order.stepKey}</Badge>
-                          </TableCell>
-                        </>
-                      )}
                     </TableRow>
-                  ))}
+                  ) : (
+                    displayOrders.map((order) => (
+                      <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
+                        {activeTab === "pending" && (
+                          <TableCell className="py-4 px-6">
+                            <div className="flex flex-col gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleLoadMaterial(order)}
+                                className="bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
+                                disabled={submitting}
+                              >
+                                <Upload className="w-4 h-4 mr-1" />
+                                Load Material
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
+                        <TableCell className="py-4 px-6">
+                          <Badge className="bg-blue-500 text-white rounded-full whitespace-nowrap">
+                            {order.lgstSrNumber || "N/A"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-4 px-6">
+                          <div className="max-w-[120px]">
+                            <span className="font-medium break-words">{order.deliveryOrderNo || "N/A"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-4 px-6">
+                          <Badge className="bg-purple-500 text-white rounded-full whitespace-nowrap">
+                            {order.dispatchNo || "N/A"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-4 px-6">
+                          <div className="max-w-[180px]">
+                            <p className="break-words">{order.partyName || "N/A"}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-4 px-6">
+                          <div className="max-w-[150px]">
+                            <span className="break-words">{order.productName || "N/A"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-4 px-6 font-medium">
+                          {order.actualTruckQty || "N/A"}
+                        </TableCell>
+                        <TableCell className="py-4 px-6">
+                          <div className="max-w-[120px]">
+                            <span className="break-words">{order.transporterName || "N/A"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-4 px-6">
+                          <Badge variant="outline" className="rounded-full">
+                            {order.truckNo || "N/A"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-4 px-6 font-medium whitespace-nowrap">
+                          {order.planned2 ? (
+                            <span className="text-orange-600">{order.planned2}</span>
+                          ) : "N/A"}
+                        </TableCell>
+                        {activeTab === "pending" ? (
+                          <TableCell className="py-4 px-6 text-gray-400 italic">
+                            Pending
+                          </TableCell>
+                        ) : (
+                          <>
+                            <TableCell className="py-4 px-6 font-medium whitespace-nowrap text-green-600">
+                              {order.actual2 ? order.actual2 : "N/A"}
+                            </TableCell>
+                            <TableCell className="py-4 px-6 max-w-[250px]">
+                              <div className="flex flex-wrap gap-2">
+                                {order.loadingImage1 && (
+                                  <Badge 
+                                    variant="outline" 
+                                    className="cursor-pointer hover:bg-blue-50"
+                                    onClick={() => openImage(order.loadingImage1)}
+                                  >
+                                    <Eye className="w-3 h-3 mr-1" />
+                                    Image 1
+                                  </Badge>
+                                )}
+                                {order.loadingImage2 && (
+                                  <Badge 
+                                    variant="outline" 
+                                    className="cursor-pointer hover:bg-blue-50"
+                                    onClick={() => openImage(order.loadingImage2)}
+                                  >
+                                    <Eye className="w-3 h-3 mr-1" />
+                                    Image 2
+                                  </Badge>
+                                )}
+                                {order.loadingImage3 && (
+                                  <Badge 
+                                    variant="outline" 
+                                    className="cursor-pointer hover:bg-blue-50"
+                                    onClick={() => openImage(order.loadingImage3)}
+                                  >
+                                    <Eye className="w-3 h-3 mr-1" />
+                                    Image 3
+                                  </Badge>
+                                )}
+                                {!order.loadingImage1 && !order.loadingImage2 && !order.loadingImage3 && (
+                                  <span className="text-gray-400 text-sm">No images</span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4 px-6 max-w-[200px]">
+                              <p className="text-sm break-words">{order.remarks || "No remarks"}</p>
+                            </TableCell>
+                          </>
+                        )}
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
 
-            {/* Mobile Card View */}
             <div className="lg:hidden">
-              <div className="p-4 space-y-4 max-h-96 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300">
+              <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
                 {displayOrders.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">No orders found</p>
+                  <p className="text-center text-gray-500 py-8">
+                    {activeTab === "pending" 
+                      ? "No pending load material orders found."
+                      : "No completed load material orders found."
+                    }
+                  </p>
                 ) : (
                   displayOrders.map((order) => (
-                    <div
-                      key={order.id}
-                      className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm transition-all"
-                    >
+                    <div key={order.id} className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
                       <div className="flex items-start justify-between mb-3">
                         <div>
-                          <p className="font-semibold text-gray-900">#{order.serialNo}</p>
-                          <p className="text-xs text-gray-500">{order.partyPODate}</p>
+                          <Badge className="bg-blue-500 text-white text-xs mb-1">
+                            {order.lgstSrNumber || "N/A"}
+                          </Badge>
+                          <p className="font-semibold text-gray-900">{order.partyName || "N/A"}</p>
+                          <p className="text-xs text-gray-500">
+                            DO: {order.deliveryOrderNo || "N/A"} | Dispatch: {order.dispatchNo || "N/A"}
+                          </p>
                         </div>
-                        <Badge variant="outline" className="rounded-full text-xs">
-                          {order.firmName}
-                        </Badge>
+                        <div className="text-right">
+                          {activeTab === "pending" ? (
+                            <Button
+                              size="sm"
+                              onClick={() => handleLoadMaterial(order)}
+                              className="bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
+                              disabled={submitting}
+                            >
+                              <Upload className="w-3 h-3 mr-1" />
+                              Load
+                            </Button>
+                          ) : (
+                            <Badge className="bg-green-500 text-white text-xs">
+                              ✓ Completed
+                            </Badge>
+                          )}
+                        </div>
                       </div>
 
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span className="text-gray-600">DS #:</span>
-                          <span className="font-medium">{order.dsNumber}</span>
+                          <span className="text-gray-600">Product:</span>
+                          <span className="font-medium text-right break-words max-w-[60%]">
+                            {order.productName || "N/A"}
+                          </span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600">LGST:</span>
-                          <Badge className="bg-blue-500 text-white text-xs">{order.lgstNumber}</Badge>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">PO Number:</span>
-                          <span className="font-medium">{order.partyPONumber}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Party:</span>
-                          <span className="font-medium">{order.partyName}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Transport:</span>
-                          <span className="font-medium">{order.typeOfTransporting}</span>
+                          <span className="text-gray-600">Truck Qty:</span>
+                          <span className="font-medium">{order.actualTruckQty || "N/A"}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Transporter:</span>
-                          <span className="font-medium">{order.transporterName}</span>
+                          <span className="font-medium">{order.transporterName || "N/A"}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600">Truck:</span>
-                          <span className="font-medium">{order.truckNo}</span>
+                          <span className="text-gray-600">Truck No:</span>
+                          <span className="font-medium">{order.truckNo || "N/A"}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600">Bilty:</span>
-                          <span className="font-medium">{order.biltyNo}</span>
+                          <span className="text-gray-600">Planned2:</span>
+                          <span className="font-medium text-orange-600">
+                            {order.planned2 || "N/A"}
+                          </span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Rate:</span>
-                          <Badge className="bg-orange-500 text-white text-xs">{order.typeOfRate}</Badge>
-                        </div>
-                        {activeTab === "history" && (
+                        {activeTab === "pending" ? (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Actual2:</span>
+                            <span className="text-gray-400 italic">Pending</span>
+                          </div>
+                        ) : (
                           <>
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Unique Key:</span>
-                              <Badge className="bg-green-500 text-white text-xs">{order.uniqueKey}</Badge>
+                              <span className="text-gray-600">Actual2:</span>
+                              <span className="font-medium text-green-600">
+                                {order.actual2 || "N/A"}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Images:</span>
+                              <div className="flex gap-1">
+                                {order.loadingImage1 && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => openImage(order.loadingImage1)}
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                  </Button>
+                                )}
+                                {order.loadingImage2 && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => openImage(order.loadingImage2)}
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                  </Button>
+                                )}
+                                {order.loadingImage3 && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => openImage(order.loadingImage3)}
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                  </Button>
+                                )}
+                              </div>
                             </div>
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Step Key:</span>
-                              <Badge className="bg-purple-500 text-white text-xs">{order.stepKey}</Badge>
+                              <span className="text-gray-600">Remarks:</span>
+                              <span className="font-medium text-right break-words max-w-[60%]">
+                                {order.remarks || "None"}
+                              </span>
                             </div>
                           </>
                         )}
                       </div>
-
-                      {activeTab === "pending" && (
-                        <div className="mt-4 pt-3 border-t border-gray-200">
-                          <Button
-                            size="sm"
-                            onClick={() => handleTest(order)}
-                            className="w-full bg-blue-600 hover:bg-blue-700"
-                          >
-                            <CheckCircle2 className="w-4 h-4 mr-2" />
-                            Generate Test Report
-                          </Button>
-                        </div>
-                      )}
                     </div>
                   ))
                 )}
               </div>
             </div>
 
-            {/* Results Count */}
             <div className="px-4 sm:px-6 py-3 bg-gray-50 text-sm text-gray-600 rounded-b-lg border-t border-gray-200">
-              Showing {displayOrders.length} of{" "}
-              {activeTab === "pending" ? pendingOrders.length : historyOrders.length} orders
+              Showing {displayOrders.length} of {activeTab === "pending" ? pendingOrders.length : historyOrders.length} orders
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Test Modal - Fullscreen on Mobile */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 lg:p-0">
-          <Card className="w-full max-w-2xl lg:max-w-3xl max-h-screen lg:max-h-[90vh] overflow-y-auto">
+          <Card className="w-full max-w-2xl lg:max-w-4xl max-h-screen lg:max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
-              <CardTitle className="text-lg lg:text-xl">Test Report</CardTitle>
-              <Button variant="ghost" size="sm" onClick={handleCancel}>
+              <CardTitle className="text-lg lg:text-xl">Complete Load Material</CardTitle>
+              <Button variant="ghost" size="sm" onClick={handleCancel} disabled={submitting}>
                 <X className="h-5 w-5" />
               </Button>
             </CardHeader>
             <CardContent className="p-4 lg:p-6">
-              <div className="space-y-4">
-                {/* Pre-filled fields */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-1">
-                    <Label className="text-xs">DS-Number</Label>
-                    <Input value={selectedOrder.dsNumber} disabled className="h-9" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Serial No</Label>
-                    <Input value={selectedOrder.serialNo} disabled className="h-9" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">LGST-SrN</Label>
-                    <Input value={selectedOrder.lgstNumber} disabled className="h-9" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Firm Name</Label>
-                    <Input value={selectedOrder.firmName} disabled className="h-9" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Party PO Number</Label>
-                    <Input value={selectedOrder.partyPONumber} disabled className="h-9" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Party PO Date</Label>
-                    <Input value={selectedOrder.partyPODate} disabled className="h-9" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Party Name</Label>
-                    <Input value={selectedOrder.partyName} disabled className="h-9" />
-                  </div>
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label className="text-xs">Product Name</Label>
-                    <Input value={selectedOrder.products?.[0]?.productName || "N/A"} disabled className="h-9" />
-                  </div>
-                </div>
-
-                {/* Editable fields */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-sm">Unique Key *</Label>
-                    <Input
-                      value={formData.uniqueKey}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, uniqueKey: e.target.value }))}
-                      placeholder="Enter unique key"
-                      className="h-10"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm">Step Key *</Label>
-                    <Input
-                      value={formData.stepKey}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, stepKey: e.target.value }))}
-                      placeholder="Enter step key"
-                      className="h-10"
-                    />
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-semibold mb-3">Order Information</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm text-gray-500">LGST-Sr Number</Label>
+                      <p className="font-medium">{selectedOrder.lgstSrNumber || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-gray-500">Delivery Order No.</Label>
+                      <p className="font-medium">{selectedOrder.deliveryOrderNo || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-gray-500">Dispatch No.</Label>
+                      <p className="font-medium">{selectedOrder.dispatchNo || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-gray-500">Party Name</Label>
+                      <p className="font-medium">{selectedOrder.partyName || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-gray-500">Product Name</Label>
+                      <p className="font-medium">{selectedOrder.productName || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-gray-500">Actual Truck Qty</Label>
+                      <p className="font-medium">{selectedOrder.actualTruckQty || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-gray-500">Transporter</Label>
+                      <p className="font-medium">{selectedOrder.transporterName || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-gray-500">Truck No</Label>
+                      <p className="font-medium">{selectedOrder.truckNo || "N/A"}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Label className="text-sm text-gray-500">Planned2 Date/Time</Label>
+                      <p className="font-medium text-orange-600">
+                        {selectedOrder.planned2 || "N/A"}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                {/* Form Actions */}
-                <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
-                  <Button variant="outline" onClick={handleCancel} className="w-full sm:w-auto">
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSubmit} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto">
-                    Submit Test Report
-                  </Button>
+                <div className="border-t pt-6">
+                  <h3 className="text-lg font-semibold mb-3">Upload Loading Images</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Upload at least one loading image. Image 1 is mandatory. Max file size: 5MB each.
+                  </p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    {[1, 2, 3].map((num) => (
+                      <div key={num} className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-sm font-medium">
+                            Loading Image {num} {num === 1 && "*"}
+                            {uploadingImages[`loadingImage${num}`] && (
+                              <Loader2 className="w-3 h-3 ml-2 animate-spin inline" />
+                            )}
+                          </Label>
+                          {uploadedUrls[`loadingImage${num}`] && (
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0"
+                                onClick={() => openImage(uploadedUrls[`loadingImage${num}`])}
+                                title="View Image"
+                              >
+                                <Eye className="w-3 h-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0"
+                                onClick={() => removeImage(num)}
+                                title="Remove Image"
+                                disabled={submitting}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          ref={num === 1 ? fileInputRef1 : num === 2 ? fileInputRef2 : fileInputRef3}
+                          onChange={(e) => handleFileSelect(e, num)}
+                          className="hidden"
+                          disabled={submitting}
+                        />
+                        <Button
+                          variant="outline"
+                          className="w-full h-24 border-dashed"
+                          onClick={() => {
+                            if (num === 1) fileInputRef1.current.click()
+                            else if (num === 2) fileInputRef2.current.click()
+                            else fileInputRef3.current.click()
+                          }}
+                          disabled={submitting || uploadingImages[`loadingImage${num}`]}
+                        >
+                          <div className="flex flex-col items-center">
+                            <Upload className="w-6 h-6 mb-2 text-gray-400" />
+                            <span className="text-sm">
+                              {uploadedUrls[`loadingImage${num}`] ? "✓ Uploaded" : `Upload Image ${num}`}
+                            </span>
+                          </div>
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-2 mt-6">
+                    <Label className="text-sm font-medium">Remarks (Optional)</Label>
+                    <Textarea
+                      value={formData.remarks}
+                      onChange={(e) => setFormData(prev => ({ ...prev, remarks: e.target.value }))}
+                      placeholder="Enter any remarks about the loading process..."
+                      className="min-h-[80px]"
+                      disabled={submitting}
+                    />
+                  </div>
+
+                  <div className="mt-4 p-3 bg-blue-50 rounded-md">
+                    <p className="text-sm text-blue-700">
+                      <strong>Note:</strong> The "Actual2" field will be auto-populated with the current date/time when you submit.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border-t pt-6">
+                  <div className="flex flex-col sm:flex-row justify-end gap-3">
+                    <Button 
+                      variant="outline" 
+                      onClick={handleCancel} 
+                      className="w-full sm:w-auto" 
+                      disabled={submitting}
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleSubmit} 
+                      className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                      disabled={submitting || !formData.loadingImage1}
+                    >
+                      {submitting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                          Complete Load Material
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
       )}
+
+      <div className="flex justify-center">
+        <Button 
+          onClick={fetchLoadMaterialData} 
+          variant="outline" 
+          size="sm"
+          className="flex items-center gap-2"
+          disabled={submitting || loading}
+        >
+          <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          Refresh Data
+        </Button>
+      </div>
     </div>
   )
 }
