@@ -4,37 +4,34 @@ import { useState, useEffect } from "react"
 import LoginForm from "@/components/LoginForm"
 import MainLayout from "@/components/MainLayout"
 
-export default function App() {
+export default function HomePage() {
   const [user, setUser] = useState(null)
   const [orders, setOrders] = useState([])
 
   useEffect(() => {
-    // Check if user is logged in from localStorage
-    const savedUser = localStorage.getItem("currentUser")
-    if (savedUser) {
-      setUser(JSON.parse(savedUser))
-    }
-
-    // Load orders from localStorage
-    const savedOrders = localStorage.getItem("orders")
-    if (savedOrders) {
-      setOrders(JSON.parse(savedOrders))
+    // Check for stored user session
+    const storedUser = localStorage.getItem('order2delivery_user')
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser))
+      } catch (e) {
+        localStorage.removeItem('order2delivery_user')
+      }
     }
   }, [])
 
-  const handleLogin = (userData) => {
-    setUser(userData)
-    localStorage.setItem("currentUser", JSON.stringify(userData))
+  const handleLogin = (loggedInUser) => {
+    setUser(loggedInUser)
+    localStorage.setItem('order2delivery_user', JSON.stringify(loggedInUser))
   }
 
   const handleLogout = () => {
     setUser(null)
-    localStorage.removeItem("currentUser")
+    localStorage.removeItem('order2delivery_user')
   }
 
   const updateOrders = (newOrders) => {
     setOrders(newOrders)
-    localStorage.setItem("orders", JSON.stringify(newOrders))
   }
 
   if (!user) {

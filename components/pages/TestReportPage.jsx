@@ -25,8 +25,7 @@ export default function LoadMaterialPage({ user }) {
   const [formData, setFormData] = useState({
     loadingImage1: null,
     loadingImage2: null,
-    loadingImage3: null,
-    remarks: ""
+    loadingImage3: null
   })
   const [uploadingImages, setUploadingImages] = useState({
     loadingImage1: false,
@@ -84,7 +83,7 @@ export default function LoadMaterialPage({ user }) {
     
     console.log("Raw DISPATCH sheet data length:", sheetData.length)
     
-    // Find the header row using the same logic as reference code
+    // Find the header row
     let headerRowIndex = -1
     let headers = []
     
@@ -110,33 +109,94 @@ export default function LoadMaterialPage({ user }) {
       return { pending: [], completed: [] }
     }
     
-    // Find column indices - using the same pattern as reference code
+    // Find column indices
     const indices = {
-      timestamp: headers.findIndex(h => h.toLowerCase().includes("timestamp")),
-      dSrNumber: headers.findIndex(h => h.toLowerCase().includes("d-sr") || h.toLowerCase().includes("dsr")),
-      deliveryOrderNo: headers.findIndex(h => h.toLowerCase().includes("delivery order")),
-      partyName: headers.findIndex(h => h.toLowerCase().includes("party name")),
-      productName: headers.findIndex(h => h.toLowerCase().includes("product name")),
-      qtyToBeDispatched: headers.findIndex(h => h.toLowerCase().includes("qty to be")),
-      typeOfTransporting: headers.findIndex(h => h.toLowerCase().includes("type of transporting")),
-      transporterName: headers.findIndex(h => h.toLowerCase().includes("transporter name")),
-      truckNo: headers.findIndex(h => h.toLowerCase().includes("truck no")),
-      driverMobileNo: headers.findIndex(h => h.toLowerCase().includes("driver mobile")),
-      vehicleNoPlateImage: headers.findIndex(h => h.toLowerCase().includes("vehicle no")),
-      biltyNo: headers.findIndex(h => h.toLowerCase().includes("bilty no")),
-      lgstSrNumber: headers.findIndex(h => h.toLowerCase().includes("lgst-sr")),
-      actualTruckQty: headers.findIndex(h => h.toLowerCase().includes("actual truck qty")),
-      fixedAmount: headers.findIndex(h => h.toLowerCase().includes("fixed amount")),
-      planned2: headers.findIndex(h => h.toLowerCase().includes("planned2")),
-      actual2: headers.findIndex(h => h.toLowerCase().includes("actual2")),
-      delay2: headers.findIndex(h => h.toLowerCase().includes("delay2")),
-      loadingImage1: headers.findIndex(h => h.toLowerCase().includes("loading image 1")),
-      loadingImage2: headers.findIndex(h => h.toLowerCase().includes("loading image 2")),
-      loadingImage3: headers.findIndex(h => h.toLowerCase().includes("loading image 3")),
-      remarks: headers.findIndex(h => h.toLowerCase().includes("remarks"))
+      timestamp: headers.findIndex(h => h && h.toString().toLowerCase().includes("timestamp")),
+      dSrNumber: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("d-sr") || 
+        h.toString().toLowerCase().includes("dsr") || 
+        h.toString().toLowerCase().includes("dispatch no") ||
+        h.toString().toLowerCase().includes("dispatch")
+      )),
+      deliveryOrderNo: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("delivery order") || 
+        h.toString().toLowerCase().includes("do no") || 
+        h.toString().toLowerCase().includes("do")
+      )),
+      partyName: headers.findIndex(h => h && h.toString().toLowerCase().includes("party name")),
+      productName: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("product name") || 
+        h.toString().toLowerCase().includes("product")
+      )),
+      qtyToBeDispatched: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("qty to be") || 
+        h.toString().toLowerCase().includes("quantity")
+      )),
+      typeOfTransporting: headers.findIndex(h => h && h.toString().toLowerCase().includes("type of transporting")),
+      transporterName: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("transporter name") || 
+        h.toString().toLowerCase().includes("transporter")
+      )),
+      truckNo: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("truck no") || 
+        h.toString().toLowerCase().includes("truck number") || 
+        h.toString().toLowerCase().includes("truck")
+      )),
+      driverMobileNo: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("driver mobile") || 
+        h.toString().toLowerCase().includes("driver")
+      )),
+      vehicleNoPlateImage: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("vehicle no") || 
+        h.toString().toLowerCase().includes("vehicle")
+      )),
+      biltyNo: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("bilty no") || 
+        h.toString().toLowerCase().includes("bilty")
+      )),
+      lgstSrNumber: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("lgst-sr") || 
+        h.toString().toLowerCase().includes("lgst sr") || 
+        h.toString().toLowerCase().includes("lgst") ||
+        h.toString().toLowerCase().includes("logistics sr")
+      )),
+      actualTruckQty: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("actual truck qty") || 
+        h.toString().toLowerCase().includes("actual qty") || 
+        h.toString().toLowerCase().includes("truck qty")
+      )),
+      fixedAmount: headers.findIndex(h => h && h.toString().toLowerCase().includes("fixed amount")),
+      planned2: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("planned2") || 
+        h.toString().toLowerCase().includes("planned 2")
+      )),
+      actual2: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("actual2") || 
+        h.toString().toLowerCase().includes("actual 2")
+      )),
+      delay2: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("delay2") || 
+        h.toString().toLowerCase().includes("delay 2")
+      )),
+      loadingImage1: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("loading image 1") || 
+        h.toString().toLowerCase().includes("image 1")
+      )),
+      loadingImage2: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("loading image 2") || 
+        h.toString().toLowerCase().includes("image 2")
+      )),
+      loadingImage3: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("loading image 3") || 
+        h.toString().toLowerCase().includes("image 3")
+      )),
+      remarks: headers.findIndex(h => h && (
+        h.toString().toLowerCase().includes("remarks") || 
+        h.toString().toLowerCase().includes("comment")
+      ))
     }
     
-    console.log("DISPATCH Column indices:", indices)
+    console.log("DISPATCH Column indices found:", indices)
     
     const pendingOrders = []
     const completedOrders = []
@@ -148,16 +208,20 @@ export default function LoadMaterialPage({ user }) {
       
       const getVal = (index) => {
         if (index >= 0 && index < row.length && row[index] !== undefined && row[index] !== null) {
-          return row[index].toString().trim()
+          const value = row[index].toString().trim()
+          return value
         }
         return ""
       }
       
-      // For Load Material, we need LGST-Sr Number
+      // Get LGST-Sr Number
       const lgstSrNumber = getVal(indices.lgstSrNumber)
       
-      // Skip rows without LGST-Sr number
-      if (!lgstSrNumber || lgstSrNumber === "" || lgstSrNumber.toLowerCase() === "lgst-sr number") {
+      // Skip rows without LGST-Sr number or header rows
+      if (!lgstSrNumber || lgstSrNumber === "" || 
+          lgstSrNumber.toLowerCase().includes("lgst-sr") || 
+          lgstSrNumber.toLowerCase() === "lgst-sr number" || 
+          lgstSrNumber.toLowerCase().includes("header")) {
         continue
       }
       
@@ -171,6 +235,7 @@ export default function LoadMaterialPage({ user }) {
       // Create order object
       const order = {
         id: i,
+        rowIndex: i + 1, // Google Sheets row number (1-indexed)
         timestamp: getVal(indices.timestamp),
         dSrNumber: getVal(indices.dSrNumber),
         deliveryOrderNo: getVal(indices.deliveryOrderNo),
@@ -197,43 +262,74 @@ export default function LoadMaterialPage({ user }) {
       }
       
       // Debug log for each row
-      console.log(`Row ${i}: LGST=${lgstSrNumber}, Planned2="${planned2}", Actual2="${actual2}"`)
+      console.log(`Row ${i+1}: LGST="${lgstSrNumber}", Planned2="${planned2}", Actual2="${actual2}"`)
       
-      // Check if Planned2 has value
-      const hasPlanned2 = planned2 !== "" && 
-                         planned2.toLowerCase() !== "n/a" && 
-                         planned2.toLowerCase() !== "null" &&
-                         !planned2.toLowerCase().includes("undefined")
+      // Check if Planned2 is NOT null/empty
+      const isPlanned2NotNull = planned2 && 
+                                 planned2.trim() !== "" && 
+                                 planned2.toLowerCase() !== "null" &&
+                                 planned2.toLowerCase() !== "n/a" &&
+                                 planned2.toLowerCase() !== "pending" &&
+                                 !planned2.toLowerCase().includes("undefined") &&
+                                 !planned2.toLowerCase().includes("planned")
       
-      // Check if Actual2 has value
-      const hasActual2 = actual2 !== "" && 
-                        actual2.toLowerCase() !== "n/a" &&
-                        actual2.toLowerCase() !== "null" &&
-                        actual2 !== "0" &&
-                        !actual2.toLowerCase().includes("undefined")
+      // Check if Actual2 is null/empty
+      const isActual2Null = !actual2 || 
+                           actual2.trim() === "" || 
+                           actual2.toLowerCase() === "null" ||
+                           actual2.toLowerCase() === "n/a" ||
+                           actual2.toLowerCase() === "pending" ||
+                           actual2.toLowerCase().includes("undefined") ||
+                           actual2.toLowerCase().includes("actual")
       
-      console.log(`  -> hasPlanned2: ${hasPlanned2}, hasActual2: ${hasActual2}`)
+      // Check if Actual2 is NOT null/empty
+      const isActual2NotNull = actual2 && 
+                              actual2.trim() !== "" && 
+                              actual2.toLowerCase() !== "null" &&
+                              actual2.toLowerCase() !== "n/a" &&
+                              actual2.toLowerCase() !== "pending" &&
+                              !actual2.toLowerCase().includes("undefined") &&
+                              !actual2.toLowerCase().includes("actual")
       
-      // PENDING = Planned2 has value AND Actual2 is empty
-      if (hasPlanned2 && !hasActual2) {
-        order.isPending = true
-        order.isCompleted = false
-        pendingOrders.push(order)
-        console.log(`  -> ADDED to PENDING`)
-      }
-      // COMPLETED = Actual2 has value
-      else if (hasActual2) {
-        order.isPending = false
-        order.isCompleted = true
-        completedOrders.push(order)
-        console.log(`  -> ADDED to COMPLETED`)
-      }
-      else {
-        console.log(`  -> SKIPPED - Not a Load Material order`)
+      // LOGIC:
+      // 1. PENDING: Planned2 is NOT null AND Actual2 is null
+      // 2. COMPLETED: Planned2 is NOT null AND Actual2 is NOT null
+      // 3. SKIP: Planned2 is null
+      
+      if (isPlanned2NotNull) {
+        if (isActual2Null) {
+          // PENDING: Planned2 has value, but Actual2 is empty/null
+          order.isPending = true
+          order.isCompleted = false
+          pendingOrders.push(order)
+          console.log(`  -> ADDED to PENDING (Planned2=${planned2}, Actual2 is null)`)
+        } else if (isActual2NotNull) {
+          // COMPLETED: Both Planned2 and Actual2 have values
+          order.isPending = false
+          order.isCompleted = true
+          completedOrders.push(order)
+          console.log(`  -> ADDED to COMPLETED (Planned2=${planned2}, Actual2=${actual2})`)
+        }
+      } else {
+        console.log(`  -> SKIPPED - Planned2 is null or invalid`)
       }
     }
     
     console.log(`Transformation complete - Pending: ${pendingOrders.length}, Completed: ${completedOrders.length}`)
+    
+    // Sort pending orders by Planned2 date (most recent first)
+    pendingOrders.sort((a, b) => {
+      if (!a.planned2) return 1
+      if (!b.planned2) return -1
+      return new Date(b.planned2) - new Date(a.planned2)
+    })
+    
+    // Sort completed orders by Actual2 date (most recent first)
+    completedOrders.sort((a, b) => {
+      if (!a.actual2) return 1
+      if (!b.actual2) return -1
+      return new Date(b.actual2) - new Date(a.actual2)
+    })
     
     return { pending: pendingOrders, completed: completedOrders }
   }
@@ -261,8 +357,7 @@ export default function LoadMaterialPage({ user }) {
     setFormData({
       loadingImage1: null,
       loadingImage2: null,
-      loadingImage3: null,
-      remarks: order.remarks || ""
+      loadingImage3: null
     })
     setUploadedUrls({
       loadingImage1: "",
@@ -362,7 +457,7 @@ export default function LoadMaterialPage({ user }) {
       // Get the current sheet data to find correct column indices
       const headersResponse = await fetch(`${SCRIPT_URL}?sheet=DISPATCH`)
       if (!headersResponse.ok) {
-        throw new Error(`HTTP error! status: ${headersResponse.status}`)
+        throw new Error(`HTTP error! status: ${headersResponse.ok}`)
       }
       
       const headersData = await headersResponse.json()
@@ -412,14 +507,12 @@ export default function LoadMaterialPage({ user }) {
       const loadingImage1ColIndex = findIndex(["loading image 1"])
       const loadingImage2ColIndex = findIndex(["loading image 2"])
       const loadingImage3ColIndex = findIndex(["loading image 3"])
-      const remarksColIndex = findIndex(["remarks"])
       
       console.log("Column indices for update:", {
         actual2ColIndex,
         loadingImage1ColIndex,
         loadingImage2ColIndex,
-        loadingImage3ColIndex,
-        remarksColIndex
+        loadingImage3ColIndex
       })
       
       if (actual2ColIndex === -1) {
@@ -456,8 +549,7 @@ export default function LoadMaterialPage({ user }) {
       const updateColumns = [
         { colIndex: loadingImage1ColIndex, value: formData.loadingImage1 || "" },
         { colIndex: loadingImage2ColIndex, value: formData.loadingImage2 || "" },
-        { colIndex: loadingImage3ColIndex, value: formData.loadingImage3 || "" },
-        { colIndex: remarksColIndex, value: formData.remarks || "" }
+        { colIndex: loadingImage3ColIndex, value: formData.loadingImage3 || "" }
       ]
 
       for (const column of updateColumns) {
@@ -495,8 +587,7 @@ export default function LoadMaterialPage({ user }) {
         setFormData({
           loadingImage1: null,
           loadingImage2: null,
-          loadingImage3: null,
-          remarks: ""
+          loadingImage3: null
         })
         setUploadedUrls({
           loadingImage1: "",
@@ -522,8 +613,7 @@ export default function LoadMaterialPage({ user }) {
     setFormData({
       loadingImage1: null,
       loadingImage2: null,
-      loadingImage3: null,
-      remarks: ""
+      loadingImage3: null
     })
     setUploadedUrls({
       loadingImage1: "",
@@ -619,14 +709,8 @@ export default function LoadMaterialPage({ user }) {
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Transporter</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Truck No</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned2</TableHead>
-                    {activeTab === "pending" ? (
-                      <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual2</TableHead>
-                    ) : (
-                      <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual2</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Loading Images</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Remarks</TableHead>
-                      </>
+                    {activeTab === "history" && (
+                      <TableHead className="font-semibold text-gray-900 py-4 px-6">Loading Images</TableHead>
                     )}
                   </TableRow>
                 </TableHeader>
@@ -634,7 +718,7 @@ export default function LoadMaterialPage({ user }) {
                   {displayOrders.length === 0 ? (
                     <TableRow>
                       <TableCell 
-                        colSpan={activeTab === "pending" ? 11 : 13} 
+                        colSpan={activeTab === "pending" ? 10 : 11} 
                         className="text-center py-8 text-gray-500"
                       >
                         {activeTab === "pending" 
@@ -704,56 +788,44 @@ export default function LoadMaterialPage({ user }) {
                             <span className="text-orange-600">{order.planned2}</span>
                           ) : "N/A"}
                         </TableCell>
-                        {activeTab === "pending" ? (
-                          <TableCell className="py-4 px-6 text-gray-400 italic">
-                            Pending
+                        {activeTab === "history" && (
+                          <TableCell className="py-4 px-6 max-w-[250px]">
+                            <div className="flex flex-wrap gap-2">
+                              {order.loadingImage1 && (
+                                <Badge 
+                                  variant="outline" 
+                                  className="cursor-pointer hover:bg-blue-50"
+                                  onClick={() => openImage(order.loadingImage1)}
+                                >
+                                  <Eye className="w-3 h-3 mr-1" />
+                                  Image 1
+                                </Badge>
+                              )}
+                              {order.loadingImage2 && (
+                                <Badge 
+                                  variant="outline" 
+                                  className="cursor-pointer hover:bg-blue-50"
+                                  onClick={() => openImage(order.loadingImage2)}
+                                >
+                                  <Eye className="w-3 h-3 mr-1" />
+                                  Image 2
+                                </Badge>
+                              )}
+                              {order.loadingImage3 && (
+                                <Badge 
+                                  variant="outline" 
+                                  className="cursor-pointer hover:bg-blue-50"
+                                  onClick={() => openImage(order.loadingImage3)}
+                                >
+                                  <Eye className="w-3 h-3 mr-1" />
+                                  Image 3
+                                </Badge>
+                              )}
+                              {!order.loadingImage1 && !order.loadingImage2 && !order.loadingImage3 && (
+                                <span className="text-gray-400 text-sm">No images</span>
+                              )}
+                            </div>
                           </TableCell>
-                        ) : (
-                          <>
-                            <TableCell className="py-4 px-6 font-medium whitespace-nowrap text-green-600">
-                              {order.actual2 ? order.actual2 : "N/A"}
-                            </TableCell>
-                            <TableCell className="py-4 px-6 max-w-[250px]">
-                              <div className="flex flex-wrap gap-2">
-                                {order.loadingImage1 && (
-                                  <Badge 
-                                    variant="outline" 
-                                    className="cursor-pointer hover:bg-blue-50"
-                                    onClick={() => openImage(order.loadingImage1)}
-                                  >
-                                    <Eye className="w-3 h-3 mr-1" />
-                                    Image 1
-                                  </Badge>
-                                )}
-                                {order.loadingImage2 && (
-                                  <Badge 
-                                    variant="outline" 
-                                    className="cursor-pointer hover:bg-blue-50"
-                                    onClick={() => openImage(order.loadingImage2)}
-                                  >
-                                    <Eye className="w-3 h-3 mr-1" />
-                                    Image 2
-                                  </Badge>
-                                )}
-                                {order.loadingImage3 && (
-                                  <Badge 
-                                    variant="outline" 
-                                    className="cursor-pointer hover:bg-blue-50"
-                                    onClick={() => openImage(order.loadingImage3)}
-                                  >
-                                    <Eye className="w-3 h-3 mr-1" />
-                                    Image 3
-                                  </Badge>
-                                )}
-                                {!order.loadingImage1 && !order.loadingImage2 && !order.loadingImage3 && (
-                                  <span className="text-gray-400 text-sm">No images</span>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="py-4 px-6 max-w-[200px]">
-                              <p className="text-sm break-words">{order.remarks || "No remarks"}</p>
-                            </TableCell>
-                          </>
                         )}
                       </TableRow>
                     ))
@@ -823,66 +895,47 @@ export default function LoadMaterialPage({ user }) {
                           <span className="font-medium">{order.truckNo || "N/A"}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-600">Planned2:</span>
+                          <span className="text-gray-600">Planned:</span>
                           <span className="font-medium text-orange-600">
                             {order.planned2 || "N/A"}
                           </span>
                         </div>
-                        {activeTab === "pending" ? (
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Actual2:</span>
-                            <span className="text-gray-400 italic">Pending</span>
+                        {activeTab === "history" && (
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-600">Images:</span>
+                            <div className="flex gap-1">
+                              {order.loadingImage1 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => openImage(order.loadingImage1)}
+                                >
+                                  <Eye className="w-3 h-3" />
+                                </Button>
+                              )}
+                              {order.loadingImage2 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => openImage(order.loadingImage2)}
+                                >
+                                  <Eye className="w-3 h-3" />
+                                </Button>
+                              )}
+                              {order.loadingImage3 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-xs"
+                                  onClick={() => openImage(order.loadingImage3)}
+                                >
+                                  <Eye className="w-3 h-3" />
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                        ) : (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Actual2:</span>
-                              <span className="font-medium text-green-600">
-                                {order.actual2 || "N/A"}
-                              </span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-gray-600">Images:</span>
-                              <div className="flex gap-1">
-                                {order.loadingImage1 && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-6 px-2 text-xs"
-                                    onClick={() => openImage(order.loadingImage1)}
-                                  >
-                                    <Eye className="w-3 h-3" />
-                                  </Button>
-                                )}
-                                {order.loadingImage2 && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-6 px-2 text-xs"
-                                    onClick={() => openImage(order.loadingImage2)}
-                                  >
-                                    <Eye className="w-3 h-3" />
-                                  </Button>
-                                )}
-                                {order.loadingImage3 && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-6 px-2 text-xs"
-                                    onClick={() => openImage(order.loadingImage3)}
-                                  >
-                                    <Eye className="w-3 h-3" />
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Remarks:</span>
-                              <span className="font-medium text-right break-words max-w-[60%]">
-                                {order.remarks || "None"}
-                              </span>
-                            </div>
-                          </>
                         )}
                       </div>
                     </div>
@@ -945,7 +998,7 @@ export default function LoadMaterialPage({ user }) {
                       <p className="font-medium">{selectedOrder.truckNo || "N/A"}</p>
                     </div>
                     <div className="sm:col-span-2">
-                      <Label className="text-sm text-gray-500">Planned2 Date/Time</Label>
+                      <Label className="text-sm text-gray-500">Planned Date/Time</Label>
                       <p className="font-medium text-orange-600">
                         {selectedOrder.planned2 || "N/A"}
                       </p>
@@ -1020,17 +1073,6 @@ export default function LoadMaterialPage({ user }) {
                         </Button>
                       </div>
                     ))}
-                  </div>
-
-                  <div className="space-y-2 mt-6">
-                    <Label className="text-sm font-medium">Remarks (Optional)</Label>
-                    <Textarea
-                      value={formData.remarks}
-                      onChange={(e) => setFormData(prev => ({ ...prev, remarks: e.target.value }))}
-                      placeholder="Enter any remarks about the loading process..."
-                      className="min-h-[80px]"
-                      disabled={submitting}
-                    />
                   </div>
 
                   <div className="mt-4 p-3 bg-blue-50 rounded-md">

@@ -1,33 +1,57 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-
-const users = [
-  // Master Admin
-  { id: "master", password: "master123", role: "master", firm: "ALL", name: "Master Admin" },
-
-  // Admins
-  { id: "admin1", password: "adminA", role: "admin", firm: "AAA", name: "AAA Admin" },
-  { id: "admin2", password: "adminBBB", role: "admin", firm: "BBB", name: "BBB Admin" },
-  { id: "admin3", password: "adminref", role: "admin", firm: "CCC", name: "CCC Admin" },
-  { id: "admin4", password: "adminDDD", role: "admin", firm: "DDD", name: "DDD Admin" },
-
-  // Users
-  { id: "user1", password: "userA", role: "user", firm: "AAA", name: "AAA User" },
-  { id: "user2", password: "userBBB", role: "user", firm: "BBB", name: "BBB User" },
-  { id: "user3", password: "userref", role: "admin", firm: "CCC", name: "CCC User" },
-  { id: "user4", password: "userDDD", role: "user", firm: "DDD", name: "DDD User" },
-]
+import { Loader2 } from "lucide-react"
+import { fetchUsersData } from "@/lib/users"
 
 export default function LoginForm({ onLogin }) {
-  const [credentials, setCredentials] = useState({ id: "", password: "" })
+  const [credentials, setCredentials] = useState({ username: "", password: "" })
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [users, setUsers] = useState([])
+  const [loadingUsers, setLoadingUsers] = useState(true)
+  const [demoCredentials, setDemoCredentials] = useState([])
+
+  // Fetch users from Google Sheet on component mount
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        setLoadingUsers(true)
+        const usersData = await fetchUsersData()
+        setUsers(usersData)
+        
+        // Create demo credentials from the first few users
+        const demos = usersData.slice(0, 3).map((user, index) => ({
+          id: user.username,
+          password: user.password,
+          role: user.role,
+          name: user.name
+        }))
+        setDemoCredentials(demos)
+      } catch (error) {
+        console.error("Failed to load users:", error)
+        setError("Failed to load user database. Using fallback credentials.")
+        
+        // Fallback to hardcoded users if sheet fails
+        const fallbackUsers = [
+          { id: "admin", username: "admin", password: "admin12345", name: "Admin", role: "master", firm: "ALL", pageAccess: ["Dashboard", "Order", "Check PO", "Received Accounts", "Check for Delivery", "Dispatch Planning", "Logistic", "Load Material", "Invoice", "Sales Form", "Wetman Entry", "Fullkiting", "Bilty Entry", "CRM", "Test Report", "MATERIAL RECEIPT"] },
+          { id: "user", username: "user", password: "user123", name: "Mukesh", role: "user", firm: "AAA", pageAccess: ["Dashboard", "Order", "Check PO", "Received Accounts", "Check for Delivery", "Dispatch Planning"] },
+          { id: "purchaser", username: "Purchaser", password: "P@12345", name: "EA", role: "admin", firm: "EA", pageAccess: ["Dashboard", "Order", "Check PO", "Received Accounts", "Check for Delivery", "Dispatch Planning"] },
+        ]
+        setUsers(fallbackUsers)
+        setDemoCredentials(fallbackUsers.slice(0, 3))
+      } finally {
+        setLoadingUsers(false)
+      }
+    }
+    
+    loadUsers()
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -37,15 +61,47 @@ export default function LoginForm({ onLogin }) {
     // Simulate API call delay
     await new Promise((resolve) => setTimeout(resolve, 500))
 
-    const user = users.find((u) => u.id === credentials.id && u.password === credentials.password)
+    const user = users.find((u) => 
+      u.username.toLowerCase() === credentials.username.toLowerCase() && 
+      u.password === credentials.password
+    )
 
     if (user) {
-      onLogin(user)
+      // Prepare user object for the main app
+      const loginUser = {
+        id: user.username,
+        username: user.username,
+        name: user.name,
+        role: user.role,
+        firm: user.firm,
+        pageAccess: user.pageAccess || []
+      }
+      onLogin(loginUser)
     } else {
-      setError("Invalid credentials. Please try again.")
+      setError("Invalid credentials. Please check your username and password.")
     }
 
     setLoading(false)
+  }
+
+  if (loadingUsers) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm">
+          <Card className="shadow-xl border-0">
+            <CardHeader className="text-center space-y-2 pb-6">
+              <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800">
+                Order 2 Delivery
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="w-12 h-12 animate-spin text-blue-600 mb-4" />
+              <p className="text-gray-600">Loading user database...</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -61,17 +117,18 @@ export default function LoginForm({ onLogin }) {
           <CardContent className="px-6 pb-6">
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="id" className="text-sm font-medium">
-                  User ID
+                <Label htmlFor="username" className="text-sm font-medium">
+                  Username
                 </Label>
                 <Input
-                  id="id"
+                  id="username"
                   type="text"
-                  placeholder="Enter your user ID"
-                  value={credentials.id}
-                  onChange={(e) => setCredentials((prev) => ({ ...prev, id: e.target.value }))}
+                  placeholder="Enter your username"
+                  value={credentials.username}
+                  onChange={(e) => setCredentials((prev) => ({ ...prev, username: e.target.value }))}
                   className="h-11"
                   required
+                  disabled={loading}
                 />
               </div>
               <div className="space-y-2">
@@ -86,6 +143,7 @@ export default function LoginForm({ onLogin }) {
                   onChange={(e) => setCredentials((prev) => ({ ...prev, password: e.target.value }))}
                   className="h-11"
                   required
+                  disabled={loading}
                 />
               </div>
 
@@ -98,26 +156,35 @@ export default function LoginForm({ onLogin }) {
               <Button
                 type="submit"
                 className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium"
-                disabled={loading}
+                disabled={loading || loadingUsers}
               >
-                {loading ? "Signing in..." : "Sign In"}
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  "Sign In"
+                )}
               </Button>
             </form>
 
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <h3 className="font-semibold text-sm text-gray-700 mb-3">Demo Credentials:</h3>
-              <div className="text-xs text-gray-600 space-y-2">
-                <div className="flex justify-between">
-                  <strong>Master:</strong> <span>master / master123</span>
+            {demoCredentials.length > 0 && (
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <h3 className="font-semibold text-sm text-gray-700 mb-3">Sample Credentials:</h3>
+                <div className="text-xs text-gray-600 space-y-2">
+                  {demoCredentials.map((user, index) => (
+                    <div key={index} className="flex justify-between">
+                      <strong>{user.name}:</strong> 
+                      <span>{user.id} / {user.password}</span>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex justify-between">
-                  <strong>Admin:</strong> <span>admin1 / adminA</span>
-                </div>
-                <div className="flex justify-between">
-                  <strong>User:</strong> <span>user1 / userA</span>
-                </div>
+                <p className="text-xs text-gray-500 mt-3">
+                  Users loaded from Google Sheets. Page access is controlled per user.
+                </p>
               </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       </div>

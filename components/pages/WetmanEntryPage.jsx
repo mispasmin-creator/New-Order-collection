@@ -8,8 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { X, Search, CheckCircle2, Loader2, Upload } from "lucide-react"
-import { format } from "date-fns"
+import { X, Search, CheckCircle2, Loader2, Upload, Eye } from "lucide-react"
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec"
 const FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-"
@@ -59,6 +58,36 @@ export default function WetmanEntryPage({ user }) {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Format date to dd/mm/yy
+  const formatDate = (dateString) => {
+    if (!dateString || dateString.trim() === "") return "N/A"
+    
+    // Try to parse different date formats
+    const date = new Date(dateString)
+    
+    // If date is valid
+    if (!isNaN(date.getTime())) {
+      const day = date.getDate().toString().padStart(2, '0')
+      const month = (date.getMonth() + 1).toString().padStart(2, '0')
+      const year = date.getFullYear().toString().slice(-2) // Last 2 digits
+      return `${day}/${month}/${year}`
+    }
+    
+    // If it's already in dd/mm/yyyy format
+    if (dateString.includes('/')) {
+      const parts = dateString.split('/')
+      if (parts.length >= 3) {
+        const day = parts[0].padStart(2, '0')
+        const month = parts[1].padStart(2, '0')
+        const year = parts[2].slice(-2) // Last 2 digits
+        return `${day}/${month}/${year}`
+      }
+    }
+    
+    // Return as is if can't parse
+    return dateString
   }
 
   // Get pending orders from DELIVERY sheet where Planned1 has value but Actual1 is empty
@@ -141,7 +170,7 @@ export default function WetmanEntryPage({ user }) {
           id: i,
           rowIndex: i + 1, // Google Sheets row number (1-indexed)
           timestamp: getVal(indices.timestamp),
-          billDate: getVal(indices.billDate),
+          billDate: formatDate(getVal(indices.billDate)),
           deliveryOrderNo: deliveryOrderNo,
           partyName: getVal(indices.partyName),
           productName: getVal(indices.productName),
@@ -154,7 +183,7 @@ export default function WetmanEntryPage({ user }) {
           vehicleNumber: getVal(indices.vehicleNumber),
           biltyNumber: getVal(indices.biltyNumber),
           givingFromWhere: getVal(indices.givingFromWhere),
-          planned1: planned1,
+          planned1: formatDate(planned1),
           actual1: actual1,
           hasImageOfSlip: getVal(indices.imageOfSlip) !== "",
           hasImageOfSlip2: getVal(indices.imageOfSlip2) !== "",
@@ -162,6 +191,9 @@ export default function WetmanEntryPage({ user }) {
           remarks: getVal(indices.remarks),
           actualQtyLoadedInTruck: getVal(indices.actualQtyLoadedInTruck),
           actualQtyAsPerWeighmentSlip: getVal(indices.actualQtyAsPerWeighmentSlip),
+          imageOfSlip: getVal(indices.imageOfSlip),
+          imageOfSlip2: getVal(indices.imageOfSlip2),
+          imageOfSlip3: getVal(indices.imageOfSlip3),
         }
         
         // Filter by user firm if not master
@@ -259,7 +291,7 @@ export default function WetmanEntryPage({ user }) {
           id: i,
           rowIndex: i + 1,
           timestamp: getVal(indices.timestamp),
-          billDate: getVal(indices.billDate),
+          billDate: formatDate(getVal(indices.billDate)),
           deliveryOrderNo: deliveryOrderNo,
           partyName: getVal(indices.partyName),
           productName: getVal(indices.productName),
@@ -272,8 +304,8 @@ export default function WetmanEntryPage({ user }) {
           vehicleNumber: getVal(indices.vehicleNumber),
           biltyNumber: getVal(indices.biltyNumber),
           givingFromWhere: getVal(indices.givingFromWhere),
-          planned1: getVal(indices.planned1),
-          actual1: actual1,
+          planned1: formatDate(getVal(indices.planned1)),
+          actual1: formatDate(actual1),
           imageOfSlip: imageOfSlip,
           imageOfSlip2: imageOfSlip2,
           imageOfSlip3: imageOfSlip3,
@@ -314,6 +346,12 @@ export default function WetmanEntryPage({ user }) {
     : searchFilteredOrders(historyOrders)
 
   const handleWetman = (order) => {
+    const now = new Date()
+    const day = now.getDate().toString().padStart(2, '0')
+    const month = (now.getMonth() + 1).toString().padStart(2, '0')
+    const year = now.getFullYear().toString().slice(-2)
+    const actual1Date = `${day}/${month}/${year}`
+    
     setSelectedOrder(order)
     setFormData({
       imageOfSlip: null,
@@ -341,7 +379,10 @@ export default function WetmanEntryPage({ user }) {
       setSubmitting(true)
       
       const now = new Date()
-      const actual1Date = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
+      const day = now.getDate().toString().padStart(2, '0')
+      const month = (now.getMonth() + 1).toString().padStart(2, '0')
+      const year = now.getFullYear().toString().slice(-2)
+      const actual1Date = `${day}/${month}/${year}`
       
       // Handle file uploads
       const uploadedFiles = []
@@ -480,6 +521,13 @@ export default function WetmanEntryPage({ user }) {
     })
   }
 
+  // Function to open Google Drive link
+  const openImageLink = (url) => {
+    if (url && url.trim() !== "") {
+      window.open(url, '_blank')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
@@ -548,9 +596,9 @@ export default function WetmanEntryPage({ user }) {
                     {activeTab === "pending" && (
                       <TableHead className="font-semibold text-gray-900 py-4 px-6">Action</TableHead>
                     )}
+                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Delivery Order No.</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Bill Date</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Bill No.</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Delivery Order No.</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Party Name</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Product Name</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Quantity</TableHead>
@@ -599,15 +647,15 @@ export default function WetmanEntryPage({ user }) {
                           </TableCell>
                         )}
                         <TableCell className="py-4 px-6">
-                          {order.billDate ? order.billDate.split(' ')[0] : "N/A"}
+                          <span className="font-medium">{order.deliveryOrderNo}</span>
+                        </TableCell>
+                        <TableCell className="py-4 px-6">
+                          {order.billDate}
                         </TableCell>
                         <TableCell className="py-4 px-6">
                           <Badge className="bg-green-500 text-white rounded-full">
                             {order.billNo}
                           </Badge>
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
-                          <span className="font-medium">{order.deliveryOrderNo}</span>
                         </TableCell>
                         <TableCell className="py-4 px-6">{order.partyName}</TableCell>
                         <TableCell className="py-4 px-6">
@@ -631,16 +679,34 @@ export default function WetmanEntryPage({ user }) {
                             <TableCell className="py-4 px-6">{order.actualQtyAsPerWeighmentSlip || "N/A"}</TableCell>
                             <TableCell className="py-4 px-6">
                               <div className="flex gap-1">
-                                {order.hasImageOfSlip && (
-                                  <Badge className="bg-blue-500 text-white text-xs">Slip1</Badge>
+                                {order.imageOfSlip && (
+                                  <Badge 
+                                    className="bg-blue-500 text-white text-xs cursor-pointer hover:bg-blue-600"
+                                    onClick={() => openImageLink(order.imageOfSlip)}
+                                  >
+                                    <Eye className="w-3 h-3 mr-1" />
+                                    Slip1
+                                  </Badge>
                                 )}
-                                {order.hasImageOfSlip2 && (
-                                  <Badge className="bg-blue-500 text-white text-xs">Slip2</Badge>
+                                {order.imageOfSlip2 && (
+                                  <Badge 
+                                    className="bg-blue-500 text-white text-xs cursor-pointer hover:bg-blue-600"
+                                    onClick={() => openImageLink(order.imageOfSlip2)}
+                                  >
+                                    <Eye className="w-3 h-3 mr-1" />
+                                    Slip2
+                                  </Badge>
                                 )}
-                                {order.hasImageOfSlip3 && (
-                                  <Badge className="bg-blue-500 text-white text-xs">Slip3</Badge>
+                                {order.imageOfSlip3 && (
+                                  <Badge 
+                                    className="bg-blue-500 text-white text-xs cursor-pointer hover:bg-blue-600"
+                                    onClick={() => openImageLink(order.imageOfSlip3)}
+                                  >
+                                    <Eye className="w-3 h-3 mr-1" />
+                                    Slip3
+                                  </Badge>
                                 )}
-                                {!order.hasImageOfSlip && !order.hasImageOfSlip2 && !order.hasImageOfSlip3 && (
+                                {!order.imageOfSlip && !order.imageOfSlip2 && !order.imageOfSlip3 && (
                                   <span className="text-gray-400 text-xs">No slips</span>
                                 )}
                               </div>
@@ -674,12 +740,14 @@ export default function WetmanEntryPage({ user }) {
                               Actual: {order.actual1}
                             </p>
                           )}
-                          <p className="font-semibold text-gray-900">{order.partyName}</p>
+                          <p className="font-semibold text-gray-900">
+                            DO: {order.deliveryOrderNo}
+                          </p>
                           <p className="text-xs text-gray-500">
-                            Bill: {order.billNo} | DO: {order.deliveryOrderNo}
+                            Bill: {order.billNo} | Date: {order.billDate}
                           </p>
                           <p className="text-xs text-gray-500 mt-1">
-                            Planned: {order.planned1 || "N/A"}
+                            Party: {order.partyName} | Planned: {order.planned1 || "N/A"}
                           </p>
                         </div>
                         <div className="text-right">
@@ -709,10 +777,6 @@ export default function WetmanEntryPage({ user }) {
                           <span className="text-gray-600">Quantity:</span>
                           <span className="font-medium">{order.quantityDelivered}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Bill Date:</span>
-                          <span>{order.billDate ? order.billDate.split(' ')[0] : "N/A"}</span>
-                        </div>
                         {activeTab === "pending" && (
                           <>
                             <div className="flex justify-between">
@@ -738,14 +802,38 @@ export default function WetmanEntryPage({ user }) {
                             <div className="flex justify-between">
                               <span className="text-gray-600">Slips:</span>
                               <div className="flex gap-1">
-                                {order.hasImageOfSlip && (
-                                  <Badge className="bg-blue-500 text-white text-xs">1</Badge>
+                                {order.imageOfSlip && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => openImageLink(order.imageOfSlip)}
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                    1
+                                  </Button>
                                 )}
-                                {order.hasImageOfSlip2 && (
-                                  <Badge className="bg-blue-500 text-white text-xs">2</Badge>
+                                {order.imageOfSlip2 && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => openImageLink(order.imageOfSlip2)}
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                    2
+                                  </Button>
                                 )}
-                                {order.hasImageOfSlip3 && (
-                                  <Badge className="bg-blue-500 text-white text-xs">3</Badge>
+                                {order.imageOfSlip3 && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => openImageLink(order.imageOfSlip3)}
+                                  >
+                                    <Eye className="w-3 h-3" />
+                                    3
+                                  </Button>
                                 )}
                               </div>
                             </div>
@@ -785,16 +873,22 @@ export default function WetmanEntryPage({ user }) {
               <div className="space-y-4">
                 {/* Order Info */}
                 <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="font-medium">{selectedOrder.partyName}</p>
+                  <p className="font-medium">DO: {selectedOrder.deliveryOrderNo}</p>
                   <p className="text-sm text-gray-600">
-                    Bill: {selectedOrder.billNo} | DO: {selectedOrder.deliveryOrderNo}
+                    Bill: {selectedOrder.billNo} | Party: {selectedOrder.partyName}
                   </p>
                   <p className="text-sm text-gray-600">Product: {selectedOrder.productName}</p>
                   <p className="text-sm text-gray-600">
                     Quantity: {selectedOrder.quantityDelivered} | Planned: {selectedOrder.planned1}
                   </p>
                   <p className="text-sm text-green-600 font-medium mt-1">
-                    Actual1 will be set to: {format(new Date(), "dd/MM/yyyy")}
+                    Actual1 will be set to: {(() => {
+                      const now = new Date()
+                      const day = now.getDate().toString().padStart(2, '0')
+                      const month = (now.getMonth() + 1).toString().padStart(2, '0')
+                      const year = now.getFullYear().toString().slice(-2)
+                      return `${day}/${month}/${year}`
+                    })()}
                   </p>
                 </div>
 

@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { X, Search, CheckCircle2, Calendar, Upload, FileText, Loader2 } from "lucide-react"
+import { X, Search, CheckCircle2, Calendar, Upload, FileText, Loader2, Eye } from "lucide-react"
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec"
 const FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-"
@@ -96,6 +96,7 @@ export default function MaterialReceiptPage({ user }) {
       delay: headers.findIndex(h => h.toLowerCase().includes("delay") && !h.toLowerCase().includes("planned") && !h.toLowerCase().includes("actual")),
       materialReceivedDate: headers.findIndex(h => h.toLowerCase().includes("material received date")),
       imageOfReceivedBill: headers.findIndex(h => h.toLowerCase().includes("image of received bill") || h.toLowerCase().includes("image of received bill / audio")),
+      imageOfMaterialReceipt: headers.findIndex(h => h.toLowerCase().includes("image of material receipt") || h.toLowerCase().includes("image of material")),
       grnNumber: headers.findIndex(h => h.toLowerCase().includes("grn number")),
     }
     
@@ -140,6 +141,7 @@ export default function MaterialReceiptPage({ user }) {
           "Delay": getVal(indices.delay),
           "Material Received Date": getVal(indices.materialReceivedDate),
           "Image Of Received Bill / Audio": getVal(indices.imageOfReceivedBill),
+          "Image Of Material Receipt": getVal(indices.imageOfMaterialReceipt),
           "Grn Number": getVal(indices.grnNumber),
         }
         
@@ -413,6 +415,19 @@ export default function MaterialReceiptPage({ user }) {
       
       // Check if date is valid
       if (isNaN(date.getTime())) {
+        // If not a valid date, try to parse dd/mm/yyyy format
+        const parts = dateString.split('/')
+        if (parts.length === 3) {
+          const [day, month, year] = parts.map(part => parseInt(part, 10))
+          const newDate = new Date(year, month - 1, day)
+          if (!isNaN(newDate.getTime())) {
+            return newDate.toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric'
+            })
+          }
+        }
         return dateString.toString()
       }
       
@@ -435,6 +450,25 @@ export default function MaterialReceiptPage({ user }) {
       const date = new Date(dateTimeString)
       
       if (isNaN(date.getTime())) {
+        // Try to parse dd/mm/yyyy hh:mm:ss format
+        const datePart = dateTimeString.split(' ')[0]
+        const timePart = dateTimeString.split(' ')[1] || '00:00:00'
+        const parts = datePart.split('/')
+        
+        if (parts.length === 3) {
+          const [day, month, year] = parts.map(part => parseInt(part, 10))
+          const [hours = 0, minutes = 0, seconds = 0] = timePart.split(':').map(part => parseInt(part, 10))
+          const newDate = new Date(year, month - 1, day, hours, minutes, seconds)
+          if (!isNaN(newDate.getTime())) {
+            return newDate.toLocaleString('en-US', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })
+          }
+        }
         return dateTimeString.toString()
       }
       
@@ -449,6 +483,58 @@ export default function MaterialReceiptPage({ user }) {
       return dateTimeString ? dateTimeString.toString() : "N/A"
     }
   }
+
+  // Function to handle Google Drive URL - FIXED
+ // Function to handle Google Drive URL - UPDATED to handle t=view&id= format
+const getDriveUrl = (driveLink) => {
+  if (!driveLink || driveLink.trim() === "") return null;
+  
+  const link = driveLink.trim();
+  
+  console.log("Processing drive link:", link); // Debug log
+  
+  // Check if it's already a full URL
+  if (link.startsWith('http://') || link.startsWith('https://')) {
+    return link;
+  }
+  
+  // NEW: Check for t=view&id= format (from your image)
+  if (link.includes('t=view&id=')) {
+    const match = link.match(/id=([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      console.log("Found t=view&id format, extracted ID:", match[1]); // Debug log
+      return `https://drive.google.com/file/d/${match[1]}/view`;
+    }
+  }
+  
+  // Check if it contains a file ID pattern
+  if (link.includes('/d/')) {
+    const match = link.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match && match[1]) {
+      console.log("Found /d/ format, extracted ID:", match[1]); // Debug log
+      return `https://drive.google.com/file/d/${match[1]}/view`;
+    }
+  }
+  
+  // Check if it's just a file ID
+  if (link.match(/^[a-zA-Z0-9_-]{25,}$/)) {
+    console.log("Found file ID format:", link); // Debug log
+    return `https://drive.google.com/file/d/${link}/view`;
+  }
+  
+  // If it's a partial URL
+  if (link.startsWith('file/d/')) {
+    const fileId = link.replace('file/d/', '').split('/')[0];
+    console.log("Found file/d/ format, extracted ID:", fileId); // Debug log
+    return `https://drive.google.com/file/d/${fileId}/view`;
+  }
+  
+  console.log("No matching format found, returning as is:", link); // Debug log
+  // Return as is (might be a direct link or another format)
+  return link;
+};
+
+
 
   if (loading) {
     return (
@@ -566,6 +652,8 @@ export default function MaterialReceiptPage({ user }) {
                           <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual</TableHead>
                           <TableHead className="font-semibold text-gray-900 py-4 px-6">Received Date</TableHead>
                           <TableHead className="font-semibold text-gray-900 py-4 px-6">GRN Number</TableHead>
+                          <TableHead className="font-semibold text-gray-900 py-4 px-6">Material Receipt</TableHead>
+
                         </>
                       )}
                     </TableRow>
@@ -584,6 +672,9 @@ export default function MaterialReceiptPage({ user }) {
                       const copyOfBill = entry["Copy Of Bill"]
                       const receivedDate = entry["Material Received Date"]
                       const grnNumber = entry["Grn Number"]
+
+                      // Get proper Drive URL
+                      const driveUrl = getDriveUrl(copyOfBill);
 
                       return (
                         <TableRow key={`${orderNo}-${index}`} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
@@ -622,14 +713,14 @@ export default function MaterialReceiptPage({ user }) {
                             </Badge>
                           </TableCell>
                           <TableCell className="py-4 px-6">
-                            {copyOfBill && copyOfBill.includes("open?id=") ? (
+                            {driveUrl ? (
                               <a 
-                                href={`https://drive.google.com/${copyOfBill}`}
+                                href={driveUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1 hover:underline"
                               >
-                                <FileText className="w-4 h-4" />
+                                <Eye className="w-4 h-4" />
                                 View Bill
                               </a>
                             ) : (
@@ -639,20 +730,29 @@ export default function MaterialReceiptPage({ user }) {
                           {activeTab === "history" && (
                             <>
                               <TableCell className="py-4 px-6">
-                                <Badge className="bg-green-500 text-white rounded-full">
-                                  {formatDateTime(actual)}
-                                </Badge>
+                                <span className="text-gray-700">{formatDateTime(actual)}</span>
                               </TableCell>
                               <TableCell className="py-4 px-6">
-                                <Badge className="bg-purple-500 text-white rounded-full">
-                                  {formatDate(receivedDate)}
-                                </Badge>
+                                <span className="text-gray-700">{formatDate(receivedDate)}</span>
                               </TableCell>
                               <TableCell className="py-4 px-6">
-                                <Badge className="bg-orange-500 text-white rounded-full">
-                                  {grnNumber || "N/A"}
-                                </Badge>
+                                <span className="text-gray-700 font-medium">{grnNumber || "N/A"}</span>
                               </TableCell>
+                               <TableCell className="py-4 px-6">
+                        {entry["Image Of Material Receipt"] ? (
+                          <a 
+                            href={getDriveUrl(entry["Image Of Material Receipt"])}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1 hover:underline"
+                          >
+                            <Eye className="w-4 h-4" />
+                            View
+                          </a>
+                        ) : (
+                          <span className="text-gray-500 text-sm">No image</span>
+                        )}
+                      </TableCell>
                             </>
                           )}
                         </TableRow>
@@ -687,6 +787,9 @@ export default function MaterialReceiptPage({ user }) {
                     const receivedDate = entry["Material Received Date"]
                     const grnNumber = entry["Grn Number"]
 
+                    // Get proper Drive URL
+                    const driveUrl = getDriveUrl(copyOfBill);
+
                     return (
                       <div
                         key={`${orderNo}-${index}`}
@@ -694,12 +797,15 @@ export default function MaterialReceiptPage({ user }) {
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div>
-                            <p className="font-semibold text-gray-900">Order #{orderNo}</p>
+                            <Badge className="bg-blue-500 text-white text-xs mb-1">
+                              Order #{orderNo}
+                            </Badge>
+                            <p className="font-semibold text-gray-900">{partyName}</p>
                             <p className="text-xs text-gray-500">{formatDate(billDate)}</p>
                           </div>
-                          <Badge variant="outline" className="rounded-full text-xs">
+                          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
                             {billType}
-                          </Badge>
+                          </span>
                         </div>
 
                         <div className="space-y-2 text-sm">
@@ -710,28 +816,23 @@ export default function MaterialReceiptPage({ user }) {
                             </Badge>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-gray-600">Party:</span>
-                            <span className="font-medium">{partyName}</span>
-                          </div>
-                          <div className="flex justify-between">
                             <span className="text-gray-600">Amount:</span>
                             <span className="font-bold">₹{amount}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Planned:</span>
-                            <Badge className="bg-yellow-500 text-white text-xs">
-                              {formatDateTime(planned)}
-                            </Badge>
+                            <span className="text-yellow-700">{formatDateTime(planned)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-gray-600">Bill Copy:</span>
-                            {copyOfBill && copyOfBill.includes("open?id=") ? (
+                            {driveUrl ? (
                               <a 
-                                href={`https://drive.google.com/${copyOfBill}`}
+                                href={driveUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-800 text-xs"
+                                className="text-blue-600 hover:text-blue-800 text-xs flex items-center gap-1"
                               >
+                                <Eye className="w-3 h-3" />
                                 View
                               </a>
                             ) : (
@@ -742,22 +843,32 @@ export default function MaterialReceiptPage({ user }) {
                             <>
                               <div className="flex justify-between">
                                 <span className="text-gray-600">Actual:</span>
-                                <Badge className="bg-green-500 text-white text-xs">
-                                  {formatDateTime(actual)}
-                                </Badge>
+                                <span className="text-gray-700">{formatDateTime(actual)}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-gray-600">Received:</span>
-                                <Badge className="bg-purple-500 text-white text-xs">
-                                  {formatDate(receivedDate)}
-                                </Badge>
+                                <span className="text-gray-700">{formatDate(receivedDate)}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-gray-600">GRN #:</span>
-                                <Badge className="bg-orange-500 text-white text-xs">
-                                  {grnNumber || "N/A"}
-                                </Badge>
+                                <span className="text-gray-700 font-medium">{grnNumber || "N/A"}</span>
                               </div>
+                                <div className="flex justify-between">
+                            <span className="text-gray-600">Material Receipt:</span>
+                            {entry["Image Of Material Receipt"] ? (
+                              <a 
+                                href={getDriveUrl(entry["Image Of Material Receipt"])}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-800 text-xs flex items-center gap-1"
+                              >
+                                <Eye className="w-3 h-3" />
+                                View
+                              </a>
+                            ) : (
+                              <span className="text-xs text-gray-500">No image</span>
+                            )}
+                          </div>
                             </>
                           )}
                         </div>
@@ -914,9 +1025,6 @@ export default function MaterialReceiptPage({ user }) {
                     />
                   </div>
                 </div>
-
-                {/* Auto-population notice */}
-               
 
                 {/* Form Actions */}
                 <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">

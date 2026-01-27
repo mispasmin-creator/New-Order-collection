@@ -9,8 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { X, Search, CheckCircle2, Loader2, Upload, Calendar } from "lucide-react"
-import { format } from "date-fns"
+import { X, Search, CheckCircle2, Loader2, Upload, Calendar, ExternalLink } from "lucide-react"
+import { format, parse } from "date-fns"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
@@ -32,10 +32,19 @@ export default function FullKittingPage({ user }) {
     totalTruckQty: "",
     copyOfBill: null,
   })
+  // const [generatedOrderNo, setGeneratedOrderNo] = useState("")
 
   useEffect(() => {
     fetchData()
   }, [])
+
+  useEffect(() => {
+    // Generate order number when order is selected
+    if (selectedOrder) {
+      const orderNo = generateOrderNo()
+      // setGeneratedOrderNo(orderNo)
+    }
+  }, [selectedOrder])
 
   const fetchData = async () => {
     try {
@@ -145,11 +154,31 @@ export default function FullKittingPage({ user }) {
       
       // Check if Planned2 has value, Actual2 is empty, and there's a Bill No
       if (planned2 && planned2 !== "" && (!actual2 || actual2 === "") && billNo && billNo !== "") {
+        // Format bill date properly
+        const billDateRaw = getVal(indices.billDate)
+        let formattedBillDate = billDateRaw
+        
+        try {
+          // Handle different date formats
+          if (billDateRaw.includes('T')) {
+            // ISO format: 2026-01-22T18:30:00.000Z
+            const date = new Date(billDateRaw)
+            if (!isNaN(date.getTime())) {
+              formattedBillDate = format(date, "dd/MM/yyyy")
+            }
+          } else if (billDateRaw.includes('/')) {
+            // Already in dd/MM/yyyy format
+            formattedBillDate = billDateRaw
+          }
+        } catch (error) {
+          console.error("Error formatting bill date:", error)
+        }
+        
         const order = {
           id: i,
           rowIndex: i + 1, // Google Sheets row number (1-indexed)
           timestamp: getVal(indices.timestamp),
-          billDate: getVal(indices.billDate),
+          billDate: formattedBillDate,
           deliveryOrderNo: deliveryOrderNo,
           partyName: getVal(indices.partyName),
           productName: getVal(indices.productName),
@@ -235,10 +264,29 @@ export default function FullKittingPage({ user }) {
       const timestamp = getVal(indices.timestamp)
       const orderNo = getVal(indices.orderNo)
       const billNo = getVal(indices.billNo)
+      const copyOfBillUrl = getVal(indices.copyOfBill)
       
       // Only add if it has some data
       if (timestamp || orderNo || billNo) {
-        const copyOfBillUrl = getVal(indices.copyOfBill)
+        // Format bill date properly
+        const billDateRaw = getVal(indices.billDate)
+        let formattedBillDate = billDateRaw
+        
+        try {
+          // Handle different date formats
+          if (billDateRaw.includes('T')) {
+            // ISO format: 2026-01-22T18:30:00.000Z
+            const date = new Date(billDateRaw)
+            if (!isNaN(date.getTime())) {
+              formattedBillDate = format(date, "dd/MM/yyyy")
+            }
+          } else if (billDateRaw.includes('/')) {
+            // Already in dd/MM/yyyy format
+            formattedBillDate = billDateRaw
+          }
+        } catch (error) {
+          console.error("Error formatting bill date:", error)
+        }
         
         const historyOrder = {
           id: i,
@@ -246,12 +294,15 @@ export default function FullKittingPage({ user }) {
           orderNo: orderNo,
           typeOfBill: getVal(indices.typeOfBill),
           billNo: billNo,
-          billDate: getVal(indices.billDate),
+          billDate: formattedBillDate,
           partyName: getVal(indices.partyName),
           totalBillAmount: getVal(indices.totalBillAmount),
           totalTruckQty: getVal(indices.totalTruckQty),
           copyOfBill: copyOfBillUrl,
-          hasCopyOfBill: copyOfBillUrl && copyOfBillUrl.includes("drive.google.com"),
+          hasCopyOfBill: copyOfBillUrl && copyOfBillUrl.trim() !== "" && 
+            (copyOfBillUrl.includes("drive.google.com") || 
+             copyOfBillUrl.includes("https://") || 
+             copyOfBillUrl.includes("http://")),
         }
         
         historyOrders.push(historyOrder)
@@ -278,6 +329,8 @@ export default function FullKittingPage({ user }) {
 
   const handleFullKitting = (order) => {
     setSelectedOrder(order)
+    const orderNo = generateOrderNo()
+    // setGeneratedOrderNo(orderNo)
     setFormData({
       typeOfBill: "",
       totalBillAmount: "",
@@ -290,7 +343,9 @@ export default function FullKittingPage({ user }) {
     const now = new Date()
     const dateStr = format(now, "yyyyMMdd")
     const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
-    return `ORD-${dateStr}-${randomNum}`
+    const orderNo = `ORD-${dateStr}-${randomNum}`
+    console.log("Generated Order No:", orderNo)
+    return orderNo
   }
 
   const fileToBase64 = (file) => {
@@ -302,136 +357,160 @@ export default function FullKittingPage({ user }) {
     })
   }
 
-  const handleSubmit = async () => {
-    if (!selectedOrder) return
+ const handleSubmit = async () => {
+  if (!selectedOrder) return
 
-    try {
-      setSubmitting(true)
-      
-      const now = new Date()
-      const timestamp = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
-      const actual2Date = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} 18:00:00`
-      
-      let copyOfBillUrl = ""
-      
-      // Upload copy of bill if provided and type is Independent Bill
-      if (formData.typeOfBill === "Independent Bill" && formData.copyOfBill) {
-        try {
-          const base64Data = await fileToBase64(formData.copyOfBill)
-          
-          const formDataToSend = new FormData()
-          formDataToSend.append('action', 'uploadFile')
-          formDataToSend.append('base64Data', base64Data)
-          formDataToSend.append('fileName', `bill_copy_${selectedOrder.billNo}_${Date.now()}.${formData.copyOfBill.name.split('.').pop()}`)
-          formDataToSend.append('mimeType', formData.copyOfBill.type)
-          formDataToSend.append('folderId', FOLDER_ID)
-          
-          const uploadResponse = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            body: formDataToSend,
-          })
-          
-          const uploadResult = await uploadResponse.json()
-          
-          if (uploadResult.success && uploadResult.fileUrl) {
-            copyOfBillUrl = uploadResult.fileUrl
-          }
-        } catch (uploadError) {
-          console.error("Error uploading bill copy:", uploadError)
+  try {
+    setSubmitting(true)
+    
+    const now = new Date()
+    const timestamp = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
+    const actual2Date = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} 18:00:00`
+    
+    let copyOfBillUrl = ""
+    
+    // Upload copy of bill if provided and type is Independent Bill
+    if (formData.typeOfBill === "Independent Bill" && formData.copyOfBill) {
+      try {
+        const base64Data = await fileToBase64(formData.copyOfBill)
+        
+        const formDataToSend = new FormData()
+        formDataToSend.append('action', 'uploadFile')
+        formDataToSend.append('base64Data', base64Data)
+        formDataToSend.append('fileName', `bill_copy_${selectedOrder.billNo}_${Date.now()}.${formData.copyOfBill.name.split('.').pop()}`)
+        formDataToSend.append('mimeType', formData.copyOfBill.type)
+        formDataToSend.append('folderId', FOLDER_ID)
+        
+        const uploadResponse = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          body: formDataToSend,
+        })
+        
+        const uploadResult = await uploadResponse.json()
+        
+        if (uploadResult.success && uploadResult.fileUrl) {
+          copyOfBillUrl = uploadResult.fileUrl
+          console.log("Bill copy uploaded:", copyOfBillUrl)
         }
+      } catch (uploadError) {
+        console.error("Error uploading bill copy:", uploadError)
       }
-      
-      // Step 1: Submit to POST DELIVERY sheet
-      const orderNo = generateOrderNo()
-      const currentBillDate = selectedOrder.billDate || format(now, "dd/MM/yyyy")
-      
-      const postDeliveryRowData = [
-        timestamp,                           // Timestamp
-        orderNo,                            // Order No.
-        formData.typeOfBill,                // Type of Bill
-        selectedOrder.billNo,               // Bill No.
-        currentBillDate,                    // Bill Date
-        selectedOrder.partyName,            // Party Name
-        formData.typeOfBill === "Independent Bill" ? formData.totalBillAmount : "0",  // Total Bill Amount
-        formData.typeOfBill === "Independent Bill" ? formData.totalTruckQty : "0",    // Total Truck Qty
-        copyOfBillUrl,                      // Copy Of Bill
-      ]
+    }
+    
+    // Step 1: Submit to POST DELIVERY sheet
+    // Use Delivery Order No. as Order No.
+    const orderNo = selectedOrder.deliveryOrderNo
+    const currentBillDate = selectedOrder.billDate || format(now, "dd/MM/yyyy")
+    
+    const postDeliveryRowData = [
+      timestamp,                           // Timestamp
+      orderNo,                            // Order No. (now using Delivery Order No.)
+      formData.typeOfBill,                // Type of Bill
+      selectedOrder.billNo,               // Bill No.
+      currentBillDate,                    // Bill Date (already formatted)
+      selectedOrder.partyName,            // Party Name
+      formData.typeOfBill === "Independent Bill" ? formData.totalBillAmount : "0",  // Total Bill Amount
+      formData.typeOfBill === "Independent Bill" ? formData.totalTruckQty : "0",    // Total Truck Qty
+      copyOfBillUrl,                      // Copy Of Bill
+    ]
 
-      console.log("Submitting to POST DELIVERY sheet:", postDeliveryRowData)
+    console.log("Submitting to POST DELIVERY sheet:", postDeliveryRowData)
 
-      const postDeliveryResponse = await fetch(SCRIPT_URL, {
+    const postDeliveryResponse = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        action: 'insert',
+        sheetName: 'POST DELIVERY',
+        rowData: JSON.stringify(postDeliveryRowData)
+      })
+    })
+
+    if (!postDeliveryResponse.ok) {
+      throw new Error(`HTTP error! status: ${postDeliveryResponse.status}`)
+    }
+
+    const postDeliveryResult = await postDeliveryResponse.json()
+    console.log("POST DELIVERY sheet response:", postDeliveryResult)
+
+    if (postDeliveryResult.success) {
+      // Step 2: Update DELIVERY sheet to set Actual2
+      const deliveryUpdateResponse = await fetch(SCRIPT_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-          action: 'insert',
-          sheetName: 'POST DELIVERY',
-          rowData: JSON.stringify(postDeliveryRowData)
+          action: 'updateCell',
+          sheetName: 'DELIVERY',
+          rowIndex: selectedOrder.rowIndex.toString(),
+          columnIndex: "27", // Actual2 is at column 27 (0-indexed: 26+1 for 1-indexed sheets)
+          value: actual2Date
         })
       })
 
-      if (!postDeliveryResponse.ok) {
-        throw new Error(`HTTP error! status: ${postDeliveryResponse.status}`)
+      if (!deliveryUpdateResponse.ok) {
+        console.error("Failed to update DELIVERY sheet")
       }
 
-      const postDeliveryResult = await postDeliveryResponse.json()
-      console.log("POST DELIVERY sheet response:", postDeliveryResult)
-
-      if (postDeliveryResult.success) {
-        // Step 2: Update DELIVERY sheet to set Actual2
-        const deliveryUpdateResponse = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            action: 'updateCell',
-            sheetName: 'DELIVERY',
-            rowIndex: selectedOrder.rowIndex.toString(),
-            columnIndex: "27", // Actual2 is at column 27 (0-indexed: 26+1 for 1-indexed sheets)
-            value: actual2Date
-          })
-        })
-
-        if (!deliveryUpdateResponse.ok) {
-          console.error("Failed to update DELIVERY sheet")
-        }
-
-        // Refresh data
-        await fetchData()
-        
-        // Clear form and selection
-        setSelectedOrder(null)
-        setFormData({
-          typeOfBill: "",
-          totalBillAmount: "",
-          totalTruckQty: "",
-          copyOfBill: null,
-        })
-        
-        alert(`✓ Full kitting submitted successfully!\nOrder Number: ${orderNo}`)
-        
-      } else {
-        throw new Error(postDeliveryResult.error || "Failed to submit to POST DELIVERY sheet")
-      }
+      // Refresh data
+      await fetchData()
       
-    } catch (error) {
-      console.error("Error submitting full kitting:", error)
-      alert(`✗ Failed to submit. Error: ${error.message}`)
-    } finally {
-      setSubmitting(false)
+      // Clear form and selection
+      setSelectedOrder(null)
+      setFormData({
+        typeOfBill: "",
+        totalBillAmount: "",
+        totalTruckQty: "",
+        copyOfBill: null,
+      })
+      
+      alert(`✓ Full kitting submitted successfully!\nOrder Number: ${orderNo}`)
+      
+    } else {
+      throw new Error(postDeliveryResult.error || "Failed to submit to POST DELIVERY sheet")
     }
+    
+  } catch (error) {
+    console.error("Error submitting full kitting:", error)
+    alert(`✗ Failed to submit. Error: ${error.message}`)
+  } finally {
+    setSubmitting(false)
   }
+}
 
   const handleCancel = () => {
     setSelectedOrder(null)
+    // setGeneratedOrderNo("")
     setFormData({
       typeOfBill: "",
       totalBillAmount: "",
       totalTruckQty: "",
       copyOfBill: null,
     })
+  }
+
+  const formatDisplayDate = (dateStr) => {
+    if (!dateStr) return "N/A"
+    
+    try {
+      // If it's already in dd/MM/yyyy format, just return it
+      if (dateStr.includes('/')) {
+        return dateStr
+      }
+      
+      // Try to parse other formats
+      const date = new Date(dateStr)
+      if (!isNaN(date.getTime())) {
+        return format(date, "dd/MM/yyyy")
+      }
+      
+      return dateStr
+    } catch (error) {
+      return dateStr
+    }
   }
 
   if (loading) {
@@ -500,7 +579,10 @@ export default function FullKittingPage({ user }) {
                 <TableHeader>
                   <TableRow className="bg-gray-50 hover:bg-gray-50 border-b border-gray-200">
                     {activeTab === "pending" && (
-                      <TableHead className="font-semibold text-gray-900 py-4 px-6">Action</TableHead>
+                      <>
+                        {/* <TableHead className="font-semibold text-gray-900 py-4 px-6">Order No.</TableHead> */}
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Action</TableHead>
+                      </>
                     )}
                     {activeTab === "history" && (
                       <>
@@ -534,7 +616,7 @@ export default function FullKittingPage({ user }) {
                   {displayOrders.length === 0 ? (
                     <TableRow>
                       <TableCell 
-                        colSpan={activeTab === "pending" ? 12 : 10} 
+                        colSpan={activeTab === "pending" ? 13 : 10} 
                         className="text-center py-8 text-gray-500"
                       >
                         No {activeTab === "pending" ? "pending" : "completed"} full kitting entries found
@@ -544,16 +626,19 @@ export default function FullKittingPage({ user }) {
                     displayOrders.map((order) => (
                       <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
                         {activeTab === "pending" && (
-                          <TableCell className="py-4 px-6">
-                            <Button
-                              size="sm"
-                              onClick={() => handleFullKitting(order)}
-                              className="bg-purple-600 hover:bg-purple-700"
-                              disabled={submitting}
-                            >
-                              Full Kitting
-                            </Button>
-                          </TableCell>
+                          <>
+                            
+                            <TableCell className="py-4 px-6">
+                              <Button
+                                size="sm"
+                                onClick={() => handleFullKitting(order)}
+                                className="bg-purple-600 hover:bg-purple-700"
+                                disabled={submitting}
+                              >
+                                Full Kitting
+                              </Button>
+                            </TableCell>
+                          </>
                         )}
                         {activeTab === "history" && (
                           <>
@@ -575,7 +660,7 @@ export default function FullKittingPage({ user }) {
                           </Badge>
                         </TableCell>
                         <TableCell className="py-4 px-6">
-                          {order.billDate ? order.billDate.split(' ')[0] : "N/A"}
+                          {formatDisplayDate(order.billDate)}
                         </TableCell>
                         <TableCell className="py-4 px-6">
                           <span className="font-medium">{order.deliveryOrderNo}</span>
@@ -602,7 +687,15 @@ export default function FullKittingPage({ user }) {
                             <TableCell className="py-4 px-6">{order.totalTruckQty || "0"}</TableCell>
                             <TableCell className="py-4 px-6">
                               {order.hasCopyOfBill ? (
-                                <Badge className="bg-blue-500 text-white text-xs">Available</Badge>
+                                <a 
+                                  href={order.copyOfBill} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 hover:bg-blue-200 px-3 py-1 rounded-full text-sm"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  Available
+                                </a>
                               ) : (
                                 <span className="text-gray-400 text-xs">N/A</span>
                               )}
@@ -640,9 +733,15 @@ export default function FullKittingPage({ user }) {
                               </Badge>
                             </>
                           )}
+                          {activeTab === "pending" && (
+                            <p className="text-gray-500 text-sm mb-1">Pending...</p>
+                          )}
                           <p className="font-semibold text-gray-900">{order.partyName}</p>
                           <p className="text-xs text-gray-500">
                             Bill: {order.billNo} | DO: {order.deliveryOrderNo}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Bill Date: {formatDisplayDate(order.billDate)}
                           </p>
                           {activeTab === "pending" && (
                             <p className="text-xs text-gray-500 mt-1">
@@ -671,10 +770,6 @@ export default function FullKittingPage({ user }) {
                           <span className="text-gray-600">Product:</span>
                           <span>{order.productName}</span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Bill Date:</span>
-                          <span>{order.billDate ? order.billDate.split(' ')[0] : "N/A"}</span>
-                        </div>
                         {activeTab === "pending" && (
                           <>
                             <div className="flex justify-between">
@@ -697,10 +792,18 @@ export default function FullKittingPage({ user }) {
                               <span className="text-gray-600">Total Truck Qty:</span>
                               <span>{order.totalTruckQty || "0"}</span>
                             </div>
-                            <div className="flex justify-between">
+                            <div className="flex justify-between items-center">
                               <span className="text-gray-600">Bill Copy:</span>
                               {order.hasCopyOfBill ? (
-                                <Badge className="bg-blue-500 text-white text-xs">Available</Badge>
+                                <a 
+                                  href={order.copyOfBill} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 hover:bg-blue-200 px-2 py-1 rounded text-xs"
+                                >
+                                  <ExternalLink className="w-3 h-3" />
+                                  View Bill
+                                </a>
                               ) : (
                                 <span className="text-gray-400 text-xs">N/A</span>
                               )}
@@ -739,13 +842,16 @@ export default function FullKittingPage({ user }) {
                   <p className="text-sm text-gray-600">
                     Bill: {selectedOrder.billNo} | DO: {selectedOrder.deliveryOrderNo}
                   </p>
+                  <p className="text-sm text-gray-600">
+                    Bill Date: {formatDisplayDate(selectedOrder.billDate)}
+                  </p>
                   <p className="text-sm text-gray-600">Product: {selectedOrder.productName}</p>
                   <p className="text-sm text-gray-600">
                     Quantity: {selectedOrder.quantityDelivered} | Planned2: {selectedOrder.planned2}
                   </p>
-                  <p className="text-sm text-green-600 font-medium mt-1">
-                    Order No: {generateOrderNo()}
-                  </p>
+                  {/* <p className="text-sm text-green-600 font-medium mt-1">
+                    Order No: <span className="font-bold">{generatedOrderNo}</span>
+                  </p> */}
                 </div>
 
                 <div className="space-y-3">

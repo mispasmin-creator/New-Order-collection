@@ -8,15 +8,13 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { X, Search, CheckCircle2, Loader2, Calendar, Upload } from "lucide-react"
+import { X, Search, CheckCircle2, Loader2, Calendar } from "lucide-react"
 import { format } from "date-fns"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec"
-const FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-"
 
 export default function SalesFormPage({ user }) {
   const [orders, setOrders] = useState([])
@@ -42,26 +40,8 @@ export default function SalesFormPage({ user }) {
     givingFromWhere: "",
     indentNo: "",
     qty: "",
-    planned1: "",
-    actual1: "",
-    delay1: "",
-    imageOfSlip: null,
-    imageOfSlip2: null,
-    imageOfSlip3: null,
-    remarks: "",
-    actualQtyLoadedInTruck: "",
-    actualQtyAsPerWeighmentSlip: "",
-    planned2: "",
-    actual2: "",
-    delay2: "",
-    planned3: "",
-    actual3: "",
-    delay3: "",
-    biltyCopy: null,
-    biltyNo: "",
     planned4: "",
     actual4: "",
-    delay4: "",
   })
 
   useEffect(() => {
@@ -307,58 +287,7 @@ export default function SalesFormPage({ user }) {
       givingFromWhere: "",
       indentNo: "",
       qty: "",
-      planned1: "",
-      actual1: "",
-      delay1: "",
-      imageOfSlip: null,
-      imageOfSlip2: null,
-      imageOfSlip3: null,
-      remarks: "",
-      actualQtyLoadedInTruck: "",
-      actualQtyAsPerWeighmentSlip: "",
-      planned2: "",
-      actual2: "",
-      delay2: "",
-      planned3: "",
-      actual3: "",
-      delay3: "",
-      biltyCopy: null,
-      biltyNo: "",
       planned4: order.planned4 || "",
-      actual4: "",
-      delay4: "",
-    })
-  }
-
-  const generateBillNo = () => {
-    if (deliveryHistory.length === 0) return "BILL-001"
-    
-    const billNumbers = deliveryHistory
-      .map(order => order.billNo)
-      .filter(billNo => billNo && billNo.match(/^BILL-\d+$/i))
-    
-    if (billNumbers.length === 0) return "BILL-001"
-    
-    let maxNumber = 0
-    billNumbers.forEach(billNo => {
-      const match = billNo.match(/BILL-(\d+)/i)
-      if (match) {
-        const num = parseInt(match[1], 10)
-        if (!isNaN(num) && num > maxNumber) {
-          maxNumber = num
-        }
-      }
-    })
-    
-    return `BILL-${String(maxNumber + 1).padStart(3, '0')}`
-  }
-
-  const fileToBase64 = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = error => reject(error)
     })
   }
 
@@ -368,51 +297,10 @@ export default function SalesFormPage({ user }) {
     try {
       setSubmitting(true)
       
-      const billNo = generateBillNo()
       const now = new Date()
       const timestamp = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
       
-      // Handle file uploads
-      const uploadedFiles = []
-      const fileFields = [
-        { field: formData.imageOfSlip, name: "image_of_slip", type: "Image Of Slip" },
-        { field: formData.imageOfSlip2, name: "image_of_slip2", type: "Image Of Slip2" },
-        { field: formData.imageOfSlip3, name: "image_of_slip3", type: "Image Of Slip3" },
-        { field: formData.biltyCopy, name: "bilty_copy", type: "Bilty Copy" },
-      ]
-      
-      for (const fileField of fileFields) {
-        if (fileField.field) {
-          try {
-            const base64Data = await fileToBase64(fileField.field)
-            
-            const formDataToSend = new FormData()
-            formDataToSend.append('action', 'uploadFile')
-            formDataToSend.append('base64Data', base64Data)
-            formDataToSend.append('fileName', `${fileField.name}_${billNo}_${Date.now()}.${fileField.field.name.split('.').pop()}`)
-            formDataToSend.append('mimeType', fileField.field.type)
-            formDataToSend.append('folderId', FOLDER_ID)
-            
-            const uploadResponse = await fetch(SCRIPT_URL, {
-              method: 'POST',
-              body: formDataToSend,
-            })
-            
-            const uploadResult = await uploadResponse.json()
-            
-            if (uploadResult.success && uploadResult.fileUrl) {
-              uploadedFiles.push({
-                type: fileField.type,
-                url: uploadResult.fileUrl
-              })
-            }
-          } catch (uploadError) {
-            console.error(`Error uploading ${fileField.type}:`, uploadError)
-          }
-        }
-      }
-      
-      // Prepare DELIVERY sheet row data (40 columns as per your structure)
+      // Prepare DELIVERY sheet row data (simplified - without removed fields)
       const deliveryRowData = [
         timestamp,                                     // 1. Timestamp
         formData.billDate,                             // 2. Bill Date
@@ -420,7 +308,7 @@ export default function SalesFormPage({ user }) {
         formData.partyName,                            // 4. Party Name
         formData.productName,                          // 5. Product Name
         formData.quantityDelivered,                    // 6. Quantity Delivered.
-        billNo,                                        // 7. Bill No.
+        formData.billNo,                               // 7. Bill No. (manual input)
         formData.logisticNo,                           // 8. Losgistic no.
         formData.rateOfMaterial,                       // 9. Rate Of Material
         formData.typeOfTransporting,                   // 10. Type Of Transporting
@@ -430,27 +318,7 @@ export default function SalesFormPage({ user }) {
         formData.givingFromWhere,                      // 14. Giving From Where
         formData.indentNo,                             // 15. Indent No.
         formData.qty,                                  // 16. Qty
-        formData.planned1,                             // 17. Planned 1
-        formData.actual1,                              // 18. Actual 1
-        formData.delay1,                               // 19. Delay 1
-        uploadedFiles.find(f => f.type === "Image Of Slip")?.url || "", // 20. Image Of Slip
-        uploadedFiles.find(f => f.type === "Image Of Slip2")?.url || "", // 21. Image Of Slip2
-        uploadedFiles.find(f => f.type === "Image Of Slip3")?.url || "", // 22. Image Of Slip3
-        formData.remarks,                              // 23. Remarks
-        formData.actualQtyLoadedInTruck,               // 24. Actual Qty loaded In Truck (Total Qty)
-        formData.actualQtyAsPerWeighmentSlip,          // 25. Actual Qty As Per Weighment Slip
-        formData.planned2,                             // 26. Planned 2
-        formData.actual2,                              // 27. Actual 2
-        formData.delay2,                               // 28. Delay 3 (Note: might be typo in header)
-        formData.planned3,                             // 29. Planned 3
-        formData.actual3,                              // 30. Actual3
-        formData.delay3,                               // 31. Delay3
-        uploadedFiles.find(f => f.type === "Bilty Copy")?.url || "", // 32. Bilty Copy
-        formData.biltyNo,                              // 33. Bilty No.
-        formData.planned4,                             // 34. Planned4
-        format(now, "dd/MM/yyyy") + " 18:00:00",       // 35. Actual4 (current date + time)
-        "0",                                           // 36. Delay4 (set to 0)
-        "", "", "", "", ""                             // 37-40: Empty columns for future use
+                                   // 37-40: Empty columns for future use
       ]
 
       console.log("Submitting to DELIVERY sheet:", deliveryRowData)
@@ -516,29 +384,11 @@ export default function SalesFormPage({ user }) {
           givingFromWhere: "",
           indentNo: "",
           qty: "",
-          planned1: "",
-          actual1: "",
-          delay1: "",
-          imageOfSlip: null,
-          imageOfSlip2: null,
-          imageOfSlip3: null,
-          remarks: "",
-          actualQtyLoadedInTruck: "",
-          actualQtyAsPerWeighmentSlip: "",
-          planned2: "",
-          actual2: "",
-          delay2: "",
-          planned3: "",
-          actual3: "",
-          delay3: "",
-          biltyCopy: null,
-          biltyNo: "",
           planned4: "",
           actual4: "",
-          delay4: "",
         })
         
-        alert(`✓ Sales form submitted successfully!\nBill Number: ${billNo}`)
+        alert(`✓ Sales form submitted successfully!`)
         
       } else {
         throw new Error(deliveryResult.error || "Failed to submit to DELIVERY sheet")
@@ -570,26 +420,8 @@ export default function SalesFormPage({ user }) {
       givingFromWhere: "",
       indentNo: "",
       qty: "",
-      planned1: "",
-      actual1: "",
-      delay1: "",
-      imageOfSlip: null,
-      imageOfSlip2: null,
-      imageOfSlip3: null,
-      remarks: "",
-      actualQtyLoadedInTruck: "",
-      actualQtyAsPerWeighmentSlip: "",
-      planned2: "",
-      actual2: "",
-      delay2: "",
-      planned3: "",
-      actual3: "",
-      delay3: "",
-      biltyCopy: null,
-      biltyNo: "",
       planned4: "",
       actual4: "",
-      delay4: "",
     })
   }
 
@@ -681,14 +513,13 @@ export default function SalesFormPage({ user }) {
                         <TableHead className="font-semibold text-gray-900 py-4 px-6">Bill No.</TableHead>
                       </>
                     )}
+                    <TableHead className="font-semibold text-gray-900 py-4 px-6">D-Sr Number</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Delivery Order No.</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Party Name</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Product Name</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">D-Sr Number</TableHead>
                     {activeTab === "pending" && (
                       <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned4 Date</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">LGST No.</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned Date</TableHead>
                         <TableHead className="font-semibold text-gray-900 py-4 px-6">Transport Type</TableHead>
                       </>
                     )}
@@ -706,7 +537,7 @@ export default function SalesFormPage({ user }) {
                   {(activeTab === "pending" ? pendingOrders : historyOrders).length === 0 ? (
                     <TableRow>
                       <TableCell 
-                        colSpan={activeTab === "pending" ? 9 : 9} 
+                        colSpan={activeTab === "pending" ? 8 : 9} 
                         className="text-center py-8 text-gray-500"
                       >
                         No {activeTab === "pending" ? "pending" : "history"} orders found
@@ -727,18 +558,18 @@ export default function SalesFormPage({ user }) {
                                 Sales Form
                               </Button>
                             </TableCell>
+                             <TableCell className="py-4 px-6">
+                              <Badge variant="outline" className="rounded-full">
+                                {order.dSrNumber}
+                              </Badge>
+                            </TableCell>
                             <TableCell className="py-4 px-6">
                               <span className="font-medium">{order.deliveryOrderNo || "N/A"}</span>
                             </TableCell>
                             <TableCell className="py-4 px-6">{order.partyName}</TableCell>
                             <TableCell className="py-4 px-6">{order.productName}</TableCell>
-                            <TableCell className="py-4 px-6">
-                              <Badge variant="outline" className="rounded-full">
-                                {order.dSrNumber}
-                              </Badge>
-                            </TableCell>
+                           
                             <TableCell className="py-4 px-6">{order.planned4}</TableCell>
-                            <TableCell className="py-4 px-6 text-blue-600">{order.lgstNumber || "N/A"}</TableCell>
                             <TableCell className="py-4 px-6">
                               <Badge variant="outline" className="rounded-full">
                                 {order.typeOfTransporting}
@@ -806,7 +637,7 @@ export default function SalesFormPage({ user }) {
                                 DO: {order.deliveryOrderNo} | DS: {order.dSrNumber}
                               </p>
                               <p className="text-xs text-gray-500 mt-1">
-                                Planned: {order.planned4} | LGST: {order.lgstNumber || "N/A"}
+                                Planned: {order.planned4}
                               </p>
                             </div>
                             <Button
@@ -934,6 +765,14 @@ export default function SalesFormPage({ user }) {
                       <Label className="text-sm text-gray-500">Planned4 Date</Label>
                       <p className="font-medium">{selectedOrder.planned4}</p>
                     </div>
+                    <div>
+                      <Label className="text-sm text-gray-500">Actual Truck Qty</Label>
+                      <p className="font-medium">{selectedOrder.actualTruckQty || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-gray-500">Transporter</Label>
+                      <p className="font-medium">{selectedOrder.transporterName || "N/A"}</p>
+                    </div>
                   </div>
                 </div>
 
@@ -1036,13 +875,14 @@ export default function SalesFormPage({ user }) {
                     )}
                     
                     <div className="space-y-2">
-                      <Label className="text-sm">Bill No.</Label>
+                      <Label className="text-sm">Bill No. *</Label>
                       <Input
-                        value={generateBillNo()}
-                        className="h-10 bg-gray-50"
-                        disabled
+                        value={formData.billNo}
+                        onChange={(e) => setFormData(prev => ({ ...prev, billNo: e.target.value }))}
+                        className="h-10"
+                        placeholder="Enter bill number"
+                        disabled={submitting}
                       />
-                      <p className="text-xs text-gray-500">Auto-generated</p>
                     </div>
                     
                     <div className="space-y-2">
@@ -1100,110 +940,6 @@ export default function SalesFormPage({ user }) {
                         disabled={submitting}
                       />
                     </div>
-                    
-                    <div className="space-y-2">
-                      <Label className="text-sm">Remarks</Label>
-                      <Textarea
-                        value={formData.remarks}
-                        onChange={(e) => setFormData(prev => ({ ...prev, remarks: e.target.value }))}
-                        placeholder="Enter any remarks"
-                        disabled={submitting}
-                        className="min-h-[80px]"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t pt-6">
-                  <h3 className="text-lg font-semibold mb-3">Additional Information</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label className="text-sm">Actual Qty loaded In Truck</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={formData.actualQtyLoadedInTruck}
-                        onChange={(e) => setFormData(prev => ({ ...prev, actualQtyLoadedInTruck: e.target.value }))}
-                        className="h-10"
-                        placeholder="Enter truck quantity"
-                        disabled={submitting}
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <Label className="text-sm">Actual Qty As Per Weighment Slip</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={formData.actualQtyAsPerWeighmentSlip}
-                        onChange={(e) => setFormData(prev => ({ ...prev, actualQtyAsPerWeighmentSlip: e.target.value }))}
-                        className="h-10"
-                        placeholder="Enter weighment quantity"
-                        disabled={submitting}
-                      />
-                    </div>
-                    
-                    <div className="space-y-2 col-span-1 sm:col-span-2">
-                      <Label className="text-sm">Image Of Slip 1</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files[0]
-                            if (file) {
-                              if (file.size > 5 * 1024 * 1024) {
-                                alert("File size should be less than 5MB")
-                                e.target.value = ""
-                                return
-                              }
-                              setFormData(prev => ({ 
-                                ...prev, 
-                                imageOfSlip: file 
-                              }))
-                            }
-                          }}
-                          className="h-10"
-                          disabled={submitting}
-                        />
-                        {formData.imageOfSlip && (
-                          <span className="text-sm text-green-600 truncate">
-                            ✓ {formData.imageOfSlip.name}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-2 col-span-1 sm:col-span-2">
-                      <Label className="text-sm">Bilty Copy</Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => {
-                            const file = e.target.files[0]
-                            if (file) {
-                              if (file.size > 5 * 1024 * 1024) {
-                                alert("File size should be less than 5MB")
-                                e.target.value = ""
-                                return
-                              }
-                              setFormData(prev => ({ 
-                                ...prev, 
-                                biltyCopy: file 
-                              }))
-                            }
-                          }}
-                          className="h-10"
-                          disabled={submitting}
-                        />
-                        {formData.biltyCopy && (
-                          <span className="text-sm text-green-600 truncate">
-                            ✓ {formData.biltyCopy.name}
-                          </span>
-                        )}
-                      </div>
-                    </div>
                   </div>
                 </div>
 
@@ -1225,6 +961,7 @@ export default function SalesFormPage({ user }) {
                         !formData.quantityDelivered ||
                         !formData.rateOfMaterial ||
                         !formData.givingFromWhere ||
+                        !formData.billNo || // Bill No. is now required
                         (formData.givingFromWhere === "Production" && !formData.qty) ||
                         submitting
                       }
@@ -1235,7 +972,7 @@ export default function SalesFormPage({ user }) {
                           Submitting...
                         </>
                       ) : (
-                        `Submit Sales (${generateBillNo()})`
+                        `Submit Sales`
                       )}
                     </Button>
                   </div>

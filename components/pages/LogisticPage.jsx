@@ -1,13 +1,13 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { X, Search, Loader2, Upload } from "lucide-react"
+import { X, Search, Loader2 } from "lucide-react"
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec"
 const FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-"
@@ -19,6 +19,33 @@ const TRANSPORT_TYPES = [
   "Ex Factory but paid by us",
   "Direct supply dont submit the delay"
 ]
+
+// Column indices based on your DISPATCH sheet structure
+const COLUMN_INDICES = {
+  TIMESTAMP: 0,
+  DSR_NUMBER: 1,
+  DELIVERY_ORDER_NO: 2,
+  PARTY_NAME: 3,
+  PRODUCT_NAME: 4,
+  QTY_TO_BE_DISPATCHED: 5,
+  TYPE_OF_TRANSPORTING: 6,
+  DATE_OF_DISPATCH: 7,
+  TO_BE_RECONFIRM: 8,
+  PLANNED1: 9,
+  ACTUAL1: 10,
+  DELAY1: 11,
+  LGST_NUMBER: 12,
+  ACTUAL_TRUCK_QTY: 13,
+  TYPE_OF_TRANSPORTING_LOGISTIC: 14,
+  TRANSPORTER_NAME: 15,
+  TRUCK_NO: 16,
+  DRIVER_MOBILE: 17,
+  VEHICLE_IMAGE: 18,
+  BILTY_NO: 19,
+  TYPE_OF_RATE: 20,
+  TRANSPORT_RATE: 21,
+  FIXED_AMOUNT: 22
+}
 
 export default function LogisticPage({ user }) {
   const [orders, setOrders] = useState([])
@@ -36,39 +63,43 @@ export default function LogisticPage({ user }) {
     vehicleNoPlateImage: null,
     biltyNo: "",
     actualTruckQty: "",
-    typeOfTransporting: "", // New field
+    typeOfTransporting: "",
     typeOfRate: "",
     transportRatePerTon: "",
     fixedAmount: "",
   })
 
-  useEffect(() => {
-    fetchData()
-  }, [])
+  // Memoized transporter list
+  const transporterOptions = useMemo(() => {
+    return transporters.length > 0 
+      ? transporters 
+      : ["Owned Truck", "External Transporter"]
+  }, [transporters])
 
-  const fetchData = async () => {
+  // Fetch data with error handling and caching
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       
-      const dispatchResponse = await fetch(`${SCRIPT_URL}?sheet=DISPATCH`)
+      // Fetch DISPATCH sheet data
+      const dispatchResponse = await fetch(`${SCRIPT_URL}?sheet=DISPATCH&cache=${Date.now()}`)
       if (dispatchResponse.ok) {
         const dispatchData = await dispatchResponse.json()
         
         if (dispatchData.success && dispatchData.data) {
-          // Get all orders from DISPATCH sheet
           const allOrders = dispatchData.data
           
-          // Get pending orders (where Planned1 has value but Actual1 is empty)
+          // Skip header rows - start from row 6 (0-indexed)
           const pendingOrders = getPendingOrders(allOrders)
           setOrders(pendingOrders)
           
-          // Get history orders (where Actual1 has value)
           const historyOrders = getHistoryOrders(allOrders)
           setHistoryOrders(historyOrders)
         }
       }
       
-      const masterResponse = await fetch(`${SCRIPT_URL}?sheet=MASTER`)
+      // Fetch transporters from MASTER sheet
+      const masterResponse = await fetch(`${SCRIPT_URL}?sheet=MASTER&cache=${Date.now()}`)
       if (masterResponse.ok) {
         const masterData = await masterResponse.json()
         if (masterData.success && masterData.data) {
@@ -82,119 +113,17 @@ export default function LogisticPage({ user }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  // Function to extract pending orders
-  const getPendingOrders = (sheetData) => {
-    if (!sheetData || sheetData.length < 2) return []
-    
-    // Skip header row (index 0) and start from row 5 as per your requirement
-    const PENDING_START_ROW = 6
-    const PLANNED1_INDEX = 9
-    const ACTUAL1_INDEX = 10
-    const DSR_INDEX = 1
-    const DELIVERY_ORDER_INDEX = 2
-    const PARTY_NAME_INDEX = 3
-    const PRODUCT_NAME_INDEX = 4
-    const TRANSPORT_TYPE_INDEX = 6
-    
-    const pendingOrders = []
-    
-    // Start from row 5 (skip header and initial rows)
-    for (let i = PENDING_START_ROW - 1; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      
-      // Check if Planned1 has value and Actual1 is empty
-      const planned1 = row[PLANNED1_INDEX]?.toString().trim()
-      const actual1 = row[ACTUAL1_INDEX]?.toString().trim()
-      
-      if (planned1 && planned1 !== "" && (!actual1 || actual1 === "")) {
-        pendingOrders.push({
-          id: i,
-          rowIndex: i + 1, // Google Sheets row number (1-indexed)
-          dSrNumber: row[DSR_INDEX] || "",
-          deliveryOrderNo: row[DELIVERY_ORDER_INDEX] || "",
-          partyName: row[PARTY_NAME_INDEX] || "",
-          productName: row[PRODUCT_NAME_INDEX] || "",
-          transportTypeFromCRM: row[TRANSPORT_TYPE_INDEX] || "",
-          planned1: planned1,
-        })
-      }
-    }
-    
-    return pendingOrders
-  }
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
 
-  // Function to extract history orders
-  const getHistoryOrders = (sheetData) => {
-    if (!sheetData || sheetData.length < 2) return []
-    
-    // Fixed column indices based on your sheet structure
-    const ACTUAL1_INDEX = 10
-    const LGST_INDEX = 12
-    const ACTUAL_TRUCK_QTY_INDEX = 13
-    const TRANSPORTING_TYPE_INDEX = 14
-    const TRANSPORTER_NAME_INDEX = 15
-    const TRUCK_NO_INDEX = 16
-    const DRIVER_MOBILE_INDEX = 17
-    const VEHICLE_IMAGE_INDEX = 18
-    const BILTY_NO_INDEX = 19
-    const TYPE_OF_RATE_INDEX = 20
-    const TRANSPORT_RATE_INDEX = 21
-    const FIXED_AMOUNT_INDEX = 22
-    const DSR_INDEX = 1
-    const DELIVERY_ORDER_INDEX = 2
-    const PARTY_NAME_INDEX = 3
-    const PRODUCT_NAME_INDEX = 4
-    const PLANNED1_INDEX = 9
-    const DELAY1_INDEX = 11
-    
-    const historyOrders = []
-    
-    // Start from row 1 (skip header) to show all submitted data
-    for (let i = 1; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      
-      const actual1 = row[ACTUAL1_INDEX]?.toString().trim()
-      const lgstNumber = row[LGST_INDEX]?.toString().trim()
-      
-      // Show ALL submitted data - if Actual1 has value
-      if (actual1 && actual1 !== "") {
-        const vehicleImageUrl = row[VEHICLE_IMAGE_INDEX]?.toString().trim()
-        
-        historyOrders.push({
-          id: i,
-          rowIndex: i + 1,
-          dSrNumber: row[DSR_INDEX] || "",
-          deliveryOrderNo: row[DELIVERY_ORDER_INDEX] || "",
-          partyName: row[PARTY_NAME_INDEX] || "",
-          productName: row[PRODUCT_NAME_INDEX] || "",
-          planned1: row[PLANNED1_INDEX] || "", // Added planned1 for reference
-          actual1: actual1,
-          delay1: row[DELAY1_INDEX] || "", // Added delay for reference
-          lgstSrNumber: lgstNumber || `LGST-${String(i + 1).padStart(3, '0')}`, // Generate if missing
-          actualTruckQty: row[ACTUAL_TRUCK_QTY_INDEX] || "",
-          typeOfTransporting: row[TRANSPORTING_TYPE_INDEX] || "",
-          transporterName: row[TRANSPORTER_NAME_INDEX] || "",
-          truckNo: row[TRUCK_NO_INDEX] || "",
-          driverMobileNo: row[DRIVER_MOBILE_INDEX] || "",
-          vehicleImageUrl: vehicleImageUrl,
-          hasImage: vehicleImageUrl && vehicleImageUrl.includes("drive.google.com"),
-          biltyNo: row[BILTY_NO_INDEX] || "",
-          typeOfRate: row[TYPE_OF_RATE_INDEX] || "",
-          transportRatePerTon: row[TRANSPORT_RATE_INDEX] || "",
-          fixedAmount: row[FIXED_AMOUNT_INDEX] || "",
-        })
-      }
-    }
-    
-    return historyOrders
-  }
-
-  const extractTransporters = (sheetData) => {
+  // Extract transporters from MASTER sheet
+  const extractTransporters = useCallback((sheetData) => {
     if (!sheetData) return []
     
-    const transporters = []
+    const transportersSet = new Set()
     
     for (let i = 0; i < sheetData.length; i++) {
       const row = sheetData[i]
@@ -204,53 +133,138 @@ export default function LogisticPage({ user }) {
           if (cell && typeof cell === 'string' && 
               cell.toLowerCase().includes('transporter') && 
               !cell.toLowerCase().includes('type')) {
-            transporters.push(cell.trim())
+            transportersSet.add(cell.trim())
           }
         }
       }
     }
     
-    return [...new Set(transporters.filter(t => t && t.trim() !== ''))]
-  }
+    return Array.from(transportersSet).filter(t => t && t.trim() !== '')
+  }, [])
 
-  const generateLGSTNumber = () => {
+  // Get pending orders (Planned1 has value, Actual1 is empty)
+  const getPendingOrders = useCallback((sheetData) => {
+    if (!sheetData || sheetData.length < 7) return [] // Skip first 6 rows
+    
+    const pendingOrders = []
+    
+    // Start from row 6 (index 5) to skip header rows
+    for (let i = 6; i < sheetData.length; i++) {
+      const row = sheetData[i]
+      if (!row || row.length === 0) continue
+      
+      const planned1 = row[COLUMN_INDICES.PLANNED1]?.toString().trim()
+      const actual1 = row[COLUMN_INDICES.ACTUAL1]?.toString().trim()
+      
+      // Check if Planned1 has value and Actual1 is empty
+const dSr = row[COLUMN_INDICES.DSR_NUMBER]?.toString().toLowerCase()
+
+if (
+  planned1 &&
+  planned1 !== "" &&
+  (!actual1 || actual1 === "") &&
+  dSr &&
+  !dSr.includes("d-sr") &&       // skip header row
+  !dSr.includes("number")        // skip header row
+) {
+        pendingOrders.push({
+          id: i,
+          rowIndex: i + 1,
+          dSrNumber: row[COLUMN_INDICES.DSR_NUMBER] || "",
+          deliveryOrderNo: row[COLUMN_INDICES.DELIVERY_ORDER_NO] || "",
+          partyName: row[COLUMN_INDICES.PARTY_NAME] || "",
+          productName: row[COLUMN_INDICES.PRODUCT_NAME] || "",
+          qtyToBeDispatched: row[COLUMN_INDICES.QTY_TO_BE_DISPATCHED] || "",
+          typeOfTransporting: row[COLUMN_INDICES.TYPE_OF_TRANSPORTING] || "",
+          dateOfDispatch: row[COLUMN_INDICES.DATE_OF_DISPATCH] || "",
+          planned1: planned1,
+        })
+      }
+    }
+    
+    return pendingOrders
+  }, [])
+
+  // Get history orders (Actual1 has value)
+  const getHistoryOrders = useCallback((sheetData) => {
+    if (!sheetData || sheetData.length < 7) return []
+    
+    const historyOrders = []
+    
+    // Start from row 6 (index 5) to skip header rows
+    for (let i = 7; i < sheetData.length; i++) {
+      const row = sheetData[i]
+      if (!row || row.length === 0) continue
+      
+      const actual1 = row[COLUMN_INDICES.ACTUAL1]?.toString().trim()
+      
+      // Show only rows where Actual1 has value
+      if (actual1 && actual1 !== "") {
+        const lgstNumber = row[COLUMN_INDICES.LGST_NUMBER]?.toString().trim()
+        
+        historyOrders.push({
+          id: i,
+          rowIndex: i + 1,
+          dSrNumber: row[COLUMN_INDICES.DSR_NUMBER] || "",
+          deliveryOrderNo: row[COLUMN_INDICES.DELIVERY_ORDER_NO] || "",
+          partyName: row[COLUMN_INDICES.PARTY_NAME] || "",
+          productName: row[COLUMN_INDICES.PRODUCT_NAME] || "",
+          lgstSrNumber: lgstNumber || `LGST-${String(i + 1).padStart(3, '0')}`,
+          actual1: actual1,
+          actualTruckQty: row[COLUMN_INDICES.ACTUAL_TRUCK_QTY] || "",
+          typeOfTransporting: row[COLUMN_INDICES.TYPE_OF_TRANSPORTING_LOGISTIC] || "",
+          transporterName: row[COLUMN_INDICES.TRANSPORTER_NAME] || "",
+          truckNo: row[COLUMN_INDICES.TRUCK_NO] || "",
+          driverMobileNo: row[COLUMN_INDICES.DRIVER_MOBILE] || "",
+          typeOfRate: row[COLUMN_INDICES.TYPE_OF_RATE] || "",
+          transportRatePerTon: row[COLUMN_INDICES.TRANSPORT_RATE] || "",
+          fixedAmount: row[COLUMN_INDICES.FIXED_AMOUNT] || "",
+        })
+      }
+    }
+    
+    return historyOrders
+  }, [])
+
+  // Generate LGST number
+  const generateLGSTNumber = useCallback(() => {
     if (historyOrders.length === 0) return "LGST-001"
     
-    const lgstNumbers = historyOrders
-      .map(order => order.lgstSrNumber)
-      .filter(lgst => lgst && lgst.match(/^LGST-\d+$/i))
-    
-    if (lgstNumbers.length === 0) return "LGST-001"
-    
     let maxNumber = 0
-    lgstNumbers.forEach(lgst => {
-      const match = lgst.match(/LGST-(\d+)/i)
-      if (match) {
-        const num = parseInt(match[1], 10)
-        if (!isNaN(num) && num > maxNumber) {
-          maxNumber = num
+    for (const order of historyOrders) {
+      if (order.lgstSrNumber) {
+        const match = order.lgstSrNumber.match(/LGST-(\d+)/i)
+        if (match) {
+          const num = parseInt(match[1], 10)
+          if (!isNaN(num) && num > maxNumber) {
+            maxNumber = num
+          }
         }
       }
-    })
+    }
     
     return `LGST-${String(maxNumber + 1).padStart(3, '0')}`
-  }
+  }, [historyOrders])
 
-  const searchFilteredOrders = (ordersList) => {
+  // Filter orders based on search term
+  const searchFilteredOrders = useCallback((ordersList) => {
     if (!searchTerm.trim()) return ordersList
     
-    return ordersList.filter((order) =>
-      Object.values(order).some((value) => 
-        value?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+    const term = searchTerm.toLowerCase()
+    return ordersList.filter((order) => {
+      return Object.values(order).some((value) => 
+        value?.toString().toLowerCase().includes(term)
       )
-    )
-  }
+    })
+  }, [searchTerm])
 
-  const displayOrders = activeTab === "pending" 
-    ? searchFilteredOrders(orders) 
-    : searchFilteredOrders(historyOrders)
+  // Memoized display orders
+  const displayOrders = useMemo(() => {
+    const ordersList = activeTab === "pending" ? orders : historyOrders
+    return searchFilteredOrders(ordersList)
+  }, [activeTab, orders, historyOrders, searchFilteredOrders])
 
-  const handleLogistic = (order) => {
+  const handleLogistic = useCallback((order) => {
     setSelectedOrder(order)
     setFormData({
       transporterName: "",
@@ -259,14 +273,24 @@ export default function LogisticPage({ user }) {
       vehicleNoPlateImage: null,
       biltyNo: "",
       actualTruckQty: "",
-      typeOfTransporting: "", // Reset to empty
+      typeOfTransporting: "",
       typeOfRate: "",
       transportRatePerTon: "",
       fixedAmount: "",
     })
-  }
+  }, [])
 
-  const handleSubmit = async () => {
+  // File to Base64 conversion
+  const fileToBase64 = useCallback((file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = error => reject(error)
+    })
+  }, [])
+
+  const handleSubmit = useCallback(async () => {
     if (!selectedOrder) return
 
     try {
@@ -274,8 +298,6 @@ export default function LogisticPage({ user }) {
       
       const lgstNumber = generateLGSTNumber()
       const now = new Date()
-      
-      // Format date for Actual1 (DD/MM/YYYY)
       const actualDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
       
       let vehicleImageUrl = ""
@@ -307,7 +329,7 @@ export default function LogisticPage({ user }) {
         }
       }
       
-      // Get current row data first
+      // Get current row data
       const response = await fetch(`${SCRIPT_URL}?sheet=DISPATCH`)
       if (!response.ok) throw new Error("Failed to fetch sheet data")
       
@@ -316,55 +338,36 @@ export default function LogisticPage({ user }) {
       
       // Get the current row
       const currentRow = result.data[selectedOrder.rowIndex - 1] || []
-      
-      // Create updated row data (all 35 columns based on your sheet)
       const updatedRow = [...currentRow]
       
       // Ensure we have enough columns
       while (updatedRow.length < 35) updatedRow.push("")
       
-      // DON'T update Planned1 - keep as is
-      // Updated structure:
-      // Column 10: Actual1
-      // Column 11: Delay1 (always "0" except for direct supply)
-      // Column 12: LGST Number
-      
-      // Set Actual1 to current date
-      updatedRow[10] = actualDate // Actual1 (index 10)
-      
-      // Set Delay1 based on transport type
-      if (formData.typeOfTransporting === "Direct supply dont submit the delay") {
-        updatedRow[11] = "" // Leave empty for direct supply
-      } else {
-        updatedRow[11] = "0" // Delay1 (index 11) - always "0" for other types
-      }
-      
-      // Set LGST number
-      updatedRow[12] = lgstNumber // LGST-Sr Number (index 12)
-      
-      // Set other logistic details
-      updatedRow[13] = formData.actualTruckQty || "" // Actual Truck Qty (index 13)
-      updatedRow[14] = formData.typeOfTransporting || "" // Type of Transporting (index 14)
-      updatedRow[15] = formData.transporterName || "" // Transporter Name (index 15)
-      updatedRow[16] = formData.truckNo || "" // Truck No. (index 16)
-      updatedRow[17] = formData.driverMobileNo || "" // Driver Mobile No. (index 17)
-      updatedRow[18] = vehicleImageUrl || "" // Vehicle No. Plate Image (index 18)
-      updatedRow[19] = formData.biltyNo || "" // Bilty No. (index 19)
-      updatedRow[20] = formData.typeOfRate || "" // Type Of Rate (index 20)
+      // Set only the required columns (NO Planned1 or Delay1 updates)
+      updatedRow[COLUMN_INDICES.ACTUAL1] = actualDate // Set actual date
+      updatedRow[COLUMN_INDICES.LGST_NUMBER] = lgstNumber // Set LGST number
+      updatedRow[COLUMN_INDICES.ACTUAL_TRUCK_QTY] = formData.actualTruckQty || ""
+      updatedRow[COLUMN_INDICES.TYPE_OF_TRANSPORTING_LOGISTIC] = formData.typeOfTransporting || ""
+      updatedRow[COLUMN_INDICES.TRANSPORTER_NAME] = formData.transporterName || ""
+      updatedRow[COLUMN_INDICES.TRUCK_NO] = formData.truckNo || ""
+      updatedRow[COLUMN_INDICES.DRIVER_MOBILE] = formData.driverMobileNo || ""
+      updatedRow[COLUMN_INDICES.VEHICLE_IMAGE] = vehicleImageUrl || ""
+      updatedRow[COLUMN_INDICES.BILTY_NO] = formData.biltyNo || ""
+      updatedRow[COLUMN_INDICES.TYPE_OF_RATE] = formData.typeOfRate || ""
       
       // Set rate based on type
       if (formData.typeOfRate === "Per Matric Ton rate") {
-        updatedRow[21] = formData.transportRatePerTon || "" // Transport Rate (index 21)
-        updatedRow[22] = "" // Fixed Amount (index 22)
+        updatedRow[COLUMN_INDICES.TRANSPORT_RATE] = formData.transportRatePerTon || ""
+        updatedRow[COLUMN_INDICES.FIXED_AMOUNT] = ""
       } else if (formData.typeOfRate === "Fixed Amount") {
-        updatedRow[21] = "" // Transport Rate (index 21)
-        updatedRow[22] = formData.fixedAmount || "" // Fixed Amount (index 22)
+        updatedRow[COLUMN_INDICES.TRANSPORT_RATE] = ""
+        updatedRow[COLUMN_INDICES.FIXED_AMOUNT] = formData.fixedAmount || ""
       } else if (formData.typeOfRate === "Ex Factory Transporter") {
-        updatedRow[21] = "0" // Transport Rate (index 21)
-        updatedRow[22] = "0" // Fixed Amount (index 22)
+        updatedRow[COLUMN_INDICES.TRANSPORT_RATE] = "0"
+        updatedRow[COLUMN_INDICES.FIXED_AMOUNT] = "0"
       }
 
-      // Update the row using existing 'update' action
+      // Update the row
       const updateResponse = await fetch(SCRIPT_URL, {
         method: 'POST',
         headers: {
@@ -409,18 +412,9 @@ export default function LogisticPage({ user }) {
     } finally {
       setSubmitting(false)
     }
-  }
+  }, [selectedOrder, formData, generateLGSTNumber, fileToBase64, fetchData])
 
-  const fileToBase64 = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.onload = () => resolve(reader.result)
-      reader.onerror = error => reject(error)
-    })
-  }
-
-  const handleCancel = () => {
+  const handleCancel = useCallback(() => {
     setSelectedOrder(null)
     setFormData({
       transporterName: "",
@@ -434,7 +428,7 @@ export default function LogisticPage({ user }) {
       transportRatePerTon: "",
       fixedAmount: "",
     })
-  }
+  }, [])
 
   if (loading) {
     return (
@@ -505,17 +499,22 @@ export default function LogisticPage({ user }) {
                       <TableHead className="font-semibold text-gray-900 py-4 px-6">Action</TableHead>
                     )}
                     {activeTab === "history" && (
-                      <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">LGST-Sr No</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned Date</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual Date</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Delay</TableHead>
-                      </>
+                      <TableHead className="font-semibold text-gray-900 py-4 px-6">LGST-Sr No</TableHead>
                     )}
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">D-Sr Number</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Delivery Order No.</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Party Name</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Product Name</TableHead>
+                    
+                    {activeTab === "pending" && (
+                      <>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Qty To Be Dispatched</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Type Of Transporting</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Date Of Dispatch</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned Date</TableHead>
+                      </>
+                    )}
+                    
                     {activeTab === "history" && (
                       <>
                         <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual Truck Qty</TableHead>
@@ -533,7 +532,7 @@ export default function LogisticPage({ user }) {
                   {displayOrders.length === 0 ? (
                     <TableRow>
                       <TableCell 
-                        colSpan={activeTab === "pending" ? 6 : 15} 
+                        colSpan={activeTab === "pending" ? 10 : 13} 
                         className="text-center py-8 text-gray-500"
                       >
                         No {activeTab === "pending" ? "pending" : "history"} orders found
@@ -554,22 +553,13 @@ export default function LogisticPage({ user }) {
                             </Button>
                           </TableCell>
                         )}
+                        
                         {activeTab === "history" && (
-                          <>
-                            <TableCell className="py-4 px-6 font-medium text-blue-600">
-                              {order.lgstSrNumber}
-                            </TableCell>
-                            <TableCell className="py-4 px-6">
-                              {order.planned1}
-                            </TableCell>
-                            <TableCell className="py-4 px-6">
-                              {order.actual1}
-                            </TableCell>
-                            <TableCell className="py-4 px-6">
-                              {order.delay1 || "0"}
-                            </TableCell>
-                          </>
+                          <TableCell className="py-4 px-6 font-medium text-blue-600">
+                            {order.lgstSrNumber}
+                          </TableCell>
                         )}
+                        
                         <TableCell className="py-4 px-6 font-medium">
                           {order.dSrNumber}
                         </TableCell>
@@ -582,6 +572,24 @@ export default function LogisticPage({ user }) {
                         <TableCell className="py-4 px-6">
                           {order.productName}
                         </TableCell>
+                        
+                        {activeTab === "pending" && (
+                          <>
+                            <TableCell className="py-4 px-6 font-medium">
+                              {order.qtyToBeDispatched}
+                            </TableCell>
+                            <TableCell className="py-4 px-6">
+                              {order.typeOfTransporting}
+                            </TableCell>
+                            <TableCell className="py-4 px-6">
+                              {order.dateOfDispatch}
+                            </TableCell>
+                            <TableCell className="py-4 px-6">
+                              {order.planned1}
+                            </TableCell>
+                          </>
+                        )}
+                        
                         {activeTab === "history" && (
                           <>
                             <TableCell className="py-4 px-6">{order.actualTruckQty}</TableCell>
@@ -627,9 +635,9 @@ export default function LogisticPage({ user }) {
                           <p className="text-xs text-gray-500">
                             DO: {order.deliveryOrderNo} | DS: {order.dSrNumber}
                           </p>
-                          {activeTab === "history" && (
+                          {activeTab === "pending" && (
                             <p className="text-xs text-gray-500 mt-1">
-                              Planned: {order.planned1} | Actual: {order.actual1}
+                              Qty: {order.qtyToBeDispatched} | Type: {order.typeOfTransporting}
                             </p>
                           )}
                         </div>
@@ -654,12 +662,22 @@ export default function LogisticPage({ user }) {
                           <span className="text-gray-600">Product:</span>
                           <span>{order.productName}</span>
                         </div>
-                        {activeTab === "history" && (
+                        
+                        {activeTab === "pending" && (
                           <>
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Delay:</span>
-                              <span>{order.delay1 || "0"}</span>
+                              <span className="text-gray-600">Dispatch Date:</span>
+                              <span>{order.dateOfDispatch}</span>
                             </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-600">Planned Date:</span>
+                              <span>{order.planned1}</span>
+                            </div>
+                          </>
+                        )}
+                        
+                        {activeTab === "history" && (
+                          <>
                             <div className="flex justify-between">
                               <span className="text-gray-600">Transport Type:</span>
                               <span>{order.typeOfTransporting}</span>
@@ -696,7 +714,7 @@ export default function LogisticPage({ user }) {
         </CardContent>
       </Card>
 
-      {/* Simplified Logistic Form Modal */}
+      {/* Logistic Form Modal */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -708,7 +726,6 @@ export default function LogisticPage({ user }) {
             </CardHeader>
             <CardContent className="p-4">
               <div className="space-y-4">
-                {/* Minimal Order Info */}
                 <div className="bg-gray-50 p-3 rounded-lg">
                   <p className="font-medium">{selectedOrder.partyName}</p>
                   <p className="text-sm text-gray-600">
@@ -717,9 +734,6 @@ export default function LogisticPage({ user }) {
                   <p className="text-sm text-gray-600">Product: {selectedOrder.productName}</p>
                   <p className="text-sm text-blue-600 font-medium mt-1">
                     LGST Number: {generateLGSTNumber()}
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Planned Date: {selectedOrder.planned1}
                   </p>
                 </div>
 
@@ -745,11 +759,6 @@ export default function LogisticPage({ user }) {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-gray-500">
-                      {formData.typeOfTransporting === "Direct supply dont submit the delay" 
-                        ? "Delay will not be submitted"
-                        : "Delay will be set to '0'"}
-                    </p>
                   </div>
                   
                   <div className="space-y-2">
@@ -776,15 +785,11 @@ export default function LogisticPage({ user }) {
                         <SelectValue placeholder="Select Transporter" />
                       </SelectTrigger>
                       <SelectContent>
-                        {transporters.length > 0 ? (
-                          transporters.map((transporter, index) => (
-                            <SelectItem key={index} value={transporter}>
-                              {transporter}
-                            </SelectItem>
-                          ))
-                        ) : (
-                          <SelectItem value="Owned Truck">Owned Truck</SelectItem>
-                        )}
+                        {transporterOptions.map((transporter, index) => (
+                          <SelectItem key={index} value={transporter}>
+                            {transporter}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

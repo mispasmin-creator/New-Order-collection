@@ -56,6 +56,38 @@ export default function BiltyEntryPage({ user }) {
     }
   }
 
+  const formatDisplayDate = (dateStr) => {
+  if (!dateStr) return "N/A"
+  
+  try {
+    // Check if it's an ISO date format like "2026-01-22T18:30:00.000Z"
+    if (dateStr.includes('T')) {
+      // Remove any trailing "Z" or timezone
+      const cleanDateStr = dateStr.replace(/\.\d+Z?$/, '').replace('Z', '')
+      const date = new Date(cleanDateStr)
+      
+      if (!isNaN(date.getTime())) {
+        // Format as dd/mm/yyyy
+        const day = date.getDate().toString().padStart(2, '0')
+        const month = (date.getMonth() + 1).toString().padStart(2, '0')
+        const year = date.getFullYear()
+        return `${day}/${month}/${year}`
+      }
+    }
+    
+    // If it's already in dd/mm/yyyy format, return as is
+    if (dateStr.includes('/')) {
+      return dateStr
+    }
+    
+    return dateStr
+  } catch (error) {
+    console.error("Error formatting date:", error)
+    return dateStr
+  }
+}
+
+
   // Get pending orders from DELIVERY sheet where Planned3 has value but Actual3 is empty
   const getPendingOrders = (sheetData) => {
     if (!sheetData || sheetData.length < 2) return []
@@ -498,7 +530,7 @@ export default function BiltyEntryPage({ user }) {
                     <TableHead className="font-semibold text-gray-900 py-4 px-6">Product Name</TableHead>
                     {activeTab === "pending" && (
                       <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned3 Date</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned Date</TableHead>
                         <TableHead className="font-semibold text-gray-900 py-4 px-6">Transporter</TableHead>
                         <TableHead className="font-semibold text-gray-900 py-4 px-6">Vehicle No.</TableHead>
                         <TableHead className="font-semibold text-gray-900 py-4 px-6">Existing Bilty No.</TableHead>
@@ -506,7 +538,7 @@ export default function BiltyEntryPage({ user }) {
                     )}
                     {activeTab === "history" && (
                       <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual3 Date</TableHead>
+                        <TableHead className="font-semibold text-gray-900 py-4 px-6"> Date</TableHead>
                         <TableHead className="font-semibold text-gray-900 py-4 px-6">Bilty No.</TableHead>
                         <TableHead className="font-semibold text-gray-900 py-4 px-6">Bilty Copy</TableHead>
                       </>
@@ -544,7 +576,7 @@ export default function BiltyEntryPage({ user }) {
                           </Badge>
                         </TableCell>
                         <TableCell className="py-4 px-6">
-                          {order.billDate ? order.billDate.split(' ')[0] : "N/A"}
+                        {formatDisplayDate(order.billDate)}
                         </TableCell>
                         <TableCell className="py-4 px-6">
                           <span className="font-medium">{order.deliveryOrderNo}</span>
@@ -583,13 +615,20 @@ export default function BiltyEntryPage({ user }) {
                                 <span className="text-gray-400 text-sm">N/A</span>
                               )}
                             </TableCell>
-                            <TableCell className="py-4 px-6">
-                              {order.hasBiltyCopy ? (
-                                <Badge className="bg-green-500 text-white text-xs">Uploaded</Badge>
-                              ) : (
-                                <span className="text-gray-400 text-xs">No copy</span>
-                              )}
-                            </TableCell>
+                           <TableCell className="py-4 px-6">
+                          {order.hasBiltyCopy ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                              onClick={() => window.open(order.biltyCopy, "_blank")}
+                            >
+                              View
+                            </Button>
+                          ) : (
+                            <span className="text-gray-400 text-xs">No copy</span>
+                          )}
+                        </TableCell>
                           </>
                         )}
                       </TableRow>
@@ -644,10 +683,15 @@ export default function BiltyEntryPage({ user }) {
                                 </Badge>
                               )}
                               {order.hasBiltyCopy && (
-                                <Badge className="bg-green-500 text-white text-xs">
-                                  Copy
-                                </Badge>
-                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-blue-600 border-blue-600 text-xs"
+                                onClick={() => window.open(order.biltyCopy, "_blank")}
+                              >
+                                View
+                              </Button>
+                            )}
                             </div>
                           )}
                         </div>
@@ -660,7 +704,7 @@ export default function BiltyEntryPage({ user }) {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Bill Date:</span>
-                          <span>{order.billDate ? order.billDate.split(' ')[0] : "N/A"}</span>
+                        {formatDisplayDate(order.billDate)}
                         </div>
                         {activeTab === "pending" && (
                           <>

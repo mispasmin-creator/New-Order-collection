@@ -18,26 +18,46 @@ import {
   LogOut,
   User,
   X,
-                                                                                                 
 } from "lucide-react"
 
-const menuItems = [
-  { name: "Dashboard", icon: LayoutDashboard },
-  { name: "Order", icon: ShoppingCart },
-  { name: "Check PO", icon: FileCheck },
-  { name: "Received Accounts", icon: FileText },
-  { name: "Check for Delivery", icon: Truck },
-  { name: "Dispatch Planning", icon: Calendar },
-  { name: "Logistic", icon: Package },
-  { name: "Load Material", icon: Truck },
-  { name: "Invoice", icon: Receipt },   
-  { name: "Sales Form", icon: FileText },
-  { name: "Wetman Entry", icon: Scale },
-  { name: "Fullkiting", icon: Layers },
-  { name: "Bilty Entry", icon: FileImage },
-  { name: "CRM", icon: Layers },
-  { name: "Test Report", icon: CheckSquare },
-  { name: "MATERIAL RECEIPT", icon: Archive },
+// Map page names to icons
+const pageIcons = {
+  "Dashboard": LayoutDashboard,
+  "Order": ShoppingCart,
+  "Check PO": FileCheck,
+  "Received Accounts": FileText,
+  "Check for Delivery": Truck,
+  "Dispatch Planning": Calendar,
+  "Logistic": Package,
+  "Load Material": Truck,
+  "Invoice": Receipt,
+  "Sales Form": FileText,
+  "Wetman Entry": Scale,
+  "Fullkiting": Layers,
+  "Bilty Entry": FileImage,
+  "CRM": Layers,
+  // "Test Report": CheckSquare,
+  "MATERIAL RECEIPT": Archive,
+}
+
+// Default page order for sorting
+const defaultPageOrder = [
+  "Dashboard",
+  "Order",
+  "Check PO",
+  "Received Accounts",
+  "Check for Delivery",
+  "Dispatch Planning",
+  "Logistic",
+  "Load Material",
+  "Invoice",
+  "Sales Form",
+  "Wetman Entry",
+  "Fullkiting",
+  "Bilty Entry",
+  "CRM",
+  "Test Report",
+  "MATERIAL RECEIPT"
 ]
 
 export default function Sidebar({ user, currentPage, setCurrentPage, onLogout, sidebarOpen, setSidebarOpen }) {
@@ -46,11 +66,26 @@ export default function Sidebar({ user, currentPage, setCurrentPage, onLogout, s
     setSidebarOpen(false) // Close sidebar on mobile after selection
   }
 
+  // Get user's accessible pages and sort them
+  const userPages = (user.pageAccess || [])
+    .filter(page => pageIcons[page]) // Only show pages with icons
+    .sort((a, b) => {
+      const indexA = defaultPageOrder.indexOf(a);
+      const indexB = defaultPageOrder.indexOf(b);
+      return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+    });
+
   return (
     <>
       {/* Desktop Sidebar */}
       <div className="hidden lg:flex w-64 bg-white shadow-lg flex-col">
-        <SidebarContent user={user} currentPage={currentPage} onPageChange={handlePageChange} onLogout={onLogout} />
+        <SidebarContent 
+          user={user} 
+          currentPage={currentPage} 
+          onPageChange={handlePageChange} 
+          onLogout={onLogout} 
+          userPages={userPages}
+        />
       </div>
 
       {/* Mobile Sidebar */}
@@ -70,6 +105,7 @@ export default function Sidebar({ user, currentPage, setCurrentPage, onLogout, s
           currentPage={currentPage}
           onPageChange={handlePageChange}
           onLogout={onLogout}
+          userPages={userPages}
           isMobile={true}
         />
       </div>
@@ -77,7 +113,7 @@ export default function Sidebar({ user, currentPage, setCurrentPage, onLogout, s
   )
 }
 
-function SidebarContent({ user, currentPage, onPageChange, onLogout, isMobile = false }) {
+function SidebarContent({ user, currentPage, onPageChange, onLogout, userPages, isMobile = false }) {
   return (
     <div className="flex flex-col h-full">
       {/* Header - only show on desktop */}
@@ -90,6 +126,9 @@ function SidebarContent({ user, currentPage, onPageChange, onLogout, isMobile = 
               <p className="text-sm font-medium text-gray-700 truncate">{user.name}</p>
               <p className="text-xs text-gray-500 truncate">
                 {user.firm} - {user.role}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                Access: {userPages.length} pages
               </p>
             </div>
           </div>
@@ -108,6 +147,9 @@ function SidebarContent({ user, currentPage, onPageChange, onLogout, isMobile = 
               <p className="text-xs text-gray-500 truncate">
                 {user.firm} - {user.role}
               </p>
+              <p className="text-xs text-gray-400 mt-1">
+                Access: {userPages.length} pages
+              </p>
             </div>
           </div>
         </div>
@@ -116,25 +158,31 @@ function SidebarContent({ user, currentPage, onPageChange, onLogout, isMobile = 
       {/* Navigation */}
       <nav className="flex-1 p-4 overflow-y-auto">
         <ul className="space-y-1">
-          {menuItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <li key={item.name}>
-                <Button
-                  variant={currentPage === item.name ? "default" : "ghost"}
-                  className={`w-full justify-start text-left h-10 ${
-                    currentPage === item.name
-                      ? "bg-blue-600 text-white hover:bg-blue-700"
-                      : "text-gray-700 hover:bg-gray-100"
-                  }`}
-                  onClick={() => onPageChange(item.name)}
-                >
-                  <Icon className="mr-3 h-4 w-4 flex-shrink-0" />
-                  <span className="truncate">{item.name}</span>
-                </Button>
-              </li>
-            )
-          })}
+          {userPages.length > 0 ? (
+            userPages.map((pageName) => {
+              const Icon = pageIcons[pageName] || FileText;
+              return (
+                <li key={pageName}>
+                  <Button
+                    variant={currentPage === pageName ? "default" : "ghost"}
+                    className={`w-full justify-start text-left h-10 ${
+                      currentPage === pageName
+                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                    onClick={() => onPageChange(pageName)}
+                  >
+                    <Icon className="mr-3 h-4 w-4 flex-shrink-0" />
+                    <span className="truncate">{pageName}</span>
+                  </Button>
+                </li>
+              )
+            })
+          ) : (
+            <li className="text-center py-4 text-gray-500 text-sm">
+              No pages accessible. Contact administrator.
+            </li>
+          )}
         </ul>
       </nav>
 

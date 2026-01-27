@@ -6,14 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { X, Search, CheckCircle2, Loader2, Calendar } from "lucide-react"
-import { format } from "date-fns"
-import { Calendar as CalendarComponent } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { cn } from "@/lib/utils"
+import { X, Search, CheckCircle2, Loader2 } from "lucide-react"
 
 const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec"
 
@@ -25,10 +18,6 @@ export default function CRMDonePage({ user }) {
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
-  const [formData, setFormData] = useState({
-    status: "",
-    remarks: "",
-  })
 
   useEffect(() => {
     fetchData()
@@ -57,6 +46,80 @@ export default function CRMDonePage({ user }) {
       console.error("Error fetching data:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Format date to dd/mm/yyyy - SAFE VERSION
+  const formatDate = (dateString) => {
+    // Handle all possible cases
+    if (!dateString) return "N/A"
+    
+    // Convert to string if it's not already
+    const str = typeof dateString === 'string' ? dateString : String(dateString)
+    
+    // Trim if it's a string, otherwise use as is
+    const trimmedStr = str.trim ? str.trim() : str
+    
+    if (trimmedStr === "" || trimmedStr === "N/A" || trimmedStr === "null" || trimmedStr === "undefined") {
+      return "N/A"
+    }
+    
+    try {
+      // Check if it's already in dd/mm/yyyy format
+      if (trimmedStr.includes('/')) {
+        const datePart = trimmedStr.split(' ')[0]
+        const parts = datePart.split('/')
+        
+        if (parts.length >= 3) {
+          let [day, month, year] = parts
+          
+          // Clean up any extra characters
+          day = day.replace(/\D/g, '')
+          month = month.replace(/\D/g, '')
+          year = year.replace(/\D/g, '').slice(0, 4)
+          
+          // If year is 2 digits, assume 20xx
+          if (year.length === 2) {
+            year = `20${year}`
+          }
+          
+          // Pad day and month with leading zeros
+          day = day.padStart(2, '0')
+          month = month.padStart(2, '0')
+          
+          return `${day}/${month}/${year}`
+        }
+      }
+      
+      // Try parsing various date formats
+      let dateToParse = trimmedStr
+      
+      // Try to parse as Date object
+      const date = new Date(dateToParse)
+      
+      if (!isNaN(date.getTime())) {
+        const day = date.getDate().toString().padStart(2, '0')
+        const month = (date.getMonth() + 1).toString().padStart(2, '0')
+        const year = date.getFullYear().toString()
+        return `${day}/${month}/${year}`
+      }
+      
+      // If parsing failed, try to extract date-like pattern
+      const dateMatch = trimmedStr.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/)
+      if (dateMatch) {
+        let [_, day, month, year] = dateMatch
+        day = day.padStart(2, '0')
+        month = month.padStart(2, '0')
+        if (year.length === 2) year = `20${year}`
+        return `${day}/${month}/${year}`
+      }
+      
+      // Return the original string (or first part) if all else fails
+      return trimmedStr.split(' ')[0] || "N/A"
+      
+    } catch (error) {
+      console.error("Error formatting date:", error, dateString)
+      return trimmedStr.split(' ')[0] || "N/A"
     }
   }
 
@@ -292,10 +355,6 @@ export default function CRMDonePage({ user }) {
 
   const handleCRMDone = (order) => {
     setSelectedOrder(order)
-    setFormData({
-      status: "Completed",
-      remarks: "",
-    })
   }
 
   const handleSubmit = async () => {
@@ -352,10 +411,6 @@ export default function CRMDonePage({ user }) {
       if (updateResult.success) {
         await fetchData()
         setSelectedOrder(null)
-        setFormData({
-          status: "",
-          remarks: "",
-        })
         
         alert(`✓ CRM Done marked successfully!\nActual4 Date: ${actual4Date.split(' ')[0]}`)
       } else {
@@ -372,10 +427,6 @@ export default function CRMDonePage({ user }) {
 
   const handleCancel = () => {
     setSelectedOrder(null)
-    setFormData({
-      status: "",
-      remarks: "",
-    })
   }
 
   if (loading) {
@@ -498,7 +549,7 @@ export default function CRMDonePage({ user }) {
                           </Badge>
                         </TableCell>
                         <TableCell className="py-4 px-6">
-                          {order.billDate ? order.billDate.split(' ')[0] : "N/A"}
+                          {formatDate(order.billDate)}
                         </TableCell>
                         <TableCell className="py-4 px-6">
                           <span className="font-medium">{order.deliveryOrderNo}</span>
@@ -512,7 +563,7 @@ export default function CRMDonePage({ user }) {
                         <TableCell className="py-4 px-6 font-medium">{order.quantityDelivered}</TableCell>
                         {activeTab === "pending" && (
                           <>
-                            <TableCell className="py-4 px-6">{order.planned4 || "N/A"}</TableCell>
+                            <TableCell className="py-4 px-6">{formatDate(order.planned4)}</TableCell>
                             <TableCell className="py-4 px-6">₹{order.rateOfMaterial || "0"}</TableCell>
                             <TableCell className="py-4 px-6 font-bold">
                               ₹{(
@@ -525,7 +576,7 @@ export default function CRMDonePage({ user }) {
                         {activeTab === "history" && (
                           <>
                             <TableCell className="py-4 px-6">
-                              {order.actual4 ? order.actual4.split(' ')[0] : "N/A"}
+                              {formatDate(order.actual4)}
                             </TableCell>
                             <TableCell className="py-4 px-6">
                               <Badge className="bg-green-500 text-white">
@@ -555,7 +606,7 @@ export default function CRMDonePage({ user }) {
                         <div>
                           {activeTab === "history" && (
                             <p className="text-green-600 font-medium text-sm mb-1">
-                              Actual4: {order.actual4 ? order.actual4.split(' ')[0] : "N/A"}
+                              Actual4: {formatDate(order.actual4)}
                             </p>
                           )}
                           <p className="font-semibold text-gray-900">{order.partyName}</p>
@@ -564,7 +615,7 @@ export default function CRMDonePage({ user }) {
                           </p>
                           {activeTab === "pending" && (
                             <p className="text-xs text-gray-500 mt-1">
-                              Planned4: {order.planned4 || "N/A"}
+                              Planned4: {formatDate(order.planned4)}
                             </p>
                           )}
                         </div>
@@ -593,7 +644,7 @@ export default function CRMDonePage({ user }) {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Bill Date:</span>
-                          <span>{order.billDate ? order.billDate.split(' ')[0] : "N/A"}</span>
+                          <span>{formatDate(order.billDate)}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Quantity:</span>
@@ -619,7 +670,7 @@ export default function CRMDonePage({ user }) {
                         {activeTab === "history" && (
                           <div className="flex justify-between">
                             <span className="text-gray-600">Planned4:</span>
-                            <span>{order.planned4 || "N/A"}</span>
+                            <span>{formatDate(order.planned4)}</span>
                           </div>
                         )}
                       </div>
@@ -636,7 +687,7 @@ export default function CRMDonePage({ user }) {
         </CardContent>
       </Card>
 
-      {/* CRM Done Form Modal */}
+      {/* Simplified CRM Done Form Modal */}
       {selectedOrder && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -646,96 +697,89 @@ export default function CRMDonePage({ user }) {
                 <X className="h-5 w-5" />
               </Button>
             </CardHeader>
-            <CardContent className="p-4">
-              <div className="space-y-4">
+            <CardContent className="p-6">
+              <div className="space-y-6">
                 {/* Order Info */}
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="font-medium">{selectedOrder.partyName}</p>
-                  <p className="text-sm text-gray-600">
-                    Bill: {selectedOrder.billNo} | DO: {selectedOrder.deliveryOrderNo}
-                  </p>
-                  <p className="text-sm text-gray-600">Product: {selectedOrder.productName}</p>
-                  <p className="text-sm text-gray-600">
-                    Quantity: {selectedOrder.quantityDelivered} | Rate: ₹{selectedOrder.rateOfMaterial || "0"}
-                  </p>
-                  <p className="text-sm font-bold">
-                    Total: ₹{(
-                      parseFloat(selectedOrder.quantityDelivered || 0) * 
-                      parseFloat(selectedOrder.rateOfMaterial || 0)
-                    ).toFixed(2)}
-                  </p>
-                  <p className="text-sm text-green-600 font-medium mt-1">
-                    Planned4: {selectedOrder.planned4}
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Label className="text-sm">Status *</Label>
-                    <Select
-                      value={formData.status}
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, status: value }))}
-                      disabled={submitting}
-                    >
-                      <SelectTrigger className="h-10">
-                        <SelectValue placeholder="Select Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Completed">Completed</SelectItem>
-                        <SelectItem value="Pending">Pending</SelectItem>
-                        <SelectItem value="On Hold">On Hold</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Confirm CRM Completion
+                    </h3>
                   </div>
                   
-                  <div className="space-y-2">
-                    <Label className="text-sm">Remarks</Label>
-                    <Textarea
-                      value={formData.remarks}
-                      onChange={(e) => setFormData(prev => ({ ...prev, remarks: e.target.value }))}
-                      placeholder="Enter any remarks"
-                      disabled={submitting}
-                      className="min-h-[80px]"
-                    />
+                  <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Party Name:</span>
+                      <span className="font-medium">{selectedOrder.partyName}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Bill No:</span>
+                      <Badge className="bg-green-500 text-white">
+                        {selectedOrder.billNo}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Delivery Order No:</span>
+                      <span className="font-medium">{selectedOrder.deliveryOrderNo}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Product:</span>
+                      <span>{selectedOrder.productName}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Quantity:</span>
+                      <span className="font-medium">{selectedOrder.quantityDelivered}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Planned4 Date:</span>
+                      <span className="font-medium text-blue-600">{formatDate(selectedOrder.planned4)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Total Amount:</span>
+                      <span className="font-bold">
+                        ₹{(
+                          parseFloat(selectedOrder.quantityDelivered || 0) * 
+                          parseFloat(selectedOrder.rateOfMaterial || 0)
+                        ).toFixed(2)}
+                      </span>
+                    </div>
                   </div>
                   
-                  <div className="p-3 bg-blue-50 rounded-lg">
-                    <p className="text-sm font-medium text-blue-800">
-                      Actual4 will be set to: {format(new Date(), "dd/MM/yyyy")}
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                    <p className="text-sm font-medium text-blue-800 text-center">
+                      Actual4 will be set to: <span className="font-bold">{formatDate(new Date())}</span>
                     </p>
-                    <p className="text-xs text-blue-600 mt-1">
-                      Delay4 will be automatically calculated if needed
+                    <p className="text-xs text-blue-600 mt-1 text-center">
+                      Delay4 will be automatically calculated
                     </p>
                   </div>
                 </div>
 
-                <div className="border-t pt-4">
-                  <div className="flex flex-col gap-3">
-                    <Button 
-                      variant="outline" 
-                      onClick={handleCancel} 
-                      disabled={submitting}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      onClick={handleSubmit} 
-                      className="bg-indigo-600 hover:bg-indigo-700"
-                      disabled={
-                        !formData.status ||
-                        submitting
-                      }
-                    >
-                      {submitting ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Submitting...
-                        </>
-                      ) : (
-                        `Mark as CRM Done`
-                      )}
-                    </Button>
-                  </div>
+                <div className="space-y-4 pt-2">
+                  <Button 
+                    onClick={handleSubmit} 
+                    className="w-full bg-green-600 hover:bg-green-700 h-12 text-lg"
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      '✓ Mark as CRM Done'
+                    )}
+                  </Button>
+                  
+                  <Button 
+                    onClick={handleCancel} 
+                    className="w-full h-12 text-lg"
+                    variant="outline"
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </Button>
                 </div>
               </div>
             </CardContent>

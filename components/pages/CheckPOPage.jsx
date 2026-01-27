@@ -24,7 +24,6 @@ import {
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ScrollArea } from "@/components/ui/scroll-area"
 
 export default function CheckPOPage({ user, onNavigate }) {
   const [orders, setOrders] = useState([])
@@ -788,14 +787,14 @@ export default function CheckPOPage({ user, onNavigate }) {
               </Tabs>
             </div>
 
-            {/* Desktop Table - Show only on medium screens and above */}
-            <div className="hidden md:block">
-              <ScrollArea className="h-[500px]">
-                <Table>
-                  <TableHeader className="sticky top-0 bg-white z-10">
-                    <TableRow className="bg-gray-50 border-b border-gray-200">
+            {/* Table with Horizontal Scroll */}
+            <div className="relative overflow-x-auto">
+              <div className="min-w-[1400px]"> {/* Increased minimum width for horizontal scroll */}
+                <Table className="w-full">
+                  <TableHeader className="bg-gray-50">
+                    <TableRow>
                       {activeTab === "pending" && (
-                        <TableHead className="sticky left-0 bg-gray-50 z-20 w-12 px-4">
+                        <TableHead className="w-12 px-4">
                           <Checkbox
                             checked={selectedOrders.length > 0 && selectedOrders.length === filteredOrders.length}
                             onCheckedChange={handleSelectAll}
@@ -803,44 +802,35 @@ export default function CheckPOPage({ user, onNavigate }) {
                         </TableHead>
                       )}
                       {activeTab === "pending" && (
-                        <TableHead className="font-semibold text-gray-900 px-4 min-w-[180px]">Expected Delivery</TableHead>
+                        <TableHead className="px-4 min-w-[180px]">Expected Delivery</TableHead>
                       )}
-                      <TableHead className="font-semibold text-gray-900 px-4 min-w-[120px]">DO Number</TableHead>
-                      <TableHead className="font-semibold text-gray-900 px-4 min-w-[100px]">Firm</TableHead>
-                      <TableHead className="font-semibold text-gray-900 px-4 min-w-[120px]">PO Number</TableHead>
-                      <TableHead className="font-semibold text-gray-900 px-4 min-w-[100px]">Party Name</TableHead>
-                      <TableHead className="font-semibold text-gray-900 px-4 min-w-[120px]">Product</TableHead>
-                      <TableHead className="font-semibold text-gray-900 px-4 min-w-[80px]">Qty</TableHead>
-                      <TableHead className="font-semibold text-gray-900 px-4 min-w-[100px]">Total Value</TableHead>
-                      <TableHead className="font-semibold text-gray-900 px-4 min-w-[100px]">Planned Date</TableHead>
+                      <TableHead className="px-4 min-w-[120px]">DO Number</TableHead>
+                      <TableHead className="px-4 min-w-[100px]">Firm</TableHead>
+                      <TableHead className="px-4 min-w-[120px]">PO Number</TableHead>
+                      <TableHead className="px-4 min-w-[100px]">Party Name</TableHead>
+                      <TableHead className="px-4 min-w-[120px]">Product Name</TableHead>
+                      <TableHead className="px-4 min-w-[80px]">Qty</TableHead>
+                      <TableHead className="px-4 min-w-[100px]">Total Value</TableHead>
+                      <TableHead className="px-4 min-w-[100px]">Planned Date</TableHead>
                       {activeTab === "history" && (
-                        <TableHead className="font-semibold text-gray-900 px-4 min-w-[120px]">Delivered On</TableHead>
+                        <TableHead className="px-4 min-w-[120px]">Delivered On</TableHead>
                       )}
-                      <TableHead className="font-semibold text-gray-900 px-4 w-12">Details</TableHead>
+                      <TableHead className="px-4 w-12">Details</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredOrders.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={12} className="text-center py-12 text-gray-500">
+                        <TableCell 
+                          colSpan={activeTab === "pending" ? 12 : 11} 
+                          className="text-center py-12 text-gray-500"
+                        >
                           <div className="flex flex-col items-center gap-2">
                             <Search className="w-12 h-12 text-gray-300" />
                             <p className="text-lg">No orders found</p>
                             <p className="text-sm text-gray-400">
                               {searchTerm ? "Try a different search term" : "No data available"}
                             </p>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => {
-                                setSearchTerm("")
-                                setFilterFirm("all")
-                                fetchData(true)
-                              }}
-                              className="mt-2"
-                            >
-                              Clear Filters
-                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -849,12 +839,12 @@ export default function CheckPOPage({ user, onNavigate }) {
                         <>
                           <TableRow 
                             key={order.id} 
-                            className={`hover:bg-gray-50 transition-colors border-b border-gray-100 ${
+                            className={`hover:bg-gray-50 transition-colors ${
                               selectedOrders.includes(order.id) ? "bg-blue-50" : ""
                             }`}
                           >
                             {activeTab === "pending" && (
-                              <TableCell className="sticky left-0 bg-white z-10 px-4">
+                              <TableCell className="px-4">
                                 <Checkbox
                                   checked={selectedOrders.includes(order.id)}
                                   onCheckedChange={(checked) => handleOrderSelection(order.id, checked)}
@@ -862,7 +852,7 @@ export default function CheckPOPage({ user, onNavigate }) {
                               </TableCell>
                             )}
                             {activeTab === "pending" && (
-                              <TableCell className="sticky left-12 bg-white z-10 px-4 min-w-[180px]">
+                              <TableCell className="px-4 min-w-[180px]">
                                 <Input
                                   type="date"
                                   disabled={!selectedOrders.includes(order.id)}
@@ -873,28 +863,24 @@ export default function CheckPOPage({ user, onNavigate }) {
                               </TableCell>
                             )}
                             <TableCell className="px-4 min-w-[120px]">
-                              <Badge variant="outline" className="rounded-md bg-gray-50 text-xs">
+                              <Badge variant="outline" className="rounded-md bg-gray-50">
                                 {order.doNumber}
                               </Badge>
                             </TableCell>
                             <TableCell className="px-4 min-w-[100px]">
                               <div className="flex items-center gap-2">
                                 <Building className="w-3 h-3 text-gray-500" />
-                                <span className="truncate max-w-[80px]">{order.firmName}</span>
+                                <span className="truncate">{order.firmName}</span>
                               </div>
                             </TableCell>
                             <TableCell className="px-4 min-w-[120px] font-medium">
                               {order.partyPONumber}
                             </TableCell>
                             <TableCell className="px-4 min-w-[100px]">
-                              <div className="truncate max-w-[100px]" title={order.partyName}>
-                                {order.partyName}
-                              </div>
+                              <div className="truncate">{order.partyName}</div>
                             </TableCell>
                             <TableCell className="px-4 min-w-[120px]">
-                              <div className="truncate max-w-[120px]" title={order.productName}>
-                                {order.productName}
-                              </div>
+                              <div className="truncate">{order.productName}</div>
                             </TableCell>
                             <TableCell className="px-4 min-w-[80px] font-bold">
                               {order.quantity}
@@ -931,7 +917,7 @@ export default function CheckPOPage({ user, onNavigate }) {
                           </TableRow>
                           {expandedRow === order.id && (
                             <TableRow>
-                              <TableCell colSpan={12} className="p-0 border-b">
+                              <TableCell colSpan={activeTab === "pending" ? 12 : 11} className="p-0">
                                 <div className="p-4">
                                   {renderOrderDetails(order)}
                                 </div>
@@ -943,140 +929,10 @@ export default function CheckPOPage({ user, onNavigate }) {
                     )}
                   </TableBody>
                 </Table>
-              </ScrollArea>
-            </div>
-
-            {/* Mobile Card View - Show on small screens */}
-            <div className="md:hidden">
-              <div className="p-4 space-y-4 max-h-[600px] overflow-y-auto">
-                {filteredOrders.length === 0 ? (
-                  <div className="text-center py-12 text-gray-500">
-                    <Search className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                    <p className="text-lg">No orders found</p>
-                    <p className="text-sm text-gray-400 mb-4">
-                      {searchTerm ? "Try a different search term" : "No data available"}
-                    </p>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => {
-                        setSearchTerm("")
-                        setFilterFirm("all")
-                        fetchData(true)
-                      }}
-                    >
-                      Clear Filters
-                    </Button>
-                  </div>
-                ) : (
-                  filteredOrders.map((order) => (
-                    <Card 
-                      key={order.id} 
-                      className={`border-2 ${selectedOrders.includes(order.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
-                    >
-                      <CardContent className="p-4">
-                        {/* Header */}
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-3 flex-1">
-                            {activeTab === "pending" && (
-                              <Checkbox
-                                checked={selectedOrders.includes(order.id)}
-                                onCheckedChange={(checked) => handleOrderSelection(order.id, checked)}
-                              />
-                            )}
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge variant="outline" className="text-xs font-mono">
-                                  {order.doNumber}
-                                </Badge>
-                                <Badge className="rounded-full bg-blue-100 text-blue-800 border-blue-200 text-xs">
-                                  {order.firmName}
-                                </Badge>
-                              </div>
-                              <p className="text-sm font-medium text-gray-900">{order.partyName}</p>
-                              <p className="text-xs text-gray-500">PO: {order.partyPONumber}</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Main Details */}
-                        <div className="space-y-3">
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <p className="text-xs text-gray-600">Product</p>
-                              <p className="font-medium text-sm truncate">{order.productName}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-600">Contact</p>
-                              <p className="font-medium text-sm">{order.contactPersonName}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-600">Quantity</p>
-                              <p className="font-bold text-sm">{order.quantity}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-gray-600">Total Value</p>
-                              <p className="font-bold text-sm text-green-600">₹{order.totalPOValue.toLocaleString()}</p>
-                            </div>
-                          </div>
-
-                          {/* Dates Section */}
-                          <div className="pt-3 border-t">
-                            <div className="flex justify-between items-center mb-2">
-                              <div>
-                                <p className="text-xs text-gray-600">Planned Date</p>
-                                <p className="text-sm font-medium">{order.plannedDate}</p>
-                              </div>
-                              {order.actualDate ? (
-                                <Badge className="bg-green-500 text-white text-xs">
-                                  Delivered: {order.actualDate}
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-amber-600 text-xs">
-                                  Pending
-                                </Badge>
-                              )}
-                            </div>
-
-                            {activeTab === "pending" && (
-                              <div className="mt-3">
-                                <label className="text-xs font-medium text-gray-700 flex items-center gap-1 mb-1">
-                                  <Calendar className="w-3 h-3" />
-                                  Expected Delivery Date
-                                </label>
-                                <Input
-                                  type="date"
-                                  disabled={!selectedOrders.includes(order.id)}
-                                  value={deliveryDates[order.id] || ""}
-                                  onChange={(e) => handleDeliveryDateChange(order.id, e.target.value)}
-                                  className="h-9 text-sm w-full"
-                                />
-                              </div>
-                            )}
-
-                            {activeTab === "history" && (
-                              <div>
-                                <p className="text-xs text-gray-600">Expected Delivery:</p>
-                                <Badge className="mt-1 bg-green-500 text-white text-xs">
-                                  {order.expectedDeliveryDate}
-                                </Badge>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Show all details by default */}
-                          <div className="pt-3 border-t">
-                            {renderOrderDetails(order)}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
               </div>
             </div>
 
-            {/* Footer */}
+            {/* Footer - Outside the scrollable area */}
             <div className="px-4 sm:px-6 py-3 bg-gray-50 text-sm text-gray-600 border-t border-gray-200">
               <div className="flex flex-col sm:flex-row justify-between items-center gap-2">
                 <div className="text-center sm:text-left">
@@ -1115,7 +971,7 @@ export default function CheckPOPage({ user, onNavigate }) {
                     className="text-xs flex items-center gap-1"
                   >
                     <Download className="w-3 h-3" />
-                    <span className="hidden sm:inline">Export</span>
+                    Export
                   </Button>
                 </div>
               </div>
