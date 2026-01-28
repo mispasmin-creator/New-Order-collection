@@ -10,19 +10,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { X, Plus, Package, Trash2, Upload } from "lucide-react"
 
-// Google Apps Script URL - using your provided URL
+// Google Apps Script URL
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec";
 const FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-";
-const SPREADSHEET_ID = "1PNv5zw2xWrC9g3o7XaKAsoCkoagDR4FjDwDpS1vv5_g";
-
 export default function OrderForm({ onSubmit, onCancel, user }) {
   const [formData, setFormData] = useState({
     // Basic Information
-    "Timestamp": new Date().toISOString(),
+    "Timestamp": "",
     "DO-Delivery Order No.": "",
     "PARTY PO NO (As Per Po Exact)": "",
     "Party PO Date": "",
-    "Party Names": "",
+    "Party Name": "",
     "Gst Number": "",
     "Address": "",
     "Firm Name": user.role === "master" ? "" : user.firm,
@@ -44,8 +42,6 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     // Payment & Terms
     "Total PO Basic Value": "",
     "Payment to Be Taken": "",
-    "Advance": "",
-    "Basic": "",
     "Retention Payment": "",
     "Retention Percentage": "",
     "Lead Time for Retention": "",
@@ -55,27 +51,21 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     "Lead Time For Collection Of Final Payment": "",
     "Type Of Application": "",
     
-    // Product fields (will be handled separately for multiple products)
+    // Agent & Marketing
+    "Is This Order Through Some Agent": "",
+    "Marketing Mangager Name": "",
+    
+    // Product specific fields
     "Product Name": "",
     "Quantity": "",
     "Rate Of Material": "",
     "Alumina%": "",
     "Iron%": "",
+    "Advance": "",
+    "Basic": "",
     
-    // Additional fields from your header
-    "Is This Order Through Some Agent": "",
+    // File upload
     "Upload SO": null,
-    "Marketing Manager Name": "",
-    "Crm For The Customer": "",
-    "Mail": "",
-    
-    // Status fields (usually auto-filled)
-    "Quantity Delivered": "",
-    "Order Cancel": "",
-    "Pending Qty": "",
-    "Material Return": "",
-    "Status": "New Order",
-    "Complete Date": "",
     
     // Products array for multiple products
     products: [],
@@ -85,19 +75,21 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     firmNames: [],
     partyNames: [],
     gstNumbers: [],
-    customerCategories: [],
+    addresses: [],
     typeOfPis: [],
-    marketingSalesPersons: [],
+    customerCategories: [],
+    marketingMangagerNames: [],
     productNames: [],
     uoms: [],
     typeOfTransportings: [],
-    paymentToBeTakens: [],
-    orderReceivedFroms: [],
-    typeOfApplications: [],
-    retentionPayments: [],
-    agents: []
+    paymentToBeTakens: ["Yes", "No"],
+    orderReceivedFroms: ["NBD & CRR OF CRR FMS", "NBD AND NBD OF CRR OUTGOING FMS", "CRR ENQUIRY"],
+    typeOfApplications: ["Full application", "Our Supervision only", "Patching only", "None of the above"],
+    agents: ["Yes", "No"],
+    retentionPayments: ["Yes", "No"]
   })
 
+  const [lastDoNumber, setLastDoNumber] = useState(0)
   const [showProductForm, setShowProductForm] = useState(false)
   const [currentProduct, setCurrentProduct] = useState({
     "Product Name": "",
@@ -113,11 +105,75 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
 
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [isDoNumberFetched, setIsDoNumberFetched] = useState(false)
 
-  // Fetch dropdown data from Master sheet
+  // Fetch dropdown data from Master sheet and get last DO number
   useEffect(() => {
     fetchDropdownData();
+    fetchLastDoNumber();
   }, [])
+
+  // Generate timestamp in format: 12/24/2022 13:45:01
+  const generateTimestamp = () => {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const year = now.getFullYear();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    
+    return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
+  }
+
+  // Generate DO number like DO-958, DO-959, etc.
+  // const generateDoNumber = () => {
+  //   if (!isDoNumberFetched || lastDoNumber === 0) {
+  //     // Fetch last DO number first
+  //     fetchLastDoNumber();
+  //     return "DO-1";
+  //   }
+  //   return `DO-${lastDoNumber + 1}`;
+  // }
+
+ const fetchLastDoNumber = async () => {
+  try {
+    setLoading(true);
+
+    const response = await fetch(`${GOOGLE_SCRIPT_URL}?sheet=ORDER RECEIPT`);
+    const result = await response.json();
+
+    if (result.success && result.data && result.data.length > 1) {
+      const data = result.data;
+      const headers = data[0].map(h => h.trim());
+      const doNumberIndex = headers.indexOf("DO-Delivery Order No.");
+
+      if (doNumberIndex === -1) {
+        console.error("DO column not found");
+        return;
+      }
+
+      let maxNumber = 0;
+
+      data.slice(1).forEach(row => {
+        const value = row[doNumberIndex];
+        if (value && String(value).startsWith("DO-")) {
+          const num = parseInt(String(value).replace("DO-", ""), 10);
+          if (!isNaN(num)) maxNumber = Math.max(maxNumber, num);
+        }
+      });
+
+      setLastDoNumber(maxNumber);
+      setIsDoNumberFetched(true);
+      console.log("Last DO found:", maxNumber);
+    }
+  } catch (err) {
+    console.error("Error fetching last DO number:", err);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const fetchDropdownData = async () => {
     try {
@@ -129,37 +185,99 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
       
       if (result.success && result.data) {
         const masterData = result.data;
-        const headers = masterData[0]; // First row contains headers
         
-        // Extract columns based on your Master sheet headers
-        const dataByColumn = {};
+        if (masterData.length === 0) {
+          console.warn("No data found in Master sheet");
+          return;
+        }
         
-        // Map column indices based on your Master sheet headers
+        const headers = masterData[0].map(h => h.trim());
+        console.log("Master sheet headers:", headers);
+        
+        // Find column indices
+        const firmNameIndex = headers.indexOf("Firm Name");
+        const partyNameIndex = headers.findIndex(h => h.includes("Party"));
+        const addressIndex = headers.indexOf("Address");
+        const gstNumberIndex = headers.findIndex(h => h.includes("GST"));
+        const customerCategoryIndex = headers.findIndex(h => h.includes("Customer Category"));
+        const typeOfPiIndex = headers.findIndex(h => h.includes("Type of PI") || h.includes("Type Of PI"));
+        const marketingManagerIndex = headers.findIndex(h => 
+          h.includes("Marketing Sales Person") || 
+          h.includes("Marketing Mangager Name") ||
+          h.includes("Sales Person")
+        );
+        const productNameIndex = headers.findIndex(h => h.includes("Product Name"));
+        const uomIndex = headers.findIndex(h => h.includes("UOM") || h.includes("Unit"));
+        
+        console.log("Column indices:", {
+          partyNameIndex,
+          marketingManagerIndex,
+          productNameIndex
+        });
+        
+        // Initialize sets
+        const firmNamesSet = new Set();
+        const partyNamesSet = new Set();
+        const gstNumbersSet = new Set();
+        const addressesSet = new Set();
+        const typeOfPisSet = new Set();
+        const customerCategoriesSet = new Set();
+        const marketingManagersSet = new Set();
+        const productNamesSet = new Set();
+        const uomsSet = new Set();
+
+        // Extract data from each row
         masterData.slice(1).forEach(row => {
-          headers.forEach((header, index) => {
-            if (!dataByColumn[header]) dataByColumn[header] = new Set();
-            if (row[index]) dataByColumn[header].add(row[index]);
-          });
+          if (firmNameIndex !== -1 && row[firmNameIndex]) {
+            firmNamesSet.add(String(row[firmNameIndex]).trim());
+          }
+          if (partyNameIndex !== -1 && row[partyNameIndex]) {
+            const partyName = String(row[partyNameIndex]).trim();
+            if (partyName) partyNamesSet.add(partyName);
+          }
+          if (gstNumberIndex !== -1 && row[gstNumberIndex]) {
+            gstNumbersSet.add(String(row[gstNumberIndex]).trim());
+          }
+          if (addressIndex !== -1 && row[addressIndex]) {
+            addressesSet.add(String(row[addressIndex]).trim());
+          }
+          if (typeOfPiIndex !== -1 && row[typeOfPiIndex]) {
+            typeOfPisSet.add(String(row[typeOfPiIndex]).trim());
+          }
+          if (customerCategoryIndex !== -1 && row[customerCategoryIndex]) {
+            customerCategoriesSet.add(String(row[customerCategoryIndex]).trim());
+          }
+          if (marketingManagerIndex !== -1 && row[marketingManagerIndex]) {
+            const managerName = String(row[marketingManagerIndex]).trim();
+            if (managerName) marketingManagersSet.add(managerName);
+          }
+          if (productNameIndex !== -1 && row[productNameIndex]) {
+            productNamesSet.add(String(row[productNameIndex]).trim());
+          }
+          if (uomIndex !== -1 && row[uomIndex]) {
+            uomsSet.add(String(row[uomIndex]).trim());
+          }
         });
         
-        setDropdownData({
-          firmNames: Array.from(dataByColumn["Firm Name"] || []),
-          partyNames: Array.from(dataByColumn["Party Name"] || []),
-          gstNumbers: Array.from(dataByColumn["GST Number"] || []),
-          customerCategories: Array.from(dataByColumn["Customer Category"] || []),
-          typeOfPis: Array.from(dataByColumn["Type of PI"] || []),
-          marketingSalesPersons: Array.from(dataByColumn["Marketing Sales Person"] || []),
-          productNames: Array.from(dataByColumn["Product Name"] || []),
-          uoms: Array.from(dataByColumn["UOM"] || []),
-          
-          // Hardcoded dropdowns (add more as needed)
-          typeOfTransportings: ["FOR", "Ex Factory", "Ex Factory But paid by Us"],
-          paymentToBeTakens: ["100% Advance", "Partly Advance", "Against PI", "Partly PI", "Free of Cost"],
-          orderReceivedFroms: ["Direct", "Agent", "Reference"],
-          typeOfApplications: ["Refractory", "Abrasive", "Ceramic", "Other"],
-          retentionPayments: ["Yes", "No"],
-          agents: ["Agent 1", "Agent 2", "Agent 3", "No Agent"]
+        console.log("Dropdown data counts:", {
+          partyNames: Array.from(partyNamesSet).length,
+          marketingManagers: Array.from(marketingManagersSet).length,
+          productNames: Array.from(productNamesSet).length
         });
+        
+        setDropdownData(prev => ({
+          ...prev,
+          firmNames: Array.from(firmNamesSet).filter(Boolean),
+          partyNames: Array.from(partyNamesSet).filter(Boolean),
+          gstNumbers: Array.from(gstNumbersSet).filter(Boolean),
+          addresses: Array.from(addressesSet).filter(Boolean),
+          typeOfPis: Array.from(typeOfPisSet).filter(Boolean),
+          customerCategories: Array.from(customerCategoriesSet).filter(Boolean),
+          marketingMangagerNames: Array.from(marketingManagersSet).filter(Boolean),
+          productNames: Array.from(productNamesSet).filter(Boolean),
+          uoms: Array.from(uomsSet).filter(Boolean),
+          typeOfTransportings: ["FOR", "Ex Factory", "Ex Factory But paid by Us"],
+        }));
       }
     } catch (error) {
       console.error("Error fetching dropdown data:", error);
@@ -168,35 +286,46 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     }
   }
 
-  // Fetch party details when GST number is selected
-  const fetchPartyDetails = async (gstNumber) => {
-    if (!gstNumber) return;
+  // Fetch address and GST when party name is selected
+  const fetchPartyDetails = async (partyName) => {
+    if (!partyName) return;
     
     try {
-      // Fetch from Master sheet to get party details
       const response = await fetch(`${GOOGLE_SCRIPT_URL}?sheet=Master`);
       const result = await response.json();
       
       if (result.success && result.data) {
         const masterData = result.data;
-        const headers = masterData[0];
+        const headers = masterData[0].map(h => h.trim());
         
-        // Find the row with matching GST number
-        const gstIndex = headers.indexOf("GST Number");
-        const partyNameIndex = headers.indexOf("Party Name");
-        const customerCategoryIndex = headers.indexOf("Customer Category");
-        const typeOfPiIndex = headers.indexOf("Type of PI");
-        const marketingPersonIndex = headers.indexOf("Marketing Sales Person");
+        const partyNameIndex = headers.findIndex(h => h.includes("Party"));
+        const addressIndex = headers.indexOf("Address");
+        const gstNumberIndex = headers.findIndex(h => h.includes("GST"));
+        const firmNameIndex = headers.indexOf("Firm Name");
         
-        const partyRow = masterData.slice(1).find(row => row[gstIndex] === gstNumber);
+        // Find the row with matching party name
+        const partyRow = masterData.slice(1).find(row => {
+          return row[partyNameIndex] && String(row[partyNameIndex]).trim() === partyName.trim();
+        });
         
         if (partyRow) {
+          const updates = {};
+          
+          if (addressIndex !== -1 && partyRow[addressIndex]) {
+            updates["Address"] = String(partyRow[addressIndex]).trim();
+          }
+          
+          if (gstNumberIndex !== -1 && partyRow[gstNumberIndex]) {
+            updates["Gst Number"] = String(partyRow[gstNumberIndex]).trim();
+          }
+          
+          if (firmNameIndex !== -1 && partyRow[firmNameIndex] && user.role === "master") {
+            updates["Firm Name"] = String(partyRow[firmNameIndex]).trim();
+          }
+          
           setFormData(prev => ({ 
             ...prev, 
-            "Party Names": partyRow[partyNameIndex] || "",
-            "Customer Category": partyRow[customerCategoryIndex] || "",
-            "Type Of PI": partyRow[typeOfPiIndex] || "",
-            "Marketing Manager Name": partyRow[marketingPersonIndex] || ""
+            ...updates
           }));
         }
       }
@@ -206,37 +335,44 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
   }
 
   const handleInputChange = (field, value) => {
-    if (field === "Gst Number") {
+    if (field === "Party Name") {
+      setFormData(prev => ({ ...prev, [field]: value }));
       fetchPartyDetails(value);
-    }
-    
-    if (field === "Free Replacement (FOC)") {
-      setFormData(prev => ({ 
-        ...prev, 
-        [field]: value,
-        "Adjusted Amount": value === "yesButAdjusted" ? prev["Adjusted Amount"] : ""
-      }));
+    } else if (field === "Gst Number") {
+      setFormData(prev => ({ ...prev, [field]: value }));
     } else {
       setFormData(prev => ({ ...prev, [field]: value }));
     }
   }
 
   const handleProductChange = (field, value) => {
-    setCurrentProduct((prev) => ({ ...prev, [field]: value }))
+    const updatedProduct = { ...currentProduct, [field]: value };
+    
+    if (field === "Quantity" || field === "Rate Of Material") {
+      const quantity = field === "Quantity" ? parseFloat(value) || 0 : parseFloat(currentProduct["Quantity"]) || 0;
+      const rate = field === "Rate Of Material" ? parseFloat(value) || 0 : parseFloat(currentProduct["Rate Of Material"]) || 0;
+      updatedProduct["Total PO Basic Value"] = (quantity * rate).toString();
+    }
+    
+    setCurrentProduct(updatedProduct);
   }
 
   const addProduct = () => {
     if (currentProduct["Product Name"] && currentProduct["Quantity"]) {
+      const newProduct = {
+        ...currentProduct, 
+        id: Date.now(),
+        "Total PO Basic Value": currentProduct["Total PO Basic Value"] || 
+          (parseFloat(currentProduct["Quantity"]) * parseFloat(currentProduct["Rate Of Material"]) || 0).toString()
+      };
+      
       setFormData((prev) => ({
         ...prev,
-        products: [...prev.products, { 
-          ...currentProduct, 
-          id: Date.now(),
-          // Calculate total PO value if not provided
-          "Total PO Basic Value": currentProduct["Total PO Basic Value"] || 
-            (parseFloat(currentProduct["Quantity"]) * parseFloat(currentProduct["Rate Of Material"]) || 0)
-        }],
-      }))
+        products: [...prev.products, newProduct],
+        "Total PO Basic Value": (parseFloat(prev["Total PO Basic Value"] || 0) + 
+          parseFloat(newProduct["Total PO Basic Value"])).toString()
+      }));
+      
       setCurrentProduct({
         "Product Name": "",
         "Quantity": "",
@@ -247,16 +383,25 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
         "Total PO Basic Value": "",
         "Advance": "",
         "Basic": "",
-      })
-      setShowProductForm(false)
+      });
+      setShowProductForm(false);
     }
   }
 
   const removeProduct = (productId) => {
-    setFormData((prev) => ({
-      ...prev,
-      products: prev.products.filter((p) => p.id !== productId),
-    }))
+    const productToRemove = formData.products.find(p => p.id === productId);
+    
+    setFormData((prev) => {
+      const updatedProducts = prev.products.filter((p) => p.id !== productId);
+      const totalValue = updatedProducts.reduce((sum, product) => 
+        sum + parseFloat(product["Total PO Basic Value"] || 0), 0);
+      
+      return {
+        ...prev,
+        products: updatedProducts,
+        "Total PO Basic Value": totalValue.toString()
+      };
+    });
   }
 
   const handleFileUpload = async (e) => {
@@ -266,7 +411,6 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     try {
       setLoading(true);
       
-      // Convert file to base64
       const reader = new FileReader();
       reader.readAsDataURL(file);
       
@@ -301,106 +445,88 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     }
   }
 
-  // Prepare row data for submission according to your ORDER RECEIPT sheet headers
-  const prepareRowData = () => {
-    // Start with base form data
-    const rowData = {
-      // Timestamp is auto-generated
-      "Timestamp": new Date().toISOString(),
-      
-      // Basic order info
-      "PARTY PO NO (As Per Po Exact)": formData["PARTY PO NO (As Per Po Exact)"],
-      "Party PO Date": formData["Party PO Date"],
-      "Party Names": formData["Party Names"],
-      "Gst Number": formData["Gst Number"],
-      "Address": formData["Address"],
-      "Firm Name": formData["Firm Name"],
-      
-      // Transport & Contact
-      "Type Of Transporting": formData["Type Of Transporting"],
-      "Contact Person Name": formData["Contact Person Name"],
-      "Contact Person WhatsApp No.": formData["Contact Person WhatsApp No."],
-      
-      // Order details
-      "Order Received From": formData["Order Received From"],
-      "Type Of PI": formData["Type Of PI"],
-      "Customer Category": formData["Customer Category"],
-      "Free Replacement (FOC)": formData["Free Replacement (FOC)"],
-      "Adjusted Amount": formData["Adjusted Amount"],
-      "Reference No.": formData["Reference No."],
-      
-      // Payment & Terms
-      "Total PO Basic Value": formData["Total PO Basic Value"],
-      "Payment to Be Taken": formData["Payment to Be Taken"],
-      "Advance": formData["Advance"],
-      "Basic": formData["Basic"],
-      "Retention Payment": formData["Retention Payment"],
-      "Retention Percentage": formData["Retention Percentage"],
-      "Lead Time for Retention": formData["Lead Time for Retention"],
-      "Specific Concern": formData["Specific Concern"],
-      
-      // Technical
-      "Lead Time For Collection Of Final Payment": formData["Lead Time For Collection Of Final Payment"],
-      "Type Of Application": formData["Type Of Application"],
-      
-      // Agent & Marketing
-      "Is This Order Through Some Agent": formData["Is This Order Through Some Agent"],
-      "Marketing Manager Name": formData["Marketing Manager Name"],
-      
-      // File upload (URL)
-      "Upload SO": formData["Upload SO URL"] || "",
-      
-      // Status fields (default values)
-      "Status": "New Order",
-      "Quantity Delivered": "0",
-      "Pending Qty": formData["Quantity"] || "0",
-      "Order Cancel": "No",
-      "Material Return": "No",
-      
-      // Other fields
-      "Crm For The Customer": "",
-      "Mail": "",
-      "DO-Delivery Order No.": `DO-${Date.now()}`,
-      "Complete Date": "",
-    };
-    
-    return rowData;
+  // Prepare row data according to your exact header requirements
+const prepareRowData = (doNumber) => {
+  const timestamp = generateTimestamp();
+
+  return {
+    "Timestamp": timestamp,
+    "DO-Delivery Order No.": doNumber,
+    "PARTY PO NO (As Per Po Exact)": formData["PARTY PO NO (As Per Po Exact)"],
+    "Party PO Date": formData["Party PO Date"],
+    "Party Names": formData["Party Name"],
+    "Product Name": "",
+    "Quantity": "",
+    "Rate Of Material": "",
+    "Type Of Transporting": formData["Type Of Transporting"],
+    "Upload SO": formData["Upload SO URL"] || "",
+    "Is This Order Through Some Agent": formData["Is This Order Through Some Agent"],
+    "Order Received From": formData["Order Received From"],
+    "Type Of Measurement": "",
+    "Contact Person Name": formData["Contact Person Name"],
+    "Contact Person WhatsApp No.": formData["Contact Person WhatsApp No."],
+    "Alumina%": "",
+    "Iron%": "",
+    "Type Of PI": formData["Type Of PI"],
+    "Lead Time For Collection Of Final Payment": formData["Lead Time For Collection Of Final Payment"],
+    "Type Of Application": formData["Type Of Application"],
+    "Customer Category": formData["Customer Category"],
+    "Free Replacement (FOC)": formData["Free Replacement (FOC)"],
+    "Gst Number": formData["Gst Number"],
+    "Address": formData["Address"],
+    "Firm Name": formData["Firm Name"],
+    "Total PO Basic Value": "",
+    "Payment to Be Taken": formData["Payment to Be Taken"],
+    "Advance": "",
+    "Basic": "",
+    "Retention Payment": formData["Retention Payment"],
+    "Retention Percentage": formData["Retention Percentage"],
+    "Lead Time for Retention": formData["Lead Time for Retention"],
+    "Specific Concern": formData["Specific Concern"],
+    "Reference No.": formData["Reference No."],
+    "Adjusted Amount": formData["Adjusted Amount"],
+    "Marketing Mangager Name": formData["Marketing Mangager Name"],
+  };
+};
+
+ const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  if (formData.products.length === 0) {
+    alert("Please add at least one product");
+    return;
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (formData.products.length === 0) {
-      alert("Please add at least one product");
-      return;
+  try {
+    setLoading(true);
+
+    // ✅ Ensure latest DO is fetched
+    if (!isDoNumberFetched) {
+      await fetchLastDoNumber();
     }
-    
-    try {
-      setLoading(true);
-      
-      // Prepare data for each product (multiple rows if multiple products)
-      const rowsToInsert = formData.products.map(product => {
-        const baseRow = prepareRowData();
-        
-        // Add product-specific data
-        return {
-          ...baseRow,
-          "Product Name": product["Product Name"],
-          "Quantity": product["Quantity"],
-          "Rate Of Material": product["Rate Of Material"],
-          "Type Of Measurement": product["Type Of Measurement"],
-          "Alumina%": product["Alumina%"],
-          "Iron%": product["Iron%"],
-          "Total PO Basic Value": product["Total PO Basic Value"],
-          "Advance": product["Advance"],
-          "Basic": product["Basic"],
-          "Pending Qty": product["Quantity"], // Set pending quantity to initial quantity
-        };
-      });
-      
-      // Convert to array format for Google Sheets
+
+    // ✅ SINGLE SOURCE OF TRUTH
+    const generatedDo = `DO-${lastDoNumber + 1}`;
+
+    const rowsToInsert = formData.products.map(product => {
+      const baseRow = prepareRowData(generatedDo);
+
+      return {
+        ...baseRow,
+        "Product Name": product["Product Name"],
+        "Quantity": product["Quantity"],
+        "Rate Of Material": product["Rate Of Material"],
+        "Type Of Measurement": product["Type Of Measurement"],
+        "Alumina%": product["Alumina%"],
+        "Iron%": product["Iron%"],
+        "Advance": product["Advance"],
+        "Basic": product["Basic"],
+        "Total PO Basic Value": product["Total PO Basic Value"],
+      };
+    });
+     
+      // Convert to array format in EXACT header order
       const rowArrays = rowsToInsert.map(row => {
-        // Map according to your ORDER RECEIPT sheet column order
         return [
           row["Timestamp"],
           row["DO-Delivery Order No."],
@@ -437,16 +563,14 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
           row["Specific Concern"],
           row["Reference No."],
           row["Adjusted Amount"],
-          row["Quantity Delivered"],
-          row["Order Cancel"],
-          row["Pending Qty"],
-          row["Material Return"],
-          row["Status"],
-          row["Complete Date"],
-          row["Crm For The Customer"],
-          row["Mail"],
-          row["Marketing Manager Name"]
+          row["Marketing Mangager Name"] // Last field - column 35
         ];
+      });
+      
+      console.log("Submitting data:", {
+        doNumbers: rowsToInsert.map(r => r["DO-Delivery Order No."]),
+        marketingManager: formData["Marketing Mangager Name"],
+        rowCount: rowArrays.length
       });
       
       // Submit to Google Sheets
@@ -461,16 +585,21 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
       });
       
       const result = await response.json();
+      console.log("Submission result:", result);
       
       if (result.success) {
+        // Update last DO number for next submission
+          setLastDoNumber(prev => prev + 1);
+        
         setSuccess(true);
         // Reset form
+        const timestamp = generateTimestamp();
         setFormData({
-          "Timestamp": new Date().toISOString(),
+          "Timestamp": timestamp,
           "DO-Delivery Order No.": "",
           "PARTY PO NO (As Per Po Exact)": "",
           "Party PO Date": "",
-          "Party Names": "",
+          "Party Name": "",
           "Gst Number": "",
           "Address": "",
           "Firm Name": user.role === "master" ? "" : user.firm,
@@ -486,32 +615,26 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
           "Reference No.": "",
           "Total PO Basic Value": "",
           "Payment to Be Taken": "",
-          "Advance": "",
-          "Basic": "",
           "Retention Payment": "",
           "Retention Percentage": "",
           "Lead Time for Retention": "",
           "Specific Concern": "",
           "Lead Time For Collection Of Final Payment": "",
           "Type Of Application": "",
+          "Is This Order Through Some Agent": "",
+          "Marketing Mangager Name": "",
           "Product Name": "",
           "Quantity": "",
           "Rate Of Material": "",
           "Alumina%": "",
           "Iron%": "",
-          "Is This Order Through Some Agent": "",
+          "Advance": "",
+          "Basic": "",
           "Upload SO": null,
-          "Marketing Manager Name": "",
-          "Crm For The Customer": "",
-          "Mail": "",
-          "Quantity Delivered": "",
-          "Order Cancel": "",
-          "Pending Qty": "",
-          "Material Return": "",
-          "Status": "New Order",
-          "Complete Date": "",
           products: [],
         });
+      } else {
+        alert("Error submitting form: " + (result.message || "Unknown error"));
       }
     } catch (error) {
       console.error("Error submitting form:", error);
@@ -522,6 +645,7 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
   }
 
   if (success) {
+    const nextDoNumber = lastDoNumber > 0 ? lastDoNumber + 1 : 1;
     return (
       <div className="w-full flex items-center justify-center min-h-[400px]">
         <Card className="w-full max-w-md text-center">
@@ -530,11 +654,12 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-gray-600">Order has been recorded in the system.</p>
-            <p className="text-sm text-gray-500">Delivery Order Number: DO-{Date.now()}</p>
+            <p className="text-sm text-gray-500">Last DO Number: DO-{lastDoNumber}</p>
             <Button 
               onClick={() => {
                 setSuccess(false);
-                setFormData(prev => ({ ...prev, "Timestamp": new Date().toISOString() }));
+                const timestamp = generateTimestamp();
+                setFormData(prev => ({ ...prev, "Timestamp": timestamp }));
               }}
               className="w-full"
             >
@@ -570,7 +695,7 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
       <div className="p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
         <form onSubmit={handleSubmit} className="space-y-8">
           
-          {/* BASIC INFORMATION SECTION - Updated with your field names */}
+          {/* BASIC INFORMATION SECTION */}
           <div className="space-y-6">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -594,9 +719,13 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
                     <SelectValue placeholder="Select Firm" />
                   </SelectTrigger>
                   <SelectContent>
-                    {dropdownData.firmNames.map((firm, index) => (
-                      <SelectItem key={index} value={firm}>{firm}</SelectItem>
-                    ))}
+                    {dropdownData.firmNames.length > 0 ? (
+                      dropdownData.firmNames.map((firm, index) => (
+                        <SelectItem key={index} value={firm}>{firm}</SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="No data" disabled>No firms found</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -629,50 +758,55 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
                 />
               </div>
 
-              {/* GST Number */}
+              {/* Party Name Dropdown */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  GST Number *
+                  Party Name *
                 </Label>
                 <Select
-                  value={formData["Gst Number"]}
-                  onValueChange={(value) => handleInputChange("Gst Number", value)}
+                  value={formData["Party Name"]}
+                  onValueChange={(value) => handleInputChange("Party Name", value)}
                 >
                   <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="Select GST Number" />
+                    <SelectValue placeholder="Select Party Name" />
                   </SelectTrigger>
                   <SelectContent>
-                    {dropdownData.gstNumbers.map((gst, index) => (
-                      <SelectItem key={index} value={gst}>{gst}</SelectItem>
-                    ))}
+                    {dropdownData.partyNames.length > 0 ? (
+                      dropdownData.partyNames.map((party, index) => (
+                        <SelectItem key={index} value={party}>{party}</SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="No data" disabled>
+                        {loading ? "Loading..." : "No party names found"}
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
 
-              {/* Party Names (auto-filled) */}
+              {/* GST Number */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Party Names *
+                  GST Number
                 </Label>
                 <Input
-                  value={formData["Party Names"]}
-                  readOnly
-                  className="h-11 border-gray-300 bg-gray-50"
-                  placeholder="Auto-filled from GST"
-                  required
+                  value={formData["Gst Number"]}
+                  onChange={(e) => handleInputChange("Gst Number", e.target.value)}
+                  className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Enter GST number"
                 />
               </div>
 
-              {/* Address */}
+              {/* Address (auto-filled) */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
                   Address
                 </Label>
                 <Textarea
                   value={formData["Address"]}
-                  onChange={(e) => handleInputChange("Address", e.target.value)}
-                  className="h-20 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Enter address"
+                  readOnly
+                  className="h-20 border-gray-300 bg-gray-50"
+                  placeholder="Auto-filled from Party Name"
                 />
               </div>
 
@@ -713,6 +847,26 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
                     </Badge>
                   )}
                 </div>
+              </div>
+
+              {/* Is This Order Through Some Agent */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">
+                  Is This Order Through Some Agent
+                </Label>
+                <Select
+                  value={formData["Is This Order Through Some Agent"]}
+                  onValueChange={(value) => handleInputChange("Is This Order Through Some Agent", value)}
+                >
+                  <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dropdownData.agents.map((agent, index) => (
+                      <SelectItem key={index} value={agent}>{agent}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
@@ -776,50 +930,82 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
                 </Select>
               </div>
 
-              {/* Is This Order Through Some Agent */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">
-                  Through Agent?
-                </Label>
-                <Select
-                  value={formData["Is This Order Through Some Agent"]}
-                  onValueChange={(value) => handleInputChange("Is This Order Through Some Agent", value)}
-                >
-                  <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dropdownData.agents.map((agent, index) => (
-                      <SelectItem key={index} value={agent}>{agent}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Customer Category (auto-filled) */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">
-                  Customer Category
-                </Label>
-                <Input
-                  value={formData["Customer Category"]}
-                  readOnly
-                  className="h-11 border-gray-300 bg-gray-50"
-                  placeholder="Auto-filled from GST"
-                />
-              </div>
-
-              {/* Type Of PI (auto-filled) */}
+              {/* Type Of PI */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
                   Type Of PI
                 </Label>
-                <Input
+                <Select
                   value={formData["Type Of PI"]}
-                  readOnly
-                  className="h-11 border-gray-300 bg-gray-50"
-                  placeholder="Auto-filled from GST"
-                />
+                  onValueChange={(value) => handleInputChange("Type Of PI", value)}
+                >
+                  <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
+                    <SelectValue placeholder="Select PI type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dropdownData.typeOfPis.length > 0 ? (
+                      dropdownData.typeOfPis.map((pi, index) => (
+                        <SelectItem key={index} value={pi}>{pi}</SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="No data" disabled>Loading...</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Customer Category */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">
+                  Customer Category
+                </Label>
+                <Select
+                  value={formData["Customer Category"]}
+                  onValueChange={(value) => handleInputChange("Customer Category", value)}
+                >
+                  <SelectTrigger className="h-11 border-gray-300">
+                    <SelectValue placeholder="Select Customer Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dropdownData.customerCategories.length > 0 ? (
+                      dropdownData.customerCategories.map((cat, index) => (
+                        <SelectItem key={index} value={cat}>
+                          {cat}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="loading" disabled>
+                        Loading...
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Marketing Mangager Name */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">
+                  Marketing Mangager Name
+                </Label>
+                <Select
+                  value={formData["Marketing Mangager Name"]}
+                  onValueChange={(value) => handleInputChange("Marketing Mangager Name", value)}
+                >
+                  <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
+                    <SelectValue placeholder="Select manager" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {dropdownData.marketingMangagerNames.length > 0 ? (
+                      dropdownData.marketingMangagerNames.map((manager, index) => (
+                        <SelectItem key={index} value={manager}>{manager}</SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="No data" disabled>
+                        {loading ? "Loading..." : "No managers found"}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
@@ -834,18 +1020,16 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pl-11">
-              {/* Total PO Basic Value */}
+              {/* Total PO Basic Value (auto-calculated from products) */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Total PO Basic Value *
+                  Total PO Basic Value
                 </Label>
                 <Input
-                  type="number"
                   value={formData["Total PO Basic Value"]}
-                  onChange={(e) => handleInputChange("Total PO Basic Value", e.target.value)}
-                  className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Enter total value"
-                  required
+                  readOnly
+                  className="h-11 border-gray-300 bg-gray-50"
+                  placeholder="Auto-calculated from products"
                 />
               </div>
 
@@ -867,34 +1051,6 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              {/* Advance */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">
-                  Advance %
-                </Label>
-                <Input
-                  type="number"
-                  value={formData["Advance"]}
-                  onChange={(e) => handleInputChange("Advance", e.target.value)}
-                  className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Enter advance percentage"
-                />
-              </div>
-
-              {/* Basic */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">
-                  Basic %
-                </Label>
-                <Input
-                  type="number"
-                  value={formData["Basic"]}
-                  onChange={(e) => handleInputChange("Basic", e.target.value)}
-                  className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Enter basic percentage"
-                />
               </div>
 
               {/* Retention Payment */}
@@ -1037,23 +1193,10 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
                   </SelectContent>
                 </Select>
               </div>
-
-              {/* Marketing Manager Name (auto-filled) */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">
-                  Marketing Manager Name
-                </Label>
-                <Input
-                  value={formData["Marketing Manager Name"]}
-                  readOnly
-                  className="h-11 border-gray-300 bg-gray-50"
-                  placeholder="Auto-filled from GST"
-                />
-              </div>
             </div>
           </div>
 
-          {/* PRODUCTS SECTION - Updated for multiple products */}
+          {/* PRODUCTS SECTION */}
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1094,17 +1237,30 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
                             <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
                               Rate: ₹{product["Rate Of Material"]}
                             </Badge>
+                            <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                              Total: ₹{product["Total PO Basic Value"]}
+                            </Badge>
                             {product["Type Of Measurement"] && (
                               <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-200">
                                 UOM: {product["Type Of Measurement"]}
                               </Badge>
                             )}
-                            <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
-                              Alumina: {product["Alumina%"]}%
+                            <Badge variant="outline" className="text-xs bg-cyan-50 text-cyan-700 border-cyan-200">
+                              Al₂O₃: {product["Alumina%"]}%
                             </Badge>
                             <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">
-                              Iron: {product["Iron%"]}%
+                              Fe₂O₃: {product["Iron%"]}%
                             </Badge>
+                            {product["Advance"] && (
+                              <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
+                                Advance: {product["Advance"]}%
+                              </Badge>
+                            )}
+                            {product["Basic"] && (
+                              <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200">
+                                Basic: {product["Basic"]}%
+                              </Badge>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1154,9 +1310,15 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
                             <SelectValue placeholder="Select Product" />
                           </SelectTrigger>
                           <SelectContent>
-                            {dropdownData.productNames.map((product, index) => (
-                              <SelectItem key={index} value={product}>{product}</SelectItem>
-                            ))}
+                            {dropdownData.productNames.length > 0 ? (
+                              dropdownData.productNames.map((product, index) => (
+                                <SelectItem key={index} value={product}>{product}</SelectItem>
+                              ))
+                            ) : (
+                              <SelectItem value="No data" disabled>
+                                {loading ? "Loading..." : "No products found"}
+                              </SelectItem>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>
@@ -1187,59 +1349,59 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
                         />
                       </div>
 
-                      {/* Type Of Measurement (UOM) */}
+                      {/* Type Of Measurement */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Type Of Measurement *</Label>
+                        <Label className="text-sm font-medium text-gray-700">Type Of Measurement</Label>
                         <Select
                           value={currentProduct["Type Of Measurement"]}
                           onValueChange={(value) => handleProductChange("Type Of Measurement", value)}
                         >
-                          <SelectTrigger className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500">
+                          <SelectTrigger className="h-11">
                             <SelectValue placeholder="Select UOM" />
                           </SelectTrigger>
                           <SelectContent>
                             {dropdownData.uoms.map((uom, index) => (
-                              <SelectItem key={index} value={uom}>{uom}</SelectItem>
+                              <SelectItem key={index} value={uom}>
+                                {uom}
+                              </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       </div>
 
+                      {/* Total PO Basic Value (auto-calculated) */}
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-gray-700">Total PO Basic Value</Label>
+                        <Input
+                          value={currentProduct["Total PO Basic Value"]}
+                          readOnly
+                          className="h-11 border-gray-300 bg-gray-50"
+                          placeholder="Auto-calculated"
+                        />
+                        <p className="text-xs text-gray-500">(Quantity × Rate)</p>
+                      </div>
+
                       {/* Alumina% */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Alumina% *</Label>
+                        <Label className="text-sm font-medium text-gray-700">Alumina%</Label>
                         <Input
                           type="number"
                           value={currentProduct["Alumina%"]}
                           onChange={(e) => handleProductChange("Alumina%", e.target.value)}
                           className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                           placeholder="Alumina percentage"
-                          required
                         />
                       </div>
 
                       {/* Iron% */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Iron% *</Label>
+                        <Label className="text-sm font-medium text-gray-700">Iron%</Label>
                         <Input
                           type="number"
                           value={currentProduct["Iron%"]}
                           onChange={(e) => handleProductChange("Iron%", e.target.value)}
                           className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                           placeholder="Iron percentage"
-                          required
-                        />
-                      </div>
-
-                      {/* Total PO Basic Value */}
-                      <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Total PO Basic Value</Label>
-                        <Input
-                          type="number"
-                          value={currentProduct["Total PO Basic Value"]}
-                          onChange={(e) => handleProductChange("Total PO Basic Value", e.target.value)}
-                          className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
-                          placeholder="Will auto-calculate"
                         />
                       </div>
 

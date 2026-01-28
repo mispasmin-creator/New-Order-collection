@@ -169,7 +169,7 @@ export default function LoginForm({ onLogin }) {
               </Button>
             </form>
 
-            {demoCredentials.length > 0 && (
+            {/* {demoCredentials.length > 0 && (
               <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                 <h3 className="font-semibold text-sm text-gray-700 mb-3">Sample Credentials:</h3>
                 <div className="text-xs text-gray-600 space-y-2">
@@ -184,7 +184,7 @@ export default function LoginForm({ onLogin }) {
                   Users loaded from Google Sheets. Page access is controlled per user.
                 </p>
               </div>
-            )}
+            )} */}
           </CardContent>
         </Card>
       </div>
