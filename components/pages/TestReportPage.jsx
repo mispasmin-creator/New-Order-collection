@@ -1,24 +1,28 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { supabase } from "@/lib/supabaseClient"
+import { getISTTimestamp } from "@/lib/dateUtils"
+import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { X, Search, CheckCircle2, Loader2, Upload, Eye, Trash2 } from "lucide-react"
+import { X, Search, CheckCircle2, Loader2, Upload, Eye, Trash2, Truck } from "lucide-react"
+import { getSignedUrl } from "@/lib/storageUtils"
 
-// Correct SCRIPT URL - using the same one from your reference code
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec"
-const DRIVE_FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-"
+// Image storage constants
+const STORAGE_BUCKET = "images"
+const STORAGE_FOLDER = "load-material"
 
-export default function LoadMaterialPage({ user }) {
+export default function TestReportPage({ user }) {
   const [orders, setOrders] = useState([])
   const [completedOrders, setCompletedOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const { toast } = useToast()
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
@@ -37,7 +41,7 @@ export default function LoadMaterialPage({ user }) {
     loadingImage2: "",
     loadingImage3: ""
   })
-  
+
   const fileInputRef1 = useRef(null)
   const fileInputRef2 = useRef(null)
   const fileInputRef3 = useRef(null)
@@ -49,289 +53,82 @@ export default function LoadMaterialPage({ user }) {
   const fetchLoadMaterialData = async () => {
     try {
       setLoading(true)
-      
-      // Using the same fetch pattern from your reference code
-      const response = await fetch(`${SCRIPT_URL}?sheet=DISPATCH`)
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+
+      const { data, error } = await supabase
+        .from('DISPATCH')
+        .select('*')
+        .not('Planned2', 'is', null)
+
+      if (error) {
+        throw error
       }
-      
-      const data = await response.json()
-      console.log("Raw DISPATCH API response:", data)
-      
-      if (data.success && data.data) {
-        const { pending, completed } = transformDispatchData(data.data)
-        setOrders(pending)
-        setCompletedOrders(completed)
-        console.log("Load Material data loaded:", pending.length, "pending,", completed.length, "completed")
-      } else {
-        console.error("Failed to load DISPATCH data:", data)
-      }
+
+      console.log("Raw DISPATCH Supabase response:", data)
+
+      const pending = []
+      const history = []
+
+      data.forEach(row => {
+        const order = {
+          id: row.id,
+          timestamp: row["Timestamp"],
+          dSrNumber: row["D-Sr Number"],
+          deliveryOrderNo: row["Delivery Order No."],
+          dispatchNo: row["D-Sr Number"],
+          lgstSrNumber: row["LGST-Sr Number"],
+          partyName: row["Party Name"],
+          productName: row["Product Name"],
+          qtyToBeDispatched: row["Qty To Be Dispatched"],
+          actualTruckQty: row["Actual Truck Qty"],
+          typeOfTransporting: row["Type Of Transporting"],
+          transporterName: row["Transporter Name"],
+          truckNo: row["Truck No."],
+          driverMobileNo: row["Driver Mobile No."],
+          vehicleNoPlateImage: row["Vehicle No. Plate Image"],
+          biltyNo: row["Bilty No."],
+          fixedAmount: row["Fixed Amount"],
+          planned2: row["Planned2"],
+          actual2: row["Actual2"],
+          delay2: row["Delay2"],
+          loadingImage1: row["Loading Image 1"],
+          loadingImage2: row["Loading Image 2"],
+          loadingImage3: row["Loading Image 3"],
+        }
+
+        if (order.actual2 === null || order.actual2 === "") {
+          pending.push(order)
+        } else {
+          history.push(order)
+        }
+      })
+
+      // Sort pending orders by Planned2 date (most recent first)
+      pending.sort((a, b) => {
+        if (!a.planned2) return 1
+        if (!b.planned2) return -1
+        return new Date(b.planned2) - new Date(a.planned2)
+      })
+
+      // Sort completed orders by Actual2 date (most recent first)
+      history.sort((a, b) => {
+        if (!a.actual2) return 1
+        if (!b.actual2) return -1
+        return new Date(b.actual2) - new Date(a.actual2)
+      })
+
+      setOrders(pending)
+      setCompletedOrders(history)
+      console.log("Load Material data loaded:", pending.length, "pending,", history.length, "history")
     } catch (error) {
       console.error("Error fetching load material data:", error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to fetch load material data"
+      })
     } finally {
       setLoading(false)
     }
-  }
-
-  const transformDispatchData = (sheetData) => {
-    if (!sheetData || sheetData.length === 0) {
-      console.log("No sheet data available")
-      return { pending: [], completed: [] }
-    }
-    
-    console.log("Raw DISPATCH sheet data length:", sheetData.length)
-    
-    // Find the header row
-    let headerRowIndex = -1
-    let headers = []
-    
-    for (let i = 0; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      if (row && row.length > 0) {
-        const hasTimestamp = row.some(cell => 
-          cell && cell.toString().trim().toLowerCase().includes("timestamp")
-        )
-        
-        if (hasTimestamp) {
-          headerRowIndex = i
-          headers = row.map(h => h?.toString().trim() || "")
-          console.log("Found headers row at index:", i)
-          console.log("Headers:", headers)
-          break
-        }
-      }
-    }
-    
-    if (headerRowIndex === -1) {
-      console.error("Could not find header row")
-      return { pending: [], completed: [] }
-    }
-    
-    // Find column indices
-    const indices = {
-      timestamp: headers.findIndex(h => h && h.toString().toLowerCase().includes("timestamp")),
-      dSrNumber: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("d-sr") || 
-        h.toString().toLowerCase().includes("dsr") || 
-        h.toString().toLowerCase().includes("dispatch no") ||
-        h.toString().toLowerCase().includes("dispatch")
-      )),
-      deliveryOrderNo: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("delivery order") || 
-        h.toString().toLowerCase().includes("do no") || 
-        h.toString().toLowerCase().includes("do")
-      )),
-      partyName: headers.findIndex(h => h && h.toString().toLowerCase().includes("party name")),
-      productName: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("product name") || 
-        h.toString().toLowerCase().includes("product")
-      )),
-      qtyToBeDispatched: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("qty to be") || 
-        h.toString().toLowerCase().includes("quantity")
-      )),
-      typeOfTransporting: headers.findIndex(h => h && h.toString().toLowerCase().includes("type of transporting")),
-      transporterName: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("transporter name") || 
-        h.toString().toLowerCase().includes("transporter")
-      )),
-      truckNo: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("truck no") || 
-        h.toString().toLowerCase().includes("truck number") || 
-        h.toString().toLowerCase().includes("truck")
-      )),
-      driverMobileNo: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("driver mobile") || 
-        h.toString().toLowerCase().includes("driver")
-      )),
-      vehicleNoPlateImage: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("vehicle no") || 
-        h.toString().toLowerCase().includes("vehicle")
-      )),
-      biltyNo: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("bilty no") || 
-        h.toString().toLowerCase().includes("bilty")
-      )),
-      lgstSrNumber: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("lgst-sr") || 
-        h.toString().toLowerCase().includes("lgst sr") || 
-        h.toString().toLowerCase().includes("lgst") ||
-        h.toString().toLowerCase().includes("logistics sr")
-      )),
-      actualTruckQty: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("actual truck qty") || 
-        h.toString().toLowerCase().includes("actual qty") || 
-        h.toString().toLowerCase().includes("truck qty")
-      )),
-      fixedAmount: headers.findIndex(h => h && h.toString().toLowerCase().includes("fixed amount")),
-      planned2: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("planned2") || 
-        h.toString().toLowerCase().includes("planned 2")
-      )),
-      actual2: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("actual2") || 
-        h.toString().toLowerCase().includes("actual 2")
-      )),
-      delay2: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("delay2") || 
-        h.toString().toLowerCase().includes("delay 2")
-      )),
-      loadingImage1: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("loading image 1") || 
-        h.toString().toLowerCase().includes("image 1")
-      )),
-      loadingImage2: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("loading image 2") || 
-        h.toString().toLowerCase().includes("image 2")
-      )),
-      loadingImage3: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("loading image 3") || 
-        h.toString().toLowerCase().includes("image 3")
-      )),
-      remarks: headers.findIndex(h => h && (
-        h.toString().toLowerCase().includes("remarks") || 
-        h.toString().toLowerCase().includes("comment")
-      ))
-    }
-    
-    console.log("DISPATCH Column indices found:", indices)
-    
-    const pendingOrders = []
-    const completedOrders = []
-    
-    // Process data rows starting from the row after headers
-    for (let i = headerRowIndex + 1; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      if (!row || row.length === 0) continue
-      
-      const getVal = (index) => {
-        if (index >= 0 && index < row.length && row[index] !== undefined && row[index] !== null) {
-          const value = row[index].toString().trim()
-          return value
-        }
-        return ""
-      }
-      
-      // Get LGST-Sr Number
-      const lgstSrNumber = getVal(indices.lgstSrNumber)
-      
-      // Skip rows without LGST-Sr number or header rows
-      if (!lgstSrNumber || lgstSrNumber === "" || 
-          lgstSrNumber.toLowerCase().includes("lgst-sr") || 
-          lgstSrNumber.toLowerCase() === "lgst-sr number" || 
-          lgstSrNumber.toLowerCase().includes("header")) {
-        continue
-      }
-      
-      const planned2 = getVal(indices.planned2)
-      const actual2 = getVal(indices.actual2)
-      const loadingImage1 = getVal(indices.loadingImage1)
-      const loadingImage2 = getVal(indices.loadingImage2)
-      const loadingImage3 = getVal(indices.loadingImage3)
-      const remarks = getVal(indices.remarks)
-      
-      // Create order object
-      const order = {
-        id: i,
-        rowIndex: i + 1, // Google Sheets row number (1-indexed)
-        timestamp: getVal(indices.timestamp),
-        dSrNumber: getVal(indices.dSrNumber),
-        deliveryOrderNo: getVal(indices.deliveryOrderNo),
-        dispatchNo: getVal(indices.dSrNumber),
-        lgstSrNumber: lgstSrNumber,
-        partyName: getVal(indices.partyName),
-        productName: getVal(indices.productName),
-        qtyToBeDispatched: getVal(indices.qtyToBeDispatched),
-        actualTruckQty: getVal(indices.actualTruckQty),
-        typeOfTransporting: getVal(indices.typeOfTransporting),
-        transporterName: getVal(indices.transporterName),
-        truckNo: getVal(indices.truckNo),
-        driverMobileNo: getVal(indices.driverMobileNo),
-        vehicleNoPlateImage: getVal(indices.vehicleNoPlateImage),
-        biltyNo: getVal(indices.biltyNo),
-        fixedAmount: getVal(indices.fixedAmount),
-        planned2: planned2,
-        actual2: actual2,
-        delay2: getVal(indices.delay2),
-        loadingImage1: loadingImage1,
-        loadingImage2: loadingImage2,
-        loadingImage3: loadingImage3,
-        remarks: remarks
-      }
-      
-      // Debug log for each row
-      console.log(`Row ${i+1}: LGST="${lgstSrNumber}", Planned2="${planned2}", Actual2="${actual2}"`)
-      
-      // Check if Planned2 is NOT null/empty
-      const isPlanned2NotNull = planned2 && 
-                                 planned2.trim() !== "" && 
-                                 planned2.toLowerCase() !== "null" &&
-                                 planned2.toLowerCase() !== "n/a" &&
-                                 planned2.toLowerCase() !== "pending" &&
-                                 !planned2.toLowerCase().includes("undefined") &&
-                                 !planned2.toLowerCase().includes("planned")
-      
-      // Check if Actual2 is null/empty
-      const isActual2Null = !actual2 || 
-                           actual2.trim() === "" || 
-                           actual2.toLowerCase() === "null" ||
-                           actual2.toLowerCase() === "n/a" ||
-                           actual2.toLowerCase() === "pending" ||
-                           actual2.toLowerCase().includes("undefined") ||
-                           actual2.toLowerCase().includes("actual")
-      
-      // Check if Actual2 is NOT null/empty
-      const isActual2NotNull = actual2 && 
-                              actual2.trim() !== "" && 
-                              actual2.toLowerCase() !== "null" &&
-                              actual2.toLowerCase() !== "n/a" &&
-                              actual2.toLowerCase() !== "pending" &&
-                              !actual2.toLowerCase().includes("undefined") &&
-                              !actual2.toLowerCase().includes("actual")
-      
-      // LOGIC:
-      // 1. PENDING: Planned2 is NOT null AND Actual2 is null
-      // 2. COMPLETED: Planned2 is NOT null AND Actual2 is NOT null
-      // 3. SKIP: Planned2 is null
-      
-      if (isPlanned2NotNull) {
-        if (isActual2Null) {
-          // PENDING: Planned2 has value, but Actual2 is empty/null
-          order.isPending = true
-          order.isCompleted = false
-          pendingOrders.push(order)
-          console.log(`  -> ADDED to PENDING (Planned2=${planned2}, Actual2 is null)`)
-        } else if (isActual2NotNull) {
-          // COMPLETED: Both Planned2 and Actual2 have values
-          order.isPending = false
-          order.isCompleted = true
-          completedOrders.push(order)
-          console.log(`  -> ADDED to COMPLETED (Planned2=${planned2}, Actual2=${actual2})`)
-        }
-      } else {
-        console.log(`  -> SKIPPED - Planned2 is null or invalid`)
-      }
-    }
-    
-    console.log(`Transformation complete - Pending: ${pendingOrders.length}, Completed: ${completedOrders.length}`)
-    
-    // Sort pending orders by Planned2 date (most recent first)
-    pendingOrders.sort((a, b) => {
-      if (!a.planned2) return 1
-      if (!b.planned2) return -1
-      return new Date(b.planned2) - new Date(a.planned2)
-    })
-    
-    // Sort completed orders by Actual2 date (most recent first)
-    completedOrders.sort((a, b) => {
-      if (!a.actual2) return 1
-      if (!b.actual2) return -1
-      return new Date(b.actual2) - new Date(a.actual2)
-    })
-    
-    return { pending: pendingOrders, completed: completedOrders }
   }
 
   // Filter pending and history orders
@@ -340,16 +137,16 @@ export default function LoadMaterialPage({ user }) {
 
   const searchFilteredOrders = (ordersList) => {
     if (!searchTerm) return ordersList
-    
+
     return ordersList.filter((order) =>
-      Object.values(order).some((value) => 
+      Object.values(order).some((value) =>
         value?.toString().toLowerCase().includes(searchTerm.toLowerCase())
       )
     )
   }
 
-  const displayOrders = activeTab === "pending" 
-    ? searchFilteredOrders(pendingOrders) 
+  const displayOrders = activeTab === "pending"
+    ? searchFilteredOrders(pendingOrders)
     : searchFilteredOrders(historyOrders)
 
   const handleLoadMaterial = (order) => {
@@ -369,61 +166,32 @@ export default function LoadMaterialPage({ user }) {
   const handleFileSelect = async (event, imageNumber) => {
     const file = event.target.files[0]
     if (!file) return
-    
+
     const imageKey = `loadingImage${imageNumber}`
-    
+
     if (file.size > 5 * 1024 * 1024) {
-      alert("File size should be less than 5MB")
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "File size should be less than 5MB",
+      })
       return
     }
-    
+
     if (!file.type.startsWith('image/')) {
-      alert("Please select an image file")
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please select an image file",
+      })
       return
     }
-    
-    setUploadingImages(prev => ({ ...prev, [imageKey]: true }))
-    
-    try {
-      const reader = new FileReader()
-      reader.onloadend = async () => {
-        const base64String = reader.result
-        
-        const uploadData = {
-          action: 'uploadFile',
-          base64Data: base64String,
-          fileName: `load_material_${selectedOrder.lgstSrNumber}_img${imageNumber}_${Date.now()}.${file.name.split('.').pop()}`,
-          mimeType: file.type,
-          folderId: DRIVE_FOLDER_ID
-        }
-        
-        const response = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams(uploadData)
-        })
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-        
-        const result = await response.json()
-        if (result.success) {
-          setUploadedUrls(prev => ({ ...prev, [imageKey]: result.fileUrl }))
-          setFormData(prev => ({ ...prev, [imageKey]: result.fileUrl }))
-          alert(`✓ Image ${imageNumber} uploaded successfully!`)
-        }
-      }
-      
-      reader.readAsDataURL(file)
-    } catch (error) {
-      console.error("Error uploading file:", error)
-      alert(`✗ Failed to upload image ${imageNumber}`)
-    } finally {
-      setUploadingImages(prev => ({ ...prev, [imageKey]: false }))
-    }
+
+    // Generate local preview URL
+    const localUrl = URL.createObjectURL(file)
+
+    setFormData(prev => ({ ...prev, [imageKey]: file }))
+    setUploadedUrls(prev => ({ ...prev, [imageKey]: localUrl }))
   }
 
   const removeImage = (imageNumber) => {
@@ -436,173 +204,89 @@ export default function LoadMaterialPage({ user }) {
     if (!selectedOrder) return
 
     if (!formData.loadingImage1 && !formData.loadingImage2 && !formData.loadingImage3) {
-      alert("Please upload at least one loading image (Loading Image 1 is mandatory)")
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please upload at least one loading image (Loading Image 1 is mandatory)",
+      })
       return
     }
 
     try {
       setSubmitting(true)
-      
-      const now = new Date()
-      const actualDateTime = now.toLocaleString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      }).replace(/(\d+)\/(\d+)\/(\d+), (\d+:\d+:\d+)/, '$1/$2/$3 $4')
-      
-      // Get the current sheet data to find correct column indices
-      const headersResponse = await fetch(`${SCRIPT_URL}?sheet=DISPATCH`)
-      if (!headersResponse.ok) {
-        throw new Error(`HTTP error! status: ${headersResponse.ok}`)
+
+      const finalUrls = {
+        loadingImage1: "",
+        loadingImage2: "",
+        loadingImage3: ""
       }
-      
-      const headersData = await headersResponse.json()
-      
-      if (!headersData.success || !headersData.data) {
-        throw new Error("Failed to fetch sheet headers")
-      }
-      
-      // Find headers row
-      let headerRowIndex = -1
-      let headers = []
-      
-      for (let i = 0; i < headersData.data.length; i++) {
-        const row = headersData.data[i]
-        if (row && row.length > 0) {
-          const hasTimestamp = row.some(cell => 
-            cell && cell.toString().trim().toLowerCase().includes("timestamp")
-          )
-          
-          if (hasTimestamp) {
-            headerRowIndex = i
-            headers = row.map(h => h?.toString().trim() || "")
-            break
-          }
+
+      // Upload files sequentially
+      for (const num of [1, 2, 3]) {
+        const imageKey = `loadingImage${num}`
+        const file = formData[imageKey]
+
+        if (file && file instanceof File) {
+          const fileExt = file.name.split('.').pop()
+          const fileName = `${STORAGE_FOLDER}/load_material_${selectedOrder.lgstSrNumber}_img${num}_${Date.now()}.${fileExt}`
+
+          const { error: uploadError } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .upload(fileName, file)
+
+          if (uploadError) throw uploadError
+
+          const { data: { publicUrl } } = supabase.storage
+            .from(STORAGE_BUCKET)
+            .getPublicUrl(fileName)
+
+          finalUrls[imageKey] = publicUrl
         }
       }
-      
-      if (headerRowIndex === -1) {
-        throw new Error("Could not find headers in DISPATCH sheet")
+
+      const actualDateTime = getISTTimestamp()
+
+      const { error } = await supabase
+        .from('DISPATCH')
+        .update({
+          "Actual2": actualDateTime,
+          "Loading Image 1": finalUrls.loadingImage1 || "",
+          "Loading Image 2": finalUrls.loadingImage2 || "",
+          "Loading Image 3": finalUrls.loadingImage3 || ""
+        })
+        .eq('id', selectedOrder.id)
+
+      if (error) {
+        throw error
       }
-      
-      // Find column indices
-      const findIndex = (patterns) => {
-        for (const pattern of patterns) {
-          const index = headers.findIndex(h => {
-            if (!h) return false
-            const headerLower = h.toString().toLowerCase().trim()
-            const patternLower = pattern.toLowerCase().trim()
-            return headerLower.includes(patternLower)
-          })
-          if (index !== -1) return index + 1 // +1 for Google Sheets 1-indexed columns
-        }
-        return -1
-      }
-      
-      const actual2ColIndex = findIndex(["actual2"])
-      const loadingImage1ColIndex = findIndex(["loading image 1"])
-      const loadingImage2ColIndex = findIndex(["loading image 2"])
-      const loadingImage3ColIndex = findIndex(["loading image 3"])
-      
-      console.log("Column indices for update:", {
-        actual2ColIndex,
-        loadingImage1ColIndex,
-        loadingImage2ColIndex,
-        loadingImage3ColIndex
+
+      // Refresh data
+      await fetchLoadMaterialData()
+
+      // Clear form
+      setSelectedOrder(null)
+      setFormData({
+        loadingImage1: null,
+        loadingImage2: null,
+        loadingImage3: null
       })
-      
-      if (actual2ColIndex === -1) {
-        throw new Error("Could not find 'Actual2' column in DISPATCH sheet")
-      }
-      
-      // Update Actual2 column
-      const updateActual2Data = {
-        action: 'updateCell',
-        sheetName: 'DISPATCH',
-        rowIndex: selectedOrder.id + 1, // +1 for Google Sheets 1-indexed rows
-        columnIndex: actual2ColIndex,
-        value: actualDateTime
-      }
-      
-      console.log("Updating Actual2 column:", updateActual2Data)
-      
-      const actual2Response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams(updateActual2Data)
+      setUploadedUrls({
+        loadingImage1: "",
+        loadingImage2: "",
+        loadingImage3: ""
       })
 
-      if (!actual2Response.ok) {
-        throw new Error(`HTTP error! status: ${actual2Response.status}`)
-      }
-
-      const actual2Result = await actual2Response.json()
-      console.log("Google Apps Script response for Actual2:", actual2Result)
-
-      // Update other columns if they exist
-      const updateColumns = [
-        { colIndex: loadingImage1ColIndex, value: formData.loadingImage1 || "" },
-        { colIndex: loadingImage2ColIndex, value: formData.loadingImage2 || "" },
-        { colIndex: loadingImage3ColIndex, value: formData.loadingImage3 || "" }
-      ]
-
-      for (const column of updateColumns) {
-        if (column.colIndex !== -1 && column.value !== undefined) {
-          const updateData = {
-            action: 'updateCell',
-            sheetName: 'DISPATCH',
-            rowIndex: selectedOrder.id + 1,
-            columnIndex: column.colIndex,
-            value: column.value
-          }
-          
-          console.log(`Updating column ${column.colIndex}:`, updateData)
-          
-          const response = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams(updateData)
-          })
-
-          if (!response.ok) {
-            console.warn(`Failed to update column ${column.colIndex}, but continuing...`)
-          }
-        }
-      }
-
-      if (actual2Result.success) {
-        // Refresh data
-        await fetchLoadMaterialData()
-        
-        // Clear form
-        setSelectedOrder(null)
-        setFormData({
-          loadingImage1: null,
-          loadingImage2: null,
-          loadingImage3: null
-        })
-        setUploadedUrls({
-          loadingImage1: "",
-          loadingImage2: "",
-          loadingImage3: ""
-        })
-        
-        alert("✓ Load Material submitted successfully!")
-      } else {
-        throw new Error(actual2Result.error || "Failed to submit to Google Sheets")
-      }
-      
+      toast({
+        title: "Success",
+        description: "Load Material submitted successfully!",
+      })
     } catch (error) {
       console.error("Error submitting load material:", error)
-      alert(`✗ Failed to submit. Error: ${error.message}`)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: `Failed to submit. Error: ${error.message}`,
+      })
     } finally {
       setSubmitting(false)
     }
@@ -622,11 +306,32 @@ export default function LoadMaterialPage({ user }) {
     })
   }
 
-  const openImage = (url) => {
-    if (url) {
-      window.open(url, '_blank')
+  const formatDateTime = (dateTimeString) => {
+    if (!dateTimeString || dateTimeString === "" || dateTimeString === " ") return "N/A"
+    try {
+      const date = new Date(dateTimeString)
+      if (isNaN(date.getTime())) return dateTimeString
+      return date.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      })
+    } catch (e) {
+      return dateTimeString
     }
   }
+
+  const openImage = async (url) => {
+    if (url) {
+      const signedUrl = await getSignedUrl(url)
+      window.open(signedUrl, '_blank')
+    }
+  }
+
+  const totalParties = new Set([...orders, ...completedOrders].map(o => o.partyName)).size
 
   if (loading) {
     return (
@@ -639,321 +344,231 @@ export default function LoadMaterialPage({ user }) {
 
   return (
     <div className="space-y-6">
-      <div className="hidden lg:block">
-        <h1 className="text-3xl font-bold text-gray-900">Load Material</h1>
-        <p className="text-gray-600">Upload loading images and complete material loading process</p>
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Load Material</h1>
+          <p className="text-gray-600">Upload loading images and complete material loading process</p>
+        </div>
       </div>
 
-      <div className="lg:hidden">
-        <h1 className="text-2xl font-bold text-gray-900">Load Material</h1>
-        <p className="text-sm text-gray-600 mt-1">Upload loading images and complete material loading process</p>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="bg-blue-50 border-blue-100 shadow-sm">
+          <CardContent className="p-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-medium text-blue-600">Total Pending</p>
+              <div className="text-2xl font-bold text-blue-900">{orders.length}</div>
+            </div>
+            <div className="h-10 w-10 bg-blue-500 rounded-full flex items-center justify-center text-white">
+              <Loader2 className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-green-50 border-green-100 shadow-sm">
+          <CardContent className="p-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-medium text-green-600">Completed Load Material</p>
+              <div className="text-2xl font-bold text-green-900">{completedOrders.length}</div>
+            </div>
+            <div className="h-10 w-10 bg-green-500 rounded-full flex items-center justify-center text-white">
+              <CheckCircle2 className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-purple-50 border-purple-100 shadow-sm">
+          <CardContent className="p-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-medium text-purple-600">Total Parties</p>
+              <div className="text-2xl font-bold text-purple-900">{totalParties}</div>
+            </div>
+            <div className="h-10 w-10 bg-purple-500 rounded-full flex items-center justify-center text-white">
+              <Truck className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <Card className="border-0 shadow-lg">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Load Material Management</CardTitle>
-          <p className="text-sm text-gray-500 mt-1">
-            Pending: {pendingOrders.length} | Completed: {historyOrders.length}
-          </p>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="space-y-0">
-            <div className="flex bg-gray-100 p-1 rounded-t-lg">
-              <button
-                onClick={() => setActiveTab("pending")}
-                className={`flex-1 py-3 px-4 text-sm font-medium rounded-lg transition-all text-center ${
-                  activeTab === "pending"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Pending ({pendingOrders.length})
-              </button>
-              <button
-                onClick={() => setActiveTab("history")}
-                className={`flex-1 py-3 px-4 text-sm font-medium rounded-lg transition-all text-center ${
-                  activeTab === "history"
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                History ({historyOrders.length})
-              </button>
-            </div>
-
-            <div className="bg-white p-4 border-b border-gray-200">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search orders..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 h-10 border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-gray-50 w-full"
-                />
-              </div>
-            </div>
-
-            <div className="hidden lg:block overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50 hover:bg-gray-50 border-b border-gray-200">
-                    {activeTab === "pending" && (
-                      <TableHead className="font-semibold text-gray-900 py-4 px-6">Action</TableHead>
-                    )}
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">LGST-Sr Number</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Delivery Order No.</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Dispatch No.</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Party Name</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Product Name</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Truck Qty</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Transporter</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Truck No</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned2</TableHead>
-                    {activeTab === "history" && (
-                      <TableHead className="font-semibold text-gray-900 py-4 px-6">Loading Images</TableHead>
-                    )}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayOrders.length === 0 ? (
-                    <TableRow>
-                      <TableCell 
-                        colSpan={activeTab === "pending" ? 10 : 11} 
-                        className="text-center py-8 text-gray-500"
-                      >
-                        {activeTab === "pending" 
-                          ? "No pending load material orders found."
-                          : "No completed load material orders found."
-                        }
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    displayOrders.map((order) => (
-                      <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
-                        {activeTab === "pending" && (
-                          <TableCell className="py-4 px-6">
-                            <div className="flex flex-col gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => handleLoadMaterial(order)}
-                                className="bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
-                                disabled={submitting}
-                              >
-                                <Upload className="w-4 h-4 mr-1" />
-                                Load Material
-                              </Button>
-                            </div>
-                          </TableCell>
-                        )}
-                        <TableCell className="py-4 px-6">
-                          <Badge className="bg-blue-500 text-white rounded-full whitespace-nowrap">
-                            {order.lgstSrNumber || "N/A"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
-                          <div className="max-w-[120px]">
-                            <span className="font-medium break-words">{order.deliveryOrderNo || "N/A"}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
-                          <Badge className="bg-purple-500 text-white rounded-full whitespace-nowrap">
-                            {order.dispatchNo || "N/A"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
-                          <div className="max-w-[180px]">
-                            <p className="break-words">{order.partyName || "N/A"}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
-                          <div className="max-w-[150px]">
-                            <span className="break-words">{order.productName || "N/A"}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-4 px-6 font-medium">
-                          {order.actualTruckQty || "N/A"}
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
-                          <div className="max-w-[120px]">
-                            <span className="break-words">{order.transporterName || "N/A"}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
-                          <Badge variant="outline" className="rounded-full">
-                            {order.truckNo || "N/A"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="py-4 px-6 font-medium whitespace-nowrap">
-                          {order.planned2 ? (
-                            <span className="text-orange-600">{order.planned2}</span>
-                          ) : "N/A"}
-                        </TableCell>
-                        {activeTab === "history" && (
-                          <TableCell className="py-4 px-6 max-w-[250px]">
-                            <div className="flex flex-wrap gap-2">
-                              {order.loadingImage1 && (
-                                <Badge 
-                                  variant="outline" 
-                                  className="cursor-pointer hover:bg-blue-50"
-                                  onClick={() => openImage(order.loadingImage1)}
-                                >
-                                  <Eye className="w-3 h-3 mr-1" />
-                                  Image 1
-                                </Badge>
-                              )}
-                              {order.loadingImage2 && (
-                                <Badge 
-                                  variant="outline" 
-                                  className="cursor-pointer hover:bg-blue-50"
-                                  onClick={() => openImage(order.loadingImage2)}
-                                >
-                                  <Eye className="w-3 h-3 mr-1" />
-                                  Image 2
-                                </Badge>
-                              )}
-                              {order.loadingImage3 && (
-                                <Badge 
-                                  variant="outline" 
-                                  className="cursor-pointer hover:bg-blue-50"
-                                  onClick={() => openImage(order.loadingImage3)}
-                                >
-                                  <Eye className="w-3 h-3 mr-1" />
-                                  Image 3
-                                </Badge>
-                              )}
-                              {!order.loadingImage1 && !order.loadingImage2 && !order.loadingImage3 && (
-                                <span className="text-gray-400 text-sm">No images</span>
-                              )}
-                            </div>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="lg:hidden">
-              <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
-                {displayOrders.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">
-                    {activeTab === "pending" 
-                      ? "No pending load material orders found."
-                      : "No completed load material orders found."
-                    }
-                  </p>
-                ) : (
-                  displayOrders.map((order) => (
-                    <div key={order.id} className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <Badge className="bg-blue-500 text-white text-xs mb-1">
-                            {order.lgstSrNumber || "N/A"}
-                          </Badge>
-                          <p className="font-semibold text-gray-900">{order.partyName || "N/A"}</p>
-                          <p className="text-xs text-gray-500">
-                            DO: {order.deliveryOrderNo || "N/A"} | Dispatch: {order.dispatchNo || "N/A"}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          {activeTab === "pending" ? (
-                            <Button
-                              size="sm"
-                              onClick={() => handleLoadMaterial(order)}
-                              className="bg-blue-600 hover:bg-blue-700 whitespace-nowrap"
-                              disabled={submitting}
-                            >
-                              <Upload className="w-3 h-3 mr-1" />
-                              Load
-                            </Button>
-                          ) : (
-                            <Badge className="bg-green-500 text-white text-xs">
-                              ✓ Completed
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Product:</span>
-                          <span className="font-medium text-right break-words max-w-[60%]">
-                            {order.productName || "N/A"}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Truck Qty:</span>
-                          <span className="font-medium">{order.actualTruckQty || "N/A"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Transporter:</span>
-                          <span className="font-medium">{order.transporterName || "N/A"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Truck No:</span>
-                          <span className="font-medium">{order.truckNo || "N/A"}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Planned:</span>
-                          <span className="font-medium text-orange-600">
-                            {order.planned2 || "N/A"}
-                          </span>
-                        </div>
-                        {activeTab === "history" && (
-                          <div className="flex justify-between items-center">
-                            <span className="text-gray-600">Images:</span>
-                            <div className="flex gap-1">
-                              {order.loadingImage1 && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 px-2 text-xs"
-                                  onClick={() => openImage(order.loadingImage1)}
-                                >
-                                  <Eye className="w-3 h-3" />
-                                </Button>
-                              )}
-                              {order.loadingImage2 && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 px-2 text-xs"
-                                  onClick={() => openImage(order.loadingImage2)}
-                                >
-                                  <Eye className="w-3 h-3" />
-                                </Button>
-                              )}
-                              {order.loadingImage3 && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 px-2 text-xs"
-                                  onClick={() => openImage(order.loadingImage3)}
-                                >
-                                  <Eye className="w-3 h-3" />
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="px-4 sm:px-6 py-3 bg-gray-50 text-sm text-gray-600 rounded-b-lg border-t border-gray-200">
-              Showing {displayOrders.length} of {activeTab === "pending" ? pendingOrders.length : historyOrders.length} orders
+      <div className="bg-white border rounded-md shadow-sm p-4">
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                placeholder="Search orders..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 h-10 w-full"
+              />
             </div>
           </div>
-        </CardContent>
-      </Card>
+
+          <Button
+            onClick={() => fetchLoadMaterialData()}
+            variant="outline"
+            className="h-10 px-3"
+            disabled={loading || submitting}
+          >
+            <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
+
+        <div className="mt-4 flex bg-gray-100 p-1 rounded-md w-fit">
+          <button
+            onClick={() => setActiveTab("pending")}
+            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all text-center ${activeTab === "pending" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            Pending ({pendingOrders.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all text-center ${activeTab === "history" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            History ({historyOrders.length})
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white border rounded-md shadow-sm overflow-hidden mt-4">
+        <div className="hidden lg:block overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50 border-b border-gray-200">
+                {activeTab === "pending" && (
+                  <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Action</TableHead>
+                )}
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">LGST-Sr Number</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Delivery Order No.</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Dispatch No.</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Party Name</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Product Name</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Truck Qty</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transporter</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Truck No</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Planned2</TableHead>
+                {activeTab === "history" && (
+                  <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Loading Images</TableHead>
+                )}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {displayOrders.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={activeTab === "pending" ? 10 : 11}
+                    className="text-center py-8 text-gray-500"
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <span className="text-lg">
+                        {activeTab === "pending"
+                          ? "No pending load material orders found."
+                          : "No completed load material orders found."}
+                      </span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                displayOrders.map((order) => (
+                  <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
+                    {activeTab === "pending" && (
+                      <TableCell className="py-2 px-4 min-w-[100px]">
+                        <Button
+                          size="sm"
+                          onClick={() => handleLoadMaterial(order)}
+                          className="bg-blue-600 hover:bg-blue-700 h-8 text-xs"
+                          disabled={submitting}
+                        >
+                          <Upload className="w-3 h-3 mr-1" />
+                          Load
+                        </Button>
+                      </TableCell>
+                    )}
+                    <TableCell className="py-2 px-4 min-w-[120px]">
+                      <Badge className="bg-blue-500 text-white rounded-sm whitespace-nowrap text-xs">
+                        {order.lgstSrNumber || "N/A"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[150px] font-medium text-sm">
+                      {order.deliveryOrderNo || "N/A"}
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[120px]">
+                      <Badge className="bg-purple-500 text-white rounded-sm whitespace-nowrap text-xs">
+                        {order.dispatchNo || "N/A"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">
+                      {order.partyName || "N/A"}
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">
+                      {order.productName || "N/A"}
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[100px] font-medium text-sm">
+                      {order.actualTruckQty || "N/A"}
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">
+                      {order.transporterName || "N/A"}
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[120px]">
+                      <Badge variant="outline" className="rounded-sm font-normal text-xs">
+                        {order.truckNo || "N/A"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[120px] font-medium whitespace-nowrap text-sm">
+                      {order.planned2 ? (
+                        <span className="text-orange-600">{formatDateTime(order.planned2)}</span>
+                      ) : "N/A"}
+                    </TableCell>
+                    {activeTab === "history" && (
+                      <TableCell className="py-2 px-4 min-w-[150px]">
+                        <div className="flex flex-wrap gap-1">
+                          {order.loadingImage1 && (
+                            <Badge
+                              variant="outline"
+                              className="cursor-pointer hover:bg-blue-50 text-xs font-normal"
+                              onClick={() => openImage(order.loadingImage1)}
+                            >
+                              <Eye className="w-3 h-3 mr-1" />
+                              Img 1
+                            </Badge>
+                          )}
+                          {order.loadingImage2 && (
+                            <Badge
+                              variant="outline"
+                              className="cursor-pointer hover:bg-blue-50 text-xs font-normal"
+                              onClick={() => openImage(order.loadingImage2)}
+                            >
+                              <Eye className="w-3 h-3 mr-1" />
+                              Img 2
+                            </Badge>
+                          )}
+                          {order.loadingImage3 && (
+                            <Badge
+                              variant="outline"
+                              className="cursor-pointer hover:bg-blue-50 text-xs font-normal"
+                              onClick={() => openImage(order.loadingImage3)}
+                            >
+                              <Eye className="w-3 h-3 mr-1" />
+                              Img 3
+                            </Badge>
+                          )}
+                          {!order.loadingImage1 && !order.loadingImage2 && !order.loadingImage3 && (
+                            <span className="text-gray-400 text-xs">No images</span>
+                          )}
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
 
       {selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 lg:p-0">
-          <Card className="w-full max-w-2xl lg:max-w-4xl max-h-screen lg:max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
               <CardTitle className="text-lg lg:text-xl">Complete Load Material</CardTitle>
               <Button variant="ghost" size="sm" onClick={handleCancel} disabled={submitting}>
@@ -962,56 +577,59 @@ export default function LoadMaterialPage({ user }) {
             </CardHeader>
             <CardContent className="p-4 lg:p-6">
               <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">Order Information</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wider">Order Information</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-y-4 gap-x-6">
                     <div>
-                      <Label className="text-sm text-gray-500">LGST-Sr Number</Label>
-                      <p className="font-medium">{selectedOrder.lgstSrNumber || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">LGST-Sr Number</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.lgstSrNumber || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Delivery Order No.</Label>
-                      <p className="font-medium">{selectedOrder.deliveryOrderNo || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Delivery Order No.</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.deliveryOrderNo || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Dispatch No.</Label>
-                      <p className="font-medium">{selectedOrder.dispatchNo || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Dispatch No.</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.dispatchNo || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Party Name</Label>
-                      <p className="font-medium">{selectedOrder.partyName || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Party Name</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.partyName || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Product Name</Label>
-                      <p className="font-medium">{selectedOrder.productName || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Product Name</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.productName || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Actual Truck Qty</Label>
-                      <p className="font-medium">{selectedOrder.actualTruckQty || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Actual Truck Qty</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.actualTruckQty || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Transporter</Label>
-                      <p className="font-medium">{selectedOrder.transporterName || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Transporter</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.transporterName || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Truck No</Label>
-                      <p className="font-medium">{selectedOrder.truckNo || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Truck No</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.truckNo || "N/A"}</p>
                     </div>
-                    <div className="sm:col-span-2">
-                      <Label className="text-sm text-gray-500">Planned Date/Time</Label>
-                      <p className="font-medium text-orange-600">
-                        {selectedOrder.planned2 || "N/A"}
+                    <div>
+                      <Label className="text-xs text-gray-500 block mb-1">Planned Date / Time</Label>
+                      <p className="font-medium text-orange-600 font-medium">
+                        {formatDateTime(selectedOrder.planned2)}
                       </p>
                     </div>
                   </div>
                 </div>
 
                 <div className="border-t pt-6">
-                  <h3 className="text-lg font-semibold mb-3">Upload Loading Images</h3>
+                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                    <span className="w-1 h-6 bg-blue-600 rounded-full inline-block"></span>
+                    Upload Loading Images
+                  </h3>
                   <p className="text-sm text-gray-600 mb-4">
-                    Upload at least one loading image. Image 1 is mandatory. Max file size: 5MB each.
+                    Please upload at least one loading image. Image 1 is mandatory. Max file size: 5MB each.
                   </p>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     {[1, 2, 3].map((num) => (
                       <div key={num} className="space-y-3">
@@ -1046,54 +664,60 @@ export default function LoadMaterialPage({ user }) {
                             </div>
                           )}
                         </div>
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          ref={num === 1 ? fileInputRef1 : num === 2 ? fileInputRef2 : fileInputRef3}
-                          onChange={(e) => handleFileSelect(e, num)}
-                          className="hidden"
-                          disabled={submitting}
-                        />
-                        <Button
-                          variant="outline"
-                          className="w-full h-24 border-dashed"
-                          onClick={() => {
-                            if (num === 1) fileInputRef1.current.click()
-                            else if (num === 2) fileInputRef2.current.click()
-                            else fileInputRef3.current.click()
-                          }}
-                          disabled={submitting || uploadingImages[`loadingImage${num}`]}
-                        >
-                          <div className="flex flex-col items-center">
-                            <Upload className="w-6 h-6 mb-2 text-gray-400" />
-                            <span className="text-sm">
-                              {uploadedUrls[`loadingImage${num}`] ? "✓ Uploaded" : `Upload Image ${num}`}
-                            </span>
-                          </div>
-                        </Button>
+
+                        <div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            ref={num === 1 ? fileInputRef1 : num === 2 ? fileInputRef2 : fileInputRef3}
+                            onChange={(e) => handleFileSelect(e, num)}
+                            className="hidden"
+                            disabled={submitting}
+                          />
+                          <Button
+                            variant="outline"
+                            className="w-full h-24 border-dashed bg-gray-50 hover:bg-gray-100"
+                            onClick={() => {
+                              if (num === 1) fileInputRef1.current.click()
+                              else if (num === 2) fileInputRef2.current.click()
+                              else fileInputRef3.current.click()
+                            }}
+                            disabled={submitting || uploadingImages[`loadingImage${num}`]}
+                          >
+                            <div className="flex flex-col items-center">
+                              <Upload className="w-6 h-6 mb-2 text-gray-400" />
+                              <span className="text-sm text-gray-600">
+                                {uploadedUrls[`loadingImage${num}`] ? "✓ Uploaded" : `Click to Upload`}
+                              </span>
+                            </div>
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
 
-                  <div className="mt-4 p-3 bg-blue-50 rounded-md">
-                    <p className="text-sm text-blue-700">
-                      <strong>Note:</strong> The "Actual2" field will be auto-populated with the current date/time when you submit.
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-md">
+                    <p className="text-sm text-blue-700 flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                      <span>
+                        The "Actual2" field will be auto-populated with the current date/time when you submit.
+                      </span>
                     </p>
                   </div>
                 </div>
 
                 <div className="border-t pt-6">
                   <div className="flex flex-col sm:flex-row justify-end gap-3">
-                    <Button 
-                      variant="outline" 
-                      onClick={handleCancel} 
-                      className="w-full sm:w-auto" 
+                    <Button
+                      variant="outline"
+                      onClick={handleCancel}
+                      className="w-full sm:w-auto"
                       disabled={submitting}
                     >
                       Cancel
                     </Button>
-                    <Button 
-                      onClick={handleSubmit} 
+                    <Button
+                      onClick={handleSubmit}
                       className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
                       disabled={submitting || !formData.loadingImage1}
                     >
@@ -1116,19 +740,6 @@ export default function LoadMaterialPage({ user }) {
           </Card>
         </div>
       )}
-
-      <div className="flex justify-center">
-        <Button 
-          onClick={fetchLoadMaterialData} 
-          variant="outline" 
-          size="sm"
-          className="flex items-center gap-2"
-          disabled={submitting || loading}
-        >
-          <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh Data
-        </Button>
-      </div>
     </div>
   )
 }

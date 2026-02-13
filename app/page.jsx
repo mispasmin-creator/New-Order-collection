@@ -1,42 +1,23 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 import LoginForm from "@/components/LoginForm"
-import MainLayout from "@/components/MainLayout"
+import { useAuth } from "@/components/providers/AuthProvider"
 
 export default function HomePage() {
-  const [user, setUser] = useState(null)
-  const [orders, setOrders] = useState([])
+  const { user, login } = useAuth()
+  const router = useRouter()
 
   useEffect(() => {
-    // Check for stored user session
-    const storedUser = localStorage.getItem('order2delivery_user')
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser))
-      } catch (e) {
-        localStorage.removeItem('order2delivery_user')
-      }
+    if (user) {
+      router.push('/dashboard')
     }
-  }, [])
+  }, [user, router])
 
-  const handleLogin = (loggedInUser) => {
-    setUser(loggedInUser)
-    localStorage.setItem('order2delivery_user', JSON.stringify(loggedInUser))
+  if (user) {
+    return null // or a loading spinner while redirecting
   }
 
-  const handleLogout = () => {
-    setUser(null)
-    localStorage.removeItem('order2delivery_user')
-  }
-
-  const updateOrders = (newOrders) => {
-    setOrders(newOrders)
-  }
-
-  if (!user) {
-    return <LoginForm onLogin={handleLogin} />
-  }
-
-  return <MainLayout user={user} onLogout={handleLogout} orders={orders} updateOrders={updateOrders} />
+  return <LoginForm onLogin={login} />
 }

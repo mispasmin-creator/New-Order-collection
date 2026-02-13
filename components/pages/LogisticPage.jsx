@@ -1,15 +1,17 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
+import { getISTDisplayDate, getISTTimestamp } from "@/lib/dateUtils"
+import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { X, Search, Loader2 } from "lucide-react"
+import { X, Search, Loader2, CheckCircle2, Truck } from "lucide-react"
+import { supabase } from "@/lib/supabaseClient"
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec"
 const FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-"
 
 // Transportation type options
@@ -20,31 +22,32 @@ const TRANSPORT_TYPES = [
   "Direct supply dont submit the delay"
 ]
 
-// Column indices based on your DISPATCH sheet structure
-const COLUMN_INDICES = {
-  TIMESTAMP: 0,
-  DSR_NUMBER: 1,
-  DELIVERY_ORDER_NO: 2,
-  PARTY_NAME: 3,
-  PRODUCT_NAME: 4,
-  QTY_TO_BE_DISPATCHED: 5,
-  TYPE_OF_TRANSPORTING: 6,
-  DATE_OF_DISPATCH: 7,
-  TO_BE_RECONFIRM: 8,
-  PLANNED1: 9,
-  ACTUAL1: 10,
-  DELAY1: 11,
-  LGST_NUMBER: 12,
-  ACTUAL_TRUCK_QTY: 13,
-  TYPE_OF_TRANSPORTING_LOGISTIC: 14,
-  TRANSPORTER_NAME: 15,
-  TRUCK_NO: 16,
-  DRIVER_MOBILE: 17,
-  VEHICLE_IMAGE: 18,
-  BILTY_NO: 19,
-  TYPE_OF_RATE: 20,
-  TRANSPORT_RATE: 21,
-  FIXED_AMOUNT: 22
+// Supabase column names matching the provided schema
+const DB_COLUMNS = {
+  ID: "id",
+  TIMESTAMP: "Timestamp",
+  DSR_NUMBER: "D-Sr Number",
+  DELIVERY_ORDER_NO: "Delivery Order No.",
+  PARTY_NAME: "Party Name",
+  PRODUCT_NAME: "Product Name",
+  QTY_TO_BE_DISPATCHED: "Qty To Be Dispatched",
+  TYPE_OF_TRANSPORTING: "Type Of Transporting",
+  DATE_OF_DISPATCH: "Date Of Dispatch",
+  TO_BE_RECONFIRM: "To Be Reconfirm",
+  PLANNED1: "Planned1",
+  ACTUAL1: "Actual1",
+  DELAY1: "Delay1",
+  LGST_SR_NUMBER: "LGST-Sr Number",
+  ACTUAL_TRUCK_QTY: "Actual Truck Qty",
+  TYPE_OF_TRANSPORTING_LOGISTIC: "Type Of Transporting  ", // Note: Schema has 2 trailing spaces
+  TRANSPORTER_NAME: "Transporter Name",
+  TRUCK_NO: "Truck No.",
+  DRIVER_MOBILE: "Driver Mobile No.",
+  VEHICLE_IMAGE: "Vehicle No. Plate Image",
+  BILTY_NO: "Bilty No.",
+  TYPE_OF_RATE: "Type Of Rate",
+  TRANSPORT_RATE: "Transport Rate @Per Matric Ton",
+  FIXED_AMOUNT: "Fixed Amount"
 }
 
 export default function LogisticPage({ user }) {
@@ -53,6 +56,7 @@ export default function LogisticPage({ user }) {
   const [transporters, setTransporters] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const { toast } = useToast()
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
@@ -71,8 +75,8 @@ export default function LogisticPage({ user }) {
 
   // Memoized transporter list
   const transporterOptions = useMemo(() => {
-    return transporters.length > 0 
-      ? transporters 
+    return transporters.length > 0
+      ? transporters
       : ["Owned Truck", "External Transporter"]
   }, [transporters])
 
@@ -80,156 +84,143 @@ export default function LogisticPage({ user }) {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
-      
-      // Fetch DISPATCH sheet data
-      const dispatchResponse = await fetch(`${SCRIPT_URL}?sheet=DISPATCH&cache=${Date.now()}`)
-      if (dispatchResponse.ok) {
-        const dispatchData = await dispatchResponse.json()
-        
-        if (dispatchData.success && dispatchData.data) {
-          const allOrders = dispatchData.data
-          
-          // Skip header rows - start from row 6 (0-indexed)
-          const pendingOrders = getPendingOrders(allOrders)
-          setOrders(pendingOrders)
-          
-          const historyOrders = getHistoryOrders(allOrders)
-          setHistoryOrders(historyOrders)
-        }
+
+      // Fetch DISPATCH table data from Supabase
+      const { data: dispatchData, error: dispatchError } = await supabase
+        .from('DISPATCH')
+        .select('*')
+        .order('id', { ascending: false })
+
+      if (dispatchError) throw dispatchError
+
+      if (dispatchData) {
+        const pendingOrders = getPendingOrders(dispatchData)
+        setOrders(pendingOrders)
+
+        const historyOrders = getHistoryOrders(dispatchData)
+        setHistoryOrders(historyOrders)
       }
-      
-      // Fetch transporters from MASTER sheet
-      const masterResponse = await fetch(`${SCRIPT_URL}?sheet=MASTER&cache=${Date.now()}`)
-      if (masterResponse.ok) {
-        const masterData = await masterResponse.json()
-        if (masterData.success && masterData.data) {
-          const transportersList = extractTransporters(masterData.data)
-          setTransporters(transportersList)
-        }
+
+      // Fetch transporters from Supabase Master table
+      const { data: masterData, error } = await supabase
+        .from('MASTER')
+        .select('*')
+
+      if (error) {
+        console.error("Error fetching Master data:", error)
+      } else if (masterData) {
+        const transportersList = extractTransporters(masterData)
+        setTransporters(transportersList)
       }
-      
+
     } catch (error) {
       console.error("Error fetching data:", error)
+      toast({
+        title: "Error loading data",
+        description: error.message,
+        variant: "destructive"
+      })
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [toast])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
-  // Extract transporters from MASTER sheet
-  const extractTransporters = useCallback((sheetData) => {
-    if (!sheetData) return []
-    
+  // Extract transporters from Supabase Master data
+  const extractTransporters = useCallback((data) => {
+    if (!data || data.length === 0) return []
+
+    // Find key for Transporter Name
+    const keys = Object.keys(data[0])
+    const transporterKey = keys.find(k =>
+      k.toLowerCase().includes('transporter') &&
+      !k.toLowerCase().includes('type')
+    )
+
+    if (!transporterKey) return []
+
     const transportersSet = new Set()
-    
-    for (let i = 0; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      if (row) {
-        for (let j = 0; j < row.length; j++) {
-          const cell = row[j]
-          if (cell && typeof cell === 'string' && 
-              cell.toLowerCase().includes('transporter') && 
-              !cell.toLowerCase().includes('type')) {
-            transportersSet.add(cell.trim())
-          }
-        }
+
+    data.forEach(row => {
+      const val = row[transporterKey]
+      if (val && typeof val === 'string' && val.trim() !== '') {
+        transportersSet.add(val.trim())
       }
-    }
-    
-    return Array.from(transportersSet).filter(t => t && t.trim() !== '')
+    })
+
+    return Array.from(transportersSet)
   }, [])
 
-  // Get pending orders (Planned1 has value, Actual1 is empty)
-  const getPendingOrders = useCallback((sheetData) => {
-    if (!sheetData || sheetData.length < 7) return [] // Skip first 6 rows
-    
-    const pendingOrders = []
-    
-    // Start from row 6 (index 5) to skip header rows
-    for (let i = 6; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      if (!row || row.length === 0) continue
-      
-      const planned1 = row[COLUMN_INDICES.PLANNED1]?.toString().trim()
-      const actual1 = row[COLUMN_INDICES.ACTUAL1]?.toString().trim()
-      
-      // Check if Planned1 has value and Actual1 is empty
-const dSr = row[COLUMN_INDICES.DSR_NUMBER]?.toString().toLowerCase()
+  // Get pending orders (Planned1 has value, Actual1 is empty/null)
+  const getPendingOrders = useCallback((data) => {
+    if (!data) return []
 
-if (
-  planned1 &&
-  planned1 !== "" &&
-  (!actual1 || actual1 === "") &&
-  dSr &&
-  !dSr.includes("d-sr") &&       // skip header row
-  !dSr.includes("number")        // skip header row
-) {
-        pendingOrders.push({
-          id: i,
-          rowIndex: i + 1,
-          dSrNumber: row[COLUMN_INDICES.DSR_NUMBER] || "",
-          deliveryOrderNo: row[COLUMN_INDICES.DELIVERY_ORDER_NO] || "",
-          partyName: row[COLUMN_INDICES.PARTY_NAME] || "",
-          productName: row[COLUMN_INDICES.PRODUCT_NAME] || "",
-          qtyToBeDispatched: row[COLUMN_INDICES.QTY_TO_BE_DISPATCHED] || "",
-          typeOfTransporting: row[COLUMN_INDICES.TYPE_OF_TRANSPORTING] || "",
-          dateOfDispatch: row[COLUMN_INDICES.DATE_OF_DISPATCH] || "",
-          planned1: planned1,
-        })
-      }
-    }
-    
-    return pendingOrders
+    return data.filter(row => {
+      const planned1 = row[DB_COLUMNS.PLANNED1]
+      const actual1 = row[DB_COLUMNS.ACTUAL1]
+
+      // Check if Planned1 has value AND Actual1 is empty/null
+      return (
+        planned1 &&
+        String(planned1).trim() !== "" &&
+        (!actual1 || String(actual1).trim() === "")
+      )
+    }).map(row => ({
+      id: row.id,
+      rowIndex: row.id, // Supabase ID is the reference
+      dSrNumber: row[DB_COLUMNS.DSR_NUMBER] || "",
+      deliveryOrderNo: row[DB_COLUMNS.DELIVERY_ORDER_NO] || "",
+      partyName: row[DB_COLUMNS.PARTY_NAME] || "",
+      productName: row[DB_COLUMNS.PRODUCT_NAME] || "",
+      qtyToBeDispatched: row[DB_COLUMNS.QTY_TO_BE_DISPATCHED] || "",
+      typeOfTransporting: row[DB_COLUMNS.TYPE_OF_TRANSPORTING] || "",
+      dateOfDispatch: row[DB_COLUMNS.DATE_OF_DISPATCH] || "",
+      planned1: row[DB_COLUMNS.PLANNED1] || "",
+    }))
   }, [])
 
-  // Get history orders (Actual1 has value)
-  const getHistoryOrders = useCallback((sheetData) => {
-    if (!sheetData || sheetData.length < 7) return []
-    
-    const historyOrders = []
-    
-    // Start from row 6 (index 5) to skip header rows
-    for (let i = 7; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      if (!row || row.length === 0) continue
-      
-      const actual1 = row[COLUMN_INDICES.ACTUAL1]?.toString().trim()
-      
-      // Show only rows where Actual1 has value
-      if (actual1 && actual1 !== "") {
-        const lgstNumber = row[COLUMN_INDICES.LGST_NUMBER]?.toString().trim()
-        
-        historyOrders.push({
-          id: i,
-          rowIndex: i + 1,
-          dSrNumber: row[COLUMN_INDICES.DSR_NUMBER] || "",
-          deliveryOrderNo: row[COLUMN_INDICES.DELIVERY_ORDER_NO] || "",
-          partyName: row[COLUMN_INDICES.PARTY_NAME] || "",
-          productName: row[COLUMN_INDICES.PRODUCT_NAME] || "",
-          lgstSrNumber: lgstNumber || `LGST-${String(i + 1).padStart(3, '0')}`,
-          actual1: actual1,
-          actualTruckQty: row[COLUMN_INDICES.ACTUAL_TRUCK_QTY] || "",
-          typeOfTransporting: row[COLUMN_INDICES.TYPE_OF_TRANSPORTING_LOGISTIC] || "",
-          transporterName: row[COLUMN_INDICES.TRANSPORTER_NAME] || "",
-          truckNo: row[COLUMN_INDICES.TRUCK_NO] || "",
-          driverMobileNo: row[COLUMN_INDICES.DRIVER_MOBILE] || "",
-          typeOfRate: row[COLUMN_INDICES.TYPE_OF_RATE] || "",
-          transportRatePerTon: row[COLUMN_INDICES.TRANSPORT_RATE] || "",
-          fixedAmount: row[COLUMN_INDICES.FIXED_AMOUNT] || "",
-        })
-      }
-    }
-    
-    return historyOrders
+  // Get history orders (Both Planned1 and Actual1 have value)
+  const getHistoryOrders = useCallback((data) => {
+    if (!data) return []
+
+    return data.filter(row => {
+      const planned1 = row[DB_COLUMNS.PLANNED1]
+      const actual1 = row[DB_COLUMNS.ACTUAL1]
+
+      // Check if BOTH Planned1 and Actual1 are filled (not null/empty)
+      return (
+        planned1 &&
+        String(planned1).trim() !== "" &&
+        actual1 &&
+        String(actual1).trim() !== ""
+      )
+    }).map(row => ({
+      id: row.id,
+      rowIndex: row.id,
+      dSrNumber: row[DB_COLUMNS.DSR_NUMBER] || "",
+      deliveryOrderNo: row[DB_COLUMNS.DELIVERY_ORDER_NO] || "",
+      partyName: row[DB_COLUMNS.PARTY_NAME] || "",
+      productName: row[DB_COLUMNS.PRODUCT_NAME] || "",
+      lgstSrNumber: row[DB_COLUMNS.LGST_SR_NUMBER] || "",
+      actual1: row[DB_COLUMNS.ACTUAL1] || "",
+      actualTruckQty: row[DB_COLUMNS.ACTUAL_TRUCK_QTY] || "",
+      typeOfTransporting: row[DB_COLUMNS.TYPE_OF_TRANSPORTING_LOGISTIC] || "",
+      transporterName: row[DB_COLUMNS.TRANSPORTER_NAME] || "",
+      truckNo: row[DB_COLUMNS.TRUCK_NO] || "",
+      driverMobileNo: row[DB_COLUMNS.DRIVER_MOBILE] || "",
+      typeOfRate: row[DB_COLUMNS.TYPE_OF_RATE] || "",
+      transportRatePerTon: row[DB_COLUMNS.TRANSPORT_RATE] || "",
+      fixedAmount: row[DB_COLUMNS.FIXED_AMOUNT] || "",
+    }))
   }, [])
 
   // Generate LGST number
   const generateLGSTNumber = useCallback(() => {
     if (historyOrders.length === 0) return "LGST-001"
-    
+
     let maxNumber = 0
     for (const order of historyOrders) {
       if (order.lgstSrNumber) {
@@ -242,17 +233,17 @@ if (
         }
       }
     }
-    
+
     return `LGST-${String(maxNumber + 1).padStart(3, '0')}`
   }, [historyOrders])
 
   // Filter orders based on search term
   const searchFilteredOrders = useCallback((ordersList) => {
     if (!searchTerm.trim()) return ordersList
-    
+
     const term = searchTerm.toLowerCase()
     return ordersList.filter((order) => {
-      return Object.values(order).some((value) => 
+      return Object.values(order).some((value) =>
         value?.toString().toLowerCase().includes(term)
       )
     })
@@ -295,124 +286,114 @@ if (
 
     try {
       setSubmitting(true)
-      
+
       const lgstNumber = generateLGSTNumber()
-      const now = new Date()
-      const actualDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
-      
+      const actualDate = getISTTimestamp()
+
       let vehicleImageUrl = ""
-      
-      // Upload image if selected
+
+      // Upload image to Supabase Storage if selected
       if (formData.vehicleNoPlateImage) {
         try {
-          const base64Data = await fileToBase64(formData.vehicleNoPlateImage)
-          
-          const formDataToSend = new FormData()
-          formDataToSend.append('action', 'uploadFile')
-          formDataToSend.append('base64Data', base64Data)
-          formDataToSend.append('fileName', `vehicle_plate_${lgstNumber}_${Date.now()}.${formData.vehicleNoPlateImage.name.split('.').pop()}`)
-          formDataToSend.append('mimeType', formData.vehicleNoPlateImage.type)
-          formDataToSend.append('folderId', FOLDER_ID)
-          
-          const uploadResponse = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            body: formDataToSend,
-          })
-          
-          const uploadResult = await uploadResponse.json()
-          
-          if (uploadResult.success && uploadResult.fileUrl) {
-            vehicleImageUrl = uploadResult.fileUrl
+          const file = formData.vehicleNoPlateImage
+          const fileExt = file.name.split('.').pop()
+          const fileName = `logistic/${lgstNumber}_${Date.now()}.${fileExt}`
+
+          const { error: uploadError } = await supabase.storage
+            .from('images')
+            .upload(fileName, file)
+
+          if (uploadError) {
+            throw uploadError
           }
+
+          // Get public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from('images')
+            .getPublicUrl(fileName)
+
+          vehicleImageUrl = publicUrl
         } catch (uploadError) {
           console.error("Error uploading image:", uploadError)
+          toast({
+            variant: "destructive",
+            title: "Image Upload Failed",
+            description: "Could not upload vehicle image. Proceeding with text data."
+          })
         }
       }
-      
-      // Get current row data
-      const response = await fetch(`${SCRIPT_URL}?sheet=DISPATCH`)
-      if (!response.ok) throw new Error("Failed to fetch sheet data")
-      
-      const result = await response.json()
-      if (!result.success || !result.data) throw new Error("Failed to get sheet data")
-      
-      // Get the current row
-      const currentRow = result.data[selectedOrder.rowIndex - 1] || []
-      const updatedRow = [...currentRow]
-      
-      // Ensure we have enough columns
-      while (updatedRow.length < 35) updatedRow.push("")
-      
-      // Set only the required columns (NO Planned1 or Delay1 updates)
-      updatedRow[COLUMN_INDICES.ACTUAL1] = actualDate // Set actual date
-      updatedRow[COLUMN_INDICES.LGST_NUMBER] = lgstNumber // Set LGST number
-      updatedRow[COLUMN_INDICES.ACTUAL_TRUCK_QTY] = formData.actualTruckQty || ""
-      updatedRow[COLUMN_INDICES.TYPE_OF_TRANSPORTING_LOGISTIC] = formData.typeOfTransporting || ""
-      updatedRow[COLUMN_INDICES.TRANSPORTER_NAME] = formData.transporterName || ""
-      updatedRow[COLUMN_INDICES.TRUCK_NO] = formData.truckNo || ""
-      updatedRow[COLUMN_INDICES.DRIVER_MOBILE] = formData.driverMobileNo || ""
-      updatedRow[COLUMN_INDICES.VEHICLE_IMAGE] = vehicleImageUrl || ""
-      updatedRow[COLUMN_INDICES.BILTY_NO] = formData.biltyNo || ""
-      updatedRow[COLUMN_INDICES.TYPE_OF_RATE] = formData.typeOfRate || ""
-      
-      // Set rate based on type
-      if (formData.typeOfRate === "Per Matric Ton rate") {
-        updatedRow[COLUMN_INDICES.TRANSPORT_RATE] = formData.transportRatePerTon || ""
-        updatedRow[COLUMN_INDICES.FIXED_AMOUNT] = ""
-      } else if (formData.typeOfRate === "Fixed Amount") {
-        updatedRow[COLUMN_INDICES.TRANSPORT_RATE] = ""
-        updatedRow[COLUMN_INDICES.FIXED_AMOUNT] = formData.fixedAmount || ""
-      } else if (formData.typeOfRate === "Ex Factory Transporter") {
-        updatedRow[COLUMN_INDICES.TRANSPORT_RATE] = "0"
-        updatedRow[COLUMN_INDICES.FIXED_AMOUNT] = "0"
+
+      // Helper to sanitize numeric inputs
+      const safeFloat = (val) => {
+        const num = parseFloat(val)
+        return isNaN(num) ? null : num
       }
 
-      // Update the row
-      const updateResponse = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          action: 'update',
-          sheetName: 'DISPATCH',
-          rowIndex: selectedOrder.rowIndex.toString(),
-          rowData: JSON.stringify(updatedRow)
-        })
-      })
-      
-      if (!updateResponse.ok) throw new Error(`Update failed: ${updateResponse.status}`)
-      
-      const updateResult = await updateResponse.json()
-      
-      if (updateResult.success) {
-        await fetchData()
-        setSelectedOrder(null)
-        setFormData({
-          transporterName: "",
-          truckNo: "",
-          driverMobileNo: "",
-          vehicleNoPlateImage: null,
-          biltyNo: "",
-          actualTruckQty: "",
-          typeOfTransporting: "",
-          typeOfRate: "",
-          transportRatePerTon: "",
-          fixedAmount: "",
-        })
-        
-        alert(`✓ Logistic details submitted successfully!\nLGST Number: ${lgstNumber}`)
-      } else {
-        throw new Error(updateResult.error || "Update failed")
+      // Prepare updates for Supabase
+      const updates = {
+        [DB_COLUMNS.ACTUAL1]: actualDate,
+        [DB_COLUMNS.LGST_SR_NUMBER]: lgstNumber,
+        [DB_COLUMNS.ACTUAL_TRUCK_QTY]: safeFloat(formData.actualTruckQty),
+        [DB_COLUMNS.TYPE_OF_TRANSPORTING_LOGISTIC]: formData.typeOfTransporting,
+        [DB_COLUMNS.TRANSPORTER_NAME]: formData.transporterName,
+        [DB_COLUMNS.TRUCK_NO]: formData.truckNo,
+        [DB_COLUMNS.DRIVER_MOBILE]: formData.driverMobileNo,
+        [DB_COLUMNS.VEHICLE_IMAGE]: vehicleImageUrl,
+        [DB_COLUMNS.BILTY_NO]: formData.biltyNo,
+        [DB_COLUMNS.TYPE_OF_RATE]: formData.typeOfRate,
       }
-      
+
+      // Set rate based on type
+      if (formData.typeOfRate === "Per Matric Ton rate") {
+        updates[DB_COLUMNS.TRANSPORT_RATE] = safeFloat(formData.transportRatePerTon)
+        updates[DB_COLUMNS.FIXED_AMOUNT] = null // Use null for numeric columns in DB
+      } else if (formData.typeOfRate === "Fixed Amount") {
+        updates[DB_COLUMNS.TRANSPORT_RATE] = null
+        updates[DB_COLUMNS.FIXED_AMOUNT] = safeFloat(formData.fixedAmount)
+      } else if (formData.typeOfRate === "Ex Factory Transporter") {
+        updates[DB_COLUMNS.TRANSPORT_RATE] = 0
+        updates[DB_COLUMNS.FIXED_AMOUNT] = 0
+      }
+
+      // Update the row in Supabase
+      const { error } = await supabase
+        .from('DISPATCH')
+        .update(updates)
+        .eq('id', selectedOrder.id)
+
+      if (error) throw error
+
+      await fetchData()
+      setSelectedOrder(null)
+      setFormData({
+        transporterName: "",
+        truckNo: "",
+        driverMobileNo: "",
+        vehicleNoPlateImage: null,
+        biltyNo: "",
+        actualTruckQty: "",
+        typeOfTransporting: "",
+        typeOfRate: "",
+        transportRatePerTon: "",
+        fixedAmount: "",
+      })
+
+      toast({
+        title: "Success",
+        description: `Logistic details submitted successfully! LGST Number: ${lgstNumber}`,
+      })
+
     } catch (error) {
       console.error("Error submitting:", error)
-      alert(`✗ Failed to submit: ${error.message}`)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: `Failed to submit: ${error.message}`,
+      })
     } finally {
       setSubmitting(false)
     }
-  }, [selectedOrder, formData, generateLGSTNumber, fileToBase64, fetchData])
+  }, [selectedOrder, formData, generateLGSTNumber, fetchData, toast])
 
   const handleCancel = useCallback(() => {
     setSelectedOrder(null)
@@ -441,278 +422,294 @@ if (
 
   return (
     <div className="space-y-6">
-      <div className="lg:hidden">
-        <h1 className="text-2xl font-bold text-gray-900">Logistic</h1>
-        <p className="text-sm text-gray-600 mt-1">Manage logistics</p>
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Logistic</h1>
+          <p className="text-gray-600">Manage logistics</p>
+        </div>
       </div>
 
-      <Card className="border-0 shadow-lg">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Logistic Management</CardTitle>
-          <p className="text-sm text-gray-500 mt-1">
-            Pending: {orders.length} | History: {historyOrders.length}
-          </p>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="space-y-0">
-            <div className="flex bg-gray-100 p-1 rounded-t-lg">
-              <button
-                onClick={() => setActiveTab("pending")}
-                className={`flex-1 py-3 px-4 text-sm font-medium rounded-lg transition-all text-center ${
-                  activeTab === "pending" 
-                    ? "bg-white text-gray-900 shadow-sm" 
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Pending ({orders.length})
-              </button>
-              <button
-                onClick={() => setActiveTab("history")}
-                className={`flex-1 py-3 px-4 text-sm font-medium rounded-lg transition-all text-center ${
-                  activeTab === "history" 
-                    ? "bg-white text-gray-900 shadow-sm" 
-                    : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                History ({historyOrders.length})
-              </button>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="bg-blue-50 border-blue-100 shadow-sm">
+          <CardContent className="p-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-medium text-blue-600">Total Pending</p>
+              <div className="text-2xl font-bold text-blue-900">{orders.length}</div>
             </div>
+            <div className="h-10 w-10 bg-blue-500 rounded-full flex items-center justify-center text-white">
+              <Loader2 className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
 
-            <div className="bg-white p-4 border-b border-gray-200">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search orders..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 h-10 border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-gray-50 w-full"
-                />
+        <Card className="bg-green-50 border-green-100 shadow-sm">
+          <CardContent className="p-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-medium text-green-600">Completed Logistic</p>
+              <div className="text-2xl font-bold text-green-900">{historyOrders.length}</div>
+            </div>
+            <div className="h-10 w-10 bg-green-500 rounded-full flex items-center justify-center text-white">
+              <CheckCircle2 className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-purple-50 border-purple-100 shadow-sm">
+          <CardContent className="p-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-medium text-purple-600">Total Transporters</p>
+              <div className="text-2xl font-bold text-purple-900">{transporters.length}</div>
+            </div>
+            <div className="h-10 w-10 bg-purple-500 rounded-full flex items-center justify-center text-white">
+              <Truck className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="bg-white border rounded-md shadow-sm p-4">
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                placeholder="Search orders..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 h-10 w-full"
+              />
+            </div>
+          </div>
+
+          <Button
+            onClick={() => fetchData()}
+            variant="outline"
+            className="h-10 px-3"
+            disabled={loading || submitting}
+          >
+            <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
+
+        <div className="mt-4 flex bg-gray-100 p-1 rounded-md w-fit">
+          <button
+            onClick={() => setActiveTab("pending")}
+            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all text-center ${activeTab === "pending" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+              }`}
+          >
+            Pending ({orders.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all text-center ${activeTab === "history" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+              }`}
+          >
+            History ({historyOrders.length})
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white border rounded-md shadow-sm overflow-hidden mt-4">
+        {/* Mobile View - Cards */}
+        <div className="block lg:hidden p-4 space-y-4 bg-gray-50">
+          {displayOrders.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 bg-white rounded-lg border border-dashed">
+              <div className="flex flex-col items-center gap-2">
+                <span className="text-lg">No {activeTab} orders found</span>
               </div>
             </div>
+          ) : (
+            displayOrders.map((order) => (
+              <div key={order.id} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-semibold text-gray-900">{order.partyName}</h3>
+                    <p className="text-xs text-gray-500">DO: {order.deliveryOrderNo} | DS: {order.dSrNumber}</p>
+                  </div>
+                  {activeTab === "history" && (
+                    <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full border border-blue-100">
+                      {order.lgstSrNumber}
+                    </span>
+                  )}
+                </div>
 
-            {/* Desktop Table */}
-            <div className="hidden lg:block overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50 hover:bg-gray-50 border-b border-gray-200">
+                <div className="grid grid-cols-2 gap-3 text-sm border-t border-b border-gray-100 py-3">
+                  <div>
+                    <p className="text-xs text-gray-500">Product</p>
+                    <p className="font-medium text-gray-900 truncate">{order.productName}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Transport</p>
+                    <p className="font-medium text-gray-900 truncate">{order.typeOfTransporting}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Qty</p>
+                    <p className="font-medium text-gray-900">
+                      {activeTab === "pending" ? order.qtyToBeDispatched : order.actualTruckQty}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Date</p>
+                    <p className="font-medium text-gray-900">
+                      {activeTab === "pending" ? order.dateOfDispatch : (order.actual1 ? order.actual1.split(' ')[0] : 'N/A')}
+                    </p>
+                  </div>
+                </div>
+
+                {activeTab === "history" && (
+                  <div className="grid grid-cols-2 gap-3 text-sm pb-2">
+                    <div>
+                      <p className="text-xs text-gray-500">Transporter</p>
+                      <p className="font-medium text-gray-900 truncate">{order.transporterName}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Truck No</p>
+                      <p className="font-medium text-gray-900 truncate">{order.truckNo}</p>
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "pending" && (
+                  <Button
+                    className="w-full bg-blue-600 hover:bg-blue-700 h-9 mt-1"
+                    onClick={() => handleLogistic(order)}
+                    disabled={submitting}
+                  >
+                    Handle Logistic
+                  </Button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop View - Table */}
+        <div className="hidden lg:block overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50 border-b border-gray-200">
+                {activeTab === "pending" && (
+                  <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Action</TableHead>
+                )}
+                {activeTab === "history" && (
+                  <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">LGST-Sr No</TableHead>
+                )}
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">D-Sr Number</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Delivery Order No.</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Party Name</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Product Name</TableHead>
+
+                {activeTab === "pending" && (
+                  <>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Qty To Be Dispatched</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Type Of Transporting</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Date Of Dispatch</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Planned Date</TableHead>
+                  </>
+                )}
+
+                {activeTab === "history" && (
+                  <>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Actual Truck Qty</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transport Type</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transporter</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Truck No</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Driver Mobile</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Type of Rate</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Rate/Amount</TableHead>
+                  </>
+                )}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {displayOrders.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={activeTab === "pending" ? 10 : 13}
+                    className="text-center py-8 text-gray-500"
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <span className="text-lg">No {activeTab} orders found</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                displayOrders.map((order) => (
+                  <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
                     {activeTab === "pending" && (
-                      <TableHead className="font-semibold text-gray-900 py-4 px-6">Action</TableHead>
+                      <TableCell className="py-2 px-4 min-w-[100px]">
+                        <Button
+                          size="sm"
+                          onClick={() => handleLogistic(order)}
+                          className="bg-blue-600 hover:bg-blue-700 h-8 text-xs"
+                          disabled={submitting}
+                        >
+                          Handle
+                        </Button>
+                      </TableCell>
                     )}
+
                     {activeTab === "history" && (
-                      <TableHead className="font-semibold text-gray-900 py-4 px-6">LGST-Sr No</TableHead>
+                      <TableCell className="py-2 px-4 min-w-[120px] font-medium text-blue-600">
+                        {order.lgstSrNumber}
+                      </TableCell>
                     )}
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">D-Sr Number</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Delivery Order No.</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Party Name</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Product Name</TableHead>
-                    
+
+                    <TableCell className="py-2 px-4 min-w-[120px] font-medium">
+                      {order.dSrNumber}
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">
+                      {order.deliveryOrderNo}
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">
+                      {order.partyName}
+                    </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">
+                      {order.productName}
+                    </TableCell>
+
                     {activeTab === "pending" && (
                       <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Qty To Be Dispatched</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Type Of Transporting</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Date Of Dispatch</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned Date</TableHead>
+                        <TableCell className="py-2 px-4 min-w-[120px] font-medium text-sm">
+                          {order.qtyToBeDispatched}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">
+                          {order.typeOfTransporting}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">
+                          {order.dateOfDispatch}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">
+                          {order.planned1}
+                        </TableCell>
                       </>
                     )}
-                    
+
                     {activeTab === "history" && (
                       <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Actual Truck Qty</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Transport Type</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Transporter</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Truck No</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Driver Mobile</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Type of Rate</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Rate/Amount</TableHead>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.actualTruckQty}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.typeOfTransporting}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.transporterName}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[100px] text-sm">{order.truckNo}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.driverMobileNo}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.typeOfRate}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">
+                          {order.typeOfRate === "Per Matric Ton rate"
+                            ? `${order.transportRatePerTon} per ton`
+                            : order.typeOfRate === "Fixed Amount"
+                              ? `${order.fixedAmount} fixed`
+                              : "Ex Factory"}
+                        </TableCell>
                       </>
                     )}
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayOrders.length === 0 ? (
-                    <TableRow>
-                      <TableCell 
-                        colSpan={activeTab === "pending" ? 10 : 13} 
-                        className="text-center py-8 text-gray-500"
-                      >
-                        No {activeTab === "pending" ? "pending" : "history"} orders found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    displayOrders.map((order) => (
-                      <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
-                        {activeTab === "pending" && (
-                          <TableCell className="py-4 px-6">
-                            <Button
-                              size="sm"
-                              onClick={() => handleLogistic(order)}
-                              className="bg-blue-600 hover:bg-blue-700"
-                              disabled={submitting}
-                            >
-                              Handle
-                            </Button>
-                          </TableCell>
-                        )}
-                        
-                        {activeTab === "history" && (
-                          <TableCell className="py-4 px-6 font-medium text-blue-600">
-                            {order.lgstSrNumber}
-                          </TableCell>
-                        )}
-                        
-                        <TableCell className="py-4 px-6 font-medium">
-                          {order.dSrNumber}
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
-                          {order.deliveryOrderNo}
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
-                          {order.partyName}
-                        </TableCell>
-                        <TableCell className="py-4 px-6">
-                          {order.productName}
-                        </TableCell>
-                        
-                        {activeTab === "pending" && (
-                          <>
-                            <TableCell className="py-4 px-6 font-medium">
-                              {order.qtyToBeDispatched}
-                            </TableCell>
-                            <TableCell className="py-4 px-6">
-                              {order.typeOfTransporting}
-                            </TableCell>
-                            <TableCell className="py-4 px-6">
-                              {order.dateOfDispatch}
-                            </TableCell>
-                            <TableCell className="py-4 px-6">
-                              {order.planned1}
-                            </TableCell>
-                          </>
-                        )}
-                        
-                        {activeTab === "history" && (
-                          <>
-                            <TableCell className="py-4 px-6">{order.actualTruckQty}</TableCell>
-                            <TableCell className="py-4 px-6">{order.typeOfTransporting}</TableCell>
-                            <TableCell className="py-4 px-6">{order.transporterName}</TableCell>
-                            <TableCell className="py-4 px-6">{order.truckNo}</TableCell>
-                            <TableCell className="py-4 px-6">{order.driverMobileNo}</TableCell>
-                            <TableCell className="py-4 px-6">{order.typeOfRate}</TableCell>
-                            <TableCell className="py-4 px-6">
-                              {order.typeOfRate === "Per Matric Ton rate" 
-                                ? `${order.transportRatePerTon} per ton`
-                                : order.typeOfRate === "Fixed Amount"
-                                ? `${order.fixedAmount} fixed`
-                                : "Ex Factory"}
-                            </TableCell>
-                          </>
-                        )}
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Mobile View */}
-            <div className="lg:hidden">
-              <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
-                {displayOrders.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">
-                    No {activeTab === "pending" ? "pending" : "history"} orders found
-                  </p>
-                ) : (
-                  displayOrders.map((order) => (
-                    <div key={order.id} className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          {activeTab === "history" && (
-                            <p className="text-blue-600 font-medium text-sm mb-1">
-                              {order.lgstSrNumber}
-                            </p>
-                          )}
-                          <p className="font-semibold text-gray-900">{order.partyName}</p>
-                          <p className="text-xs text-gray-500">
-                            DO: {order.deliveryOrderNo} | DS: {order.dSrNumber}
-                          </p>
-                          {activeTab === "pending" && (
-                            <p className="text-xs text-gray-500 mt-1">
-                              Qty: {order.qtyToBeDispatched} | Type: {order.typeOfTransporting}
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          {activeTab === "pending" ? (
-                            <Button
-                              size="sm"
-                              onClick={() => handleLogistic(order)}
-                              className="bg-blue-600 hover:bg-blue-700"
-                              disabled={submitting}
-                            >
-                              Handle
-                            </Button>
-                          ) : (
-                            <p className="text-sm font-medium">{order.actualTruckQty} units</p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Product:</span>
-                          <span>{order.productName}</span>
-                        </div>
-                        
-                        {activeTab === "pending" && (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Dispatch Date:</span>
-                              <span>{order.dateOfDispatch}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Planned Date:</span>
-                              <span>{order.planned1}</span>
-                            </div>
-                          </>
-                        )}
-                        
-                        {activeTab === "history" && (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Transport Type:</span>
-                              <span>{order.typeOfTransporting}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Transporter:</span>
-                              <span>{order.transporterName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Truck No:</span>
-                              <span>{order.truckNo}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Driver Mobile:</span>
-                              <span>{order.driverMobileNo}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Rate Type:</span>
-                              <span>{order.typeOfRate}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="px-4 sm:px-6 py-3 bg-gray-50 text-sm text-gray-600 rounded-b-lg border-t border-gray-200">
-              Showing {displayOrders.length} orders
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
 
       {/* Logistic Form Modal */}
       {selectedOrder && (
@@ -726,9 +723,9 @@ if (
             </CardHeader>
             <CardContent className="p-4">
               <div className="space-y-4">
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <p className="font-medium">{selectedOrder.partyName}</p>
-                  <p className="text-sm text-gray-600">
+                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <p className="font-medium text-gray-900">{selectedOrder.partyName}</p>
+                  <p className="text-sm text-gray-600 mt-1">
                     DO: {selectedOrder.deliveryOrderNo} | DS: {selectedOrder.dSrNumber}
                   </p>
                   <p className="text-sm text-gray-600">Product: {selectedOrder.productName}</p>
@@ -742,9 +739,9 @@ if (
                     <Label className="text-sm">Type of Transporting *</Label>
                     <Select
                       value={formData.typeOfTransporting}
-                      onValueChange={(value) => setFormData(prev => ({ 
-                        ...prev, 
-                        typeOfTransporting: value 
+                      onValueChange={(value) => setFormData(prev => ({
+                        ...prev,
+                        typeOfTransporting: value
                       }))}
                       disabled={submitting}
                     >
@@ -760,7 +757,7 @@ if (
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label className="text-sm">Actual Truck Qty *</Label>
                     <Input
@@ -773,7 +770,7 @@ if (
                       disabled={submitting}
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label className="text-sm">Transporter Name *</Label>
                     <Select
@@ -793,7 +790,7 @@ if (
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label className="text-sm">Truck No. *</Label>
                     <Input
@@ -804,7 +801,7 @@ if (
                       disabled={submitting}
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label className="text-sm">Driver Mobile No. *</Label>
                     <Input
@@ -816,13 +813,13 @@ if (
                       disabled={submitting}
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label className="text-sm">Type Of Rate *</Label>
                     <Select
                       value={formData.typeOfRate}
-                      onValueChange={(value) => setFormData(prev => ({ 
-                        ...prev, 
+                      onValueChange={(value) => setFormData(prev => ({
+                        ...prev,
                         typeOfRate: value,
                         transportRatePerTon: value === "Ex Factory Transporter" ? "0" : "",
                         fixedAmount: value === "Ex Factory Transporter" ? "0" : ""
@@ -839,7 +836,7 @@ if (
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   {formData.typeOfRate === "Per Matric Ton rate" && (
                     <div className="space-y-2">
                       <Label className="text-sm">Transport Rate @Per Matric Ton *</Label>
@@ -854,7 +851,7 @@ if (
                       />
                     </div>
                   )}
-                  
+
                   {formData.typeOfRate === "Fixed Amount" && (
                     <div className="space-y-2">
                       <Label className="text-sm">Fixed Amount *</Label>
@@ -869,7 +866,7 @@ if (
                       />
                     </div>
                   )}
-                  
+
                   <div className="space-y-2">
                     <Label className="text-sm">Vehicle Plate Image</Label>
                     <Input
@@ -879,13 +876,17 @@ if (
                         const file = e.target.files[0]
                         if (file) {
                           if (file.size > 5 * 1024 * 1024) {
-                            alert("File size should be less than 5MB")
+                            toast({
+                              variant: "destructive",
+                              title: "Error",
+                              description: "File size should be less than 5MB",
+                            })
                             e.target.value = ""
                             return
                           }
-                          setFormData(prev => ({ 
-                            ...prev, 
-                            vehicleNoPlateImage: file 
+                          setFormData(prev => ({
+                            ...prev,
+                            vehicleNoPlateImage: file
                           }))
                         }
                       }}
@@ -893,12 +894,12 @@ if (
                       disabled={submitting}
                     />
                     {formData.vehicleNoPlateImage && (
-                      <p className="text-sm text-green-600">
+                      <p className="text-sm text-green-600 mt-1">
                         ✓ {formData.vehicleNoPlateImage.name}
                       </p>
                     )}
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label className="text-sm">Bilty No.</Label>
                     <Input
@@ -913,15 +914,15 @@ if (
 
                 <div className="border-t pt-4">
                   <div className="flex flex-col gap-3">
-                    <Button 
-                      variant="outline" 
-                      onClick={handleCancel} 
+                    <Button
+                      variant="outline"
+                      onClick={handleCancel}
                       disabled={submitting}
                     >
                       Cancel
                     </Button>
-                    <Button 
-                      onClick={handleSubmit} 
+                    <Button
+                      onClick={handleSubmit}
                       className="bg-blue-600 hover:bg-blue-700"
                       disabled={
                         !formData.typeOfTransporting ||
@@ -951,19 +952,6 @@ if (
           </Card>
         </div>
       )}
-
-      <div className="flex justify-center">
-        <Button 
-          onClick={fetchData} 
-          variant="outline" 
-          size="sm"
-          className="flex items-center gap-2"
-          disabled={submitting}
-        >
-          <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh Data
-        </Button>
-      </div>
     </div>
   )
 }

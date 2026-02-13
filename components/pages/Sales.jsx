@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -8,19 +9,22 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { X, Search, CheckCircle2, Loader2, Calendar } from "lucide-react"
+import { Truck, CheckCircle2, Search, X, Calendar, Loader2, AlertCircle, Users, FileText, ClipboardList } from "lucide-react"
 import { format } from "date-fns"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec"
+
+import { supabase } from "@/lib/supabaseClient"
+import { getISTTimestamp, getISTFullDisplayDateTime } from "@/lib/dateUtils"
 
 export default function SalesFormPage({ user }) {
   const [orders, setOrders] = useState([])
   const [deliveryHistory, setDeliveryHistory] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const { toast } = useToast()
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
@@ -51,225 +55,98 @@ export default function SalesFormPage({ user }) {
   const fetchData = async () => {
     try {
       setLoading(true)
-      
-      // Fetch from DISPATCH sheet to get pending orders
-      const dispatchResponse = await fetch(`${SCRIPT_URL}?sheet=DISPATCH`)
-      if (dispatchResponse.ok) {
-        const dispatchData = await dispatchResponse.json()
-        
-        if (dispatchData.success && dispatchData.data) {
-          const pendingOrders = getPendingOrders(dispatchData.data)
-          setOrders(pendingOrders)
-          console.log("Pending orders loaded:", pendingOrders.length)
-        }
-      }
-      
-      // Fetch from DELIVERY sheet for history
-      const deliveryResponse = await fetch(`${SCRIPT_URL}?sheet=DELIVERY`)
-      if (deliveryResponse.ok) {
-        const deliveryData = await deliveryResponse.json()
-        
-        if (deliveryData.success && deliveryData.data) {
-          const history = transformDeliveryData(deliveryData.data)
-          setDeliveryHistory(history)
-          console.log("Delivery history loaded:", history.length)
-        }
-      }
-      
+
+      // 1. Fetch PENDING from DISPATCH table in Supabase
+      const { data: dispatchData, error: dispatchError } = await supabase
+        .from('DISPATCH')
+        .select('*')
+        .is('Actual4', null)
+        .not('Planned4', 'is', null)
+
+      if (dispatchError) throw dispatchError
+
+      // 2. Fetch HISTORY from DELIVERY table in Supabase
+      const { data: historyData, error: historyError } = await supabase
+        .from('DELIVERY')
+        .select('*')
+
+      if (historyError) throw historyError
+
+      // Process Pending Orders from DISPATCH
+      const pending = dispatchData?.map(row => ({
+        id: row.id,
+        dSrNumber: row["D-Sr Number"],
+        deliveryOrderNo: row["Delivery Order No."],
+        partyName: row["Party Name"],
+        productName: row["Product Name"],
+        qtyToBeDispatched: row["Qty To Be Dispatched"],
+        typeOfTransporting: row["Type Of Transporting"],
+        transporterName: row["Transporter Name"],
+        truckNo: row["Truck No."],
+        biltyNo: row["Bilty No."],
+        lgstNumber: row["LGST-Sr Number"],
+        actualTruckQty: row["Actual Truck Qty"],
+        planned4: row["Planned4"],
+        actual4: row["Actual4"],
+
+        // Fields to be carried over to DELIVERY table from DISPATCH (No spaces as per SQL)
+        planned1: row["Planned1"],
+        actual1: row["Actual1"],
+        delay1: row["Delay1"],
+        planned2: row["Planned2"],
+        actual2: row["Actual2"],
+        delay2: row["Delay2"],
+        planned3: row["Planned3"],
+        actual3: row["Actual3"],
+        delay3: row["Delay3"],
+        imageOfSlip: row["Loading Image 1"],
+        imageOfSlip2: row["Loading Image 2"],
+        imageOfSlip3: row["Loading Image 3"],
+        remarks: row["Remarks"],
+      })) || []
+
+      // Process History Orders from DELIVERY table (Mapped strictly to SQL schema)
+      const historyItems = historyData?.map(row => ({
+        id: row.id,
+        timestamp: row["Timestamp"],
+        billDate: row["Bill Date"],
+        deliveryOrderNo: row["Delivery Order No."],
+        partyName: row["Party Name"],
+        productName: row["Product Name"],
+        quantityDelivered: row["Quantity Delivered."],
+        billNo: row["Bill No."],
+        logisticNo: row["Losgistic no."],
+        rateOfMaterial: row["Rate Of Material"],
+        typeOfTransporting: row["Type Of Transporting"],
+        transporterName: row["Transporter Name"],
+        vehicleNumber: row["Vehicle Number."],
+        biltyNumber: row["Bilty Number."],
+        givingFromWhere: row["Giving From Where"],
+        indentNo: row["Indent No."],
+        qty: row["Qty"],
+        dSrNumber: row["D-Sr Number"]
+      })) || []
+
+      setOrders(pending.sort((a, b) => b.id - a.id))
+      setDeliveryHistory(historyItems.sort((a, b) => b.id - a.id))
+      console.log("Data loaded from Supabase: DISPATCH (Pending) and DELIVERY (History)")
+
     } catch (error) {
       console.error("Error fetching data:", error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to fetch sales data from Supabase",
+      })
     } finally {
       setLoading(false)
     }
   }
 
-  // Get pending orders from DISPATCH sheet where Planned4 has value but Actual4 is empty
-  const getPendingOrders = (sheetData) => {
-    if (!sheetData || sheetData.length < 2) return []
-    
-    // Find header row
-    let headerRowIndex = -1
-    let headers = []
-    
-    for (let i = 0; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      if (row && row.length > 0) {
-        const hasTimestamp = row.some(cell => 
-          cell && cell.toString().trim().toLowerCase().includes("timestamp")
-        )
-        if (hasTimestamp) {
-          headerRowIndex = i
-          headers = row.map(h => h?.toString().trim() || "")
-          break
-        }
-      }
-    }
-    
-    if (headerRowIndex === -1) {
-      console.log("No headers found in DISPATCH sheet")
-      return []
-    }
-    
-    // Get column indices
-    const indices = {
-      dSrNumber: headers.findIndex(h => h.toLowerCase().includes("d-sr")),
-      deliveryOrderNo: headers.findIndex(h => h.toLowerCase().includes("delivery order")),
-      partyName: headers.findIndex(h => h.toLowerCase().includes("party name")),
-      productName: headers.findIndex(h => h.toLowerCase().includes("product name")),
-      planned4: headers.findIndex(h => h.trim() === "Planned4" || h.toLowerCase().includes("planned4")),
-      actual4: headers.findIndex(h => h.trim() === "Actual4" || h.toLowerCase().includes("actual4")),
-      qtyToBeDispatched: headers.findIndex(h => h.toLowerCase().includes("qty to be dispatched")),
-      typeOfTransporting: headers.findIndex(h => h.toLowerCase().includes("type of transporting")),
-      transporterName: headers.findIndex(h => h.toLowerCase().includes("transporter name")),
-      truckNo: headers.findIndex(h => h.toLowerCase().includes("truck no")),
-      biltyNo: headers.findIndex(h => h.toLowerCase().includes("bilty no")),
-      lgstNumber: headers.findIndex(h => h.toLowerCase().includes("lgst")),
-      actualTruckQty: headers.findIndex(h => h.toLowerCase().includes("actual truck qty")),
-    }
-    
-    console.log("DISPATCH Column indices:", indices)
-    
-    const pendingOrders = []
-    
-    // Start from row after header
-    for (let i = headerRowIndex + 1; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      if (!row || row.length === 0) continue
-      
-      const getVal = (index) => {
-        if (index >= 0 && index < row.length && row[index] !== undefined && row[index] !== null) {
-          return row[index].toString().trim()
-        }
-        return ""
-      }
-      
-      const planned4 = getVal(indices.planned4)
-      const actual4 = getVal(indices.actual4)
-      
-      // Check if Planned4 has value and Actual4 is empty
-      if (planned4 && planned4 !== "" && (!actual4 || actual4 === "")) {
-        const order = {
-          id: i,
-          rowIndex: i + 1,
-          dSrNumber: getVal(indices.dSrNumber),
-          deliveryOrderNo: getVal(indices.deliveryOrderNo),
-          partyName: getVal(indices.partyName),
-          productName: getVal(indices.productName),
-          qtyToBeDispatched: getVal(indices.qtyToBeDispatched),
-          typeOfTransporting: getVal(indices.typeOfTransporting),
-          transporterName: getVal(indices.transporterName),
-          truckNo: getVal(indices.truckNo),
-          biltyNo: getVal(indices.biltyNo),
-          lgstNumber: getVal(indices.lgstNumber),
-          actualTruckQty: getVal(indices.actualTruckQty),
-          planned4: planned4,
-          actual4: actual4,
-        }
-        
-        pendingOrders.push(order)
-      }
-    }
-    
-    console.log("Total pending orders found:", pendingOrders.length)
-    return pendingOrders
-  }
-
-  const transformDeliveryData = (sheetData) => {
-    if (!sheetData || sheetData.length === 0) return []
-    
-    // Find header row
-    let headerRowIndex = -1
-    let headers = []
-    
-    for (let i = 0; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      if (row && row.length > 0) {
-        const hasTimestamp = row.some(cell => 
-          cell && cell.toString().trim().toLowerCase().includes("timestamp")
-        )
-        if (hasTimestamp) {
-          headerRowIndex = i
-          headers = row.map(h => h?.toString().trim() || "")
-          break
-        }
-      }
-    }
-    
-    if (headerRowIndex === -1) {
-      console.log("No headers found in DELIVERY sheet")
-      return []
-    }
-    
-    // Get column indices for DELIVERY sheet
-    const indices = {
-      timestamp: headers.findIndex(h => h.toLowerCase().includes("timestamp")),
-      billDate: headers.findIndex(h => h.toLowerCase().includes("bill date")),
-      deliveryOrderNo: headers.findIndex(h => h.toLowerCase().includes("delivery order")),
-      partyName: headers.findIndex(h => h.toLowerCase().includes("party name")),
-      productName: headers.findIndex(h => h.toLowerCase().includes("product name")),
-      quantityDelivered: headers.findIndex(h => h.toLowerCase().includes("quantity delivered")),
-      billNo: headers.findIndex(h => h.toLowerCase().includes("bill no")),
-      logisticNo: headers.findIndex(h => h.toLowerCase().includes("losgistic no") || h.toLowerCase().includes("logistic no")),
-      rateOfMaterial: headers.findIndex(h => h.toLowerCase().includes("rate of material")),
-      typeOfTransporting: headers.findIndex(h => h.toLowerCase().includes("type of transporting")),
-      transporterName: headers.findIndex(h => h.toLowerCase().includes("transporter name")),
-      vehicleNumber: headers.findIndex(h => h.toLowerCase().includes("vehicle number")),
-      biltyNumber: headers.findIndex(h => h.toLowerCase().includes("bilty number")),
-      givingFromWhere: headers.findIndex(h => h.toLowerCase().includes("giving from where")),
-      actual4: headers.findIndex(h => h.toLowerCase().includes("actual4")),
-    }
-    
-    const historyOrders = []
-    
-    // Start from row after header
-    for (let i = headerRowIndex + 1; i < sheetData.length; i++) {
-      const row = sheetData[i]
-      if (!row || row.length === 0) continue
-      
-      const getVal = (index) => {
-        if (index >= 0 && index < row.length && row[index] !== undefined && row[index] !== null) {
-          return row[index].toString().trim()
-        }
-        return ""
-      }
-      
-      const timestamp = getVal(indices.timestamp)
-      const billDate = getVal(indices.billDate)
-      const deliveryOrderNo = getVal(indices.deliveryOrderNo)
-      
-      // Only add if it has some data
-      if (timestamp || billDate || deliveryOrderNo) {
-        const historyOrder = {
-          id: i,
-          timestamp: timestamp,
-          billDate: billDate,
-          deliveryOrderNo: deliveryOrderNo,
-          partyName: getVal(indices.partyName),
-          productName: getVal(indices.productName),
-          quantityDelivered: getVal(indices.quantityDelivered),
-          billNo: getVal(indices.billNo),
-          logisticNo: getVal(indices.logisticNo),
-          rateOfMaterial: getVal(indices.rateOfMaterial),
-          typeOfTransporting: getVal(indices.typeOfTransporting),
-          transporterName: getVal(indices.transporterName),
-          vehicleNumber: getVal(indices.vehicleNumber),
-          biltyNumber: getVal(indices.biltyNumber),
-          givingFromWhere: getVal(indices.givingFromWhere),
-          actual4: getVal(indices.actual4),
-        }
-        
-        historyOrders.push(historyOrder)
-      }
-    }
-    
-    console.log("Total delivery history orders found:", historyOrders.length)
-    return historyOrders
-  }
-
   const handleSales = (order) => {
     const now = new Date()
     const formattedDate = format(now, "yyyy-MM-dd")
-    
+
     setSelectedOrder(order)
     setFormData({
       billDate: formattedDate,
@@ -285,8 +162,8 @@ export default function SalesFormPage({ user }) {
       vehicleNumber: order.truckNo || "",
       biltyNumber: order.biltyNo || "",
       givingFromWhere: "",
-      indentNo: "",
-      qty: "",
+      indentNo: order.indentNo || "",
+      qty: order.qty || "",
       planned4: order.planned4 || "",
     })
   }
@@ -296,107 +173,112 @@ export default function SalesFormPage({ user }) {
 
     try {
       setSubmitting(true)
-      
-      const now = new Date()
-      const timestamp = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
-      
-      // Prepare DELIVERY sheet row data (simplified - without removed fields)
-      const deliveryRowData = [
-        timestamp,                                     // 1. Timestamp
-        formData.billDate,                             // 2. Bill Date
-        formData.deliveryOrderNo,                      // 3. Delivery Order No.
-        formData.partyName,                            // 4. Party Name
-        formData.productName,                          // 5. Product Name
-        formData.quantityDelivered,                    // 6. Quantity Delivered.
-        formData.billNo,                               // 7. Bill No. (manual input)
-        formData.logisticNo,                           // 8. Losgistic no.
-        formData.rateOfMaterial,                       // 9. Rate Of Material
-        formData.typeOfTransporting,                   // 10. Type Of Transporting
-        formData.transporterName,                      // 11. Transporter Name
-        formData.vehicleNumber,                        // 12. Vehicle Number.
-        formData.biltyNumber,                          // 13. Bilty Number.
-        formData.givingFromWhere,                      // 14. Giving From Where
-        formData.indentNo,                             // 15. Indent No.
-        formData.qty,                                  // 16. Qty
-                                   // 37-40: Empty columns for future use
-      ]
 
-      console.log("Submitting to DELIVERY sheet:", deliveryRowData)
+      const timestampIST = getISTTimestamp()
+      const displayTimestamp = getISTFullDisplayDateTime()
+      const formattedBillDateForSheets = format(new Date(formData.billDate), "dd/MM/yyyy")
 
-      // Submit to DELIVERY sheet
-      const deliveryResponse = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          action: 'insert',
-          sheetName: 'DELIVERY',
-          rowData: JSON.stringify(deliveryRowData)
+      // 1. Update Supabase DISPATCH table (Only mark as completed)
+      const { error: dispatchUpdateError } = await supabase
+        .from('DISPATCH')
+        .update({
+          "Actual4": timestampIST
         })
+        .eq('id', selectedOrder.id)
+
+      if (dispatchUpdateError) {
+        console.error("DISPATCH Update Error:", dispatchUpdateError)
+        throw dispatchUpdateError
+      }
+
+      // 2. Insert into Supabase DELIVERY table
+      // Only storing form fields and current timestamp as per user request
+      // Note: "D-Sr Number" is numeric in schema, so we extract digits from "D-01" etc.
+
+      // Ensure Bill Date is formatted as YYYY-MM-DD
+      let formattedBillDate = formData.billDate;
+      try {
+        if (formData.billDate) {
+          formattedBillDate = format(new Date(formData.billDate), "yyyy-MM-dd");
+        }
+      } catch (e) {
+        console.error("Error formatting date:", e);
+        // Fallback or keep original
+      }
+
+      console.log("Submitting Sales Payload:", {
+        timestamp: timestampIST,
+        billDate: formattedBillDate,
+        originalBillDate: formData.billDate
+      });
+
+      const deliveryPayload = {
+        "Timestamp": timestampIST,
+        "Bill Date": formattedBillDate,
+        "Delivery Order No.": String(formData.deliveryOrderNo || ""),
+        "Party Name": String(formData.partyName || ""),
+        "Product Name": String(formData.productName || ""),
+        "Quantity Delivered.": parseFloat(formData.quantityDelivered) || 0,
+        "Bill No.": String(formData.billNo || ""),
+        "Losgistic no.": String(formData.logisticNo || ""),
+        "Rate Of Material": parseFloat(formData.rateOfMaterial) || 0,
+        "Type Of Transporting": String(formData.typeOfTransporting || ""),
+        "Transporter Name": String(formData.transporterName || ""),
+        "Vehicle Number.": String(formData.vehicleNumber || ""),
+        "Bilty Number.": String(formData.biltyNumber || ""),
+        "Bilty No.": String(formData.biltyNumber || ""),
+        "Giving From Where": String(formData.givingFromWhere || ""),
+        "Indent No.": String(formData.indentNo || ""),
+        "Qty": parseFloat(formData.qty) || 0,
+        "D-Sr Number": String(selectedOrder.dSrNumber || "")
+      }
+
+      console.log("FINAL Payload to DELIVERY:", JSON.stringify(deliveryPayload, null, 2))
+
+      const { error: deliveryTableError } = await supabase
+        .from('DELIVERY')
+        .insert([deliveryPayload])
+
+      if (deliveryTableError) {
+        console.error("DELIVERY Insert Error Detail:", deliveryTableError.message, deliveryTableError.details, deliveryTableError.hint)
+        throw deliveryTableError
+      }
+
+      // 3. Handle Success
+      await fetchData()
+      setSelectedOrder(null)
+      setFormData({
+        billDate: format(new Date(), "yyyy-MM-dd"),
+        deliveryOrderNo: "",
+        partyName: "",
+        productName: "",
+        quantityDelivered: "",
+        billNo: "",
+        logisticNo: "",
+        rateOfMaterial: "",
+        typeOfTransporting: "",
+        transporterName: "",
+        vehicleNumber: "",
+        biltyNumber: "",
+        givingFromWhere: "",
+        indentNo: "",
+        qty: "",
+        planned4: "",
+        actual4: "",
       })
 
-      if (!deliveryResponse.ok) {
-        throw new Error(`HTTP error! status: ${deliveryResponse.status}`)
-      }
+      toast({
+        title: "Success",
+        description: "Sales form submitted successfully in Supabase (DISPATCH & DELIVERY)!",
+      })
 
-      const deliveryResult = await deliveryResponse.json()
-      console.log("DELIVERY sheet response:", deliveryResult)
-
-      if (deliveryResult.success) {
-        // Update DISPATCH sheet to set Actual4
-        const dispatchUpdateResponse = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            action: 'updateCell',
-            sheetName: 'DISPATCH',
-            rowIndex: selectedOrder.rowIndex.toString(),
-            columnIndex: "33", // Actual4 is at column 33 (0-indexed, adjust if needed)
-            value: format(now, "dd/MM/yyyy") + " 18:00:00"
-          })
-        })
-
-        if (!dispatchUpdateResponse.ok) {
-          console.error("Failed to update DISPATCH sheet")
-        }
-
-        // Refresh data
-        await fetchData()
-        
-        // Clear form and selection
-        setSelectedOrder(null)
-        setFormData({
-          billDate: format(new Date(), "yyyy-MM-dd"),
-          deliveryOrderNo: "",
-          partyName: "",
-          productName: "",
-          quantityDelivered: "",
-          billNo: "",
-          logisticNo: "",
-          rateOfMaterial: "",
-          typeOfTransporting: "",
-          transporterName: "",
-          vehicleNumber: "",
-          biltyNumber: "",
-          givingFromWhere: "",
-          indentNo: "",
-          qty: "",
-          planned4: "",
-          actual4: "",
-        })
-        
-        alert(`✓ Sales form submitted successfully!`)
-        
-      } else {
-        throw new Error(deliveryResult.error || "Failed to submit to DELIVERY sheet")
-      }
-      
     } catch (error) {
       console.error("Error submitting sales form:", error)
-      alert(`✗ Failed to submit. Error: ${error.message}`)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: `Failed to submit. Error: ${error.message}`,
+      })
     } finally {
       setSubmitting(false)
     }
@@ -428,9 +310,9 @@ export default function SalesFormPage({ user }) {
   // Apply search filter
   const searchFilteredOrders = (ordersList) => {
     if (!searchTerm.trim()) return ordersList
-    
+
     return ordersList.filter((order) =>
-      Object.values(order).some((value) => 
+      Object.values(order).some((value) =>
         value?.toString().toLowerCase().includes(searchTerm.toLowerCase())
       )
     )
@@ -439,295 +321,233 @@ export default function SalesFormPage({ user }) {
   const pendingOrders = searchFilteredOrders(orders)
   const historyOrders = searchFilteredOrders(deliveryHistory)
 
+  const totalParties = new Set([...orders, ...deliveryHistory].map(o => o.partyName)).size
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-        <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
-        <span className="text-gray-600">Loading sales data...</span>
+        <Loader2 className="w-12 h-12 animate-spin text-green-600" />
+        <span className="text-gray-600 font-medium italic">Loading sales data...</span>
       </div>
     )
   }
 
   return (
     <div className="space-y-6">
-      <div className="hidden lg:block">
-        <h1 className="text-3xl font-bold text-gray-900">Sales Form</h1>
-        <p className="text-gray-600">Create and manage sales deliveries</p>
+      {/* Page Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Sales Form</h1>
+          <p className="text-gray-500 text-sm italic">Manage sales deliveries and track history</p>
+        </div>
       </div>
 
-      <div className="lg:hidden">
-        <h1 className="text-2xl font-bold text-gray-900">Sales Form</h1>
-        <p className="text-sm text-gray-600 mt-1">Manage sales deliveries</p>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="bg-blue-50 border-blue-100 shadow-sm transition-all hover:shadow-md cursor-default">
+          <CardContent className="p-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-semibold text-blue-600 uppercase tracking-wider">Pending Deliveries</p>
+              <div className="text-3xl font-bold text-blue-900 mt-1">{orders.length}</div>
+            </div>
+            <div className="h-12 w-12 bg-blue-500 rounded-xl flex items-center justify-center text-white shadow-lg">
+              <Truck className="h-7 w-7" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-green-50 border-green-100 shadow-sm transition-all hover:shadow-md cursor-default">
+          <CardContent className="p-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-semibold text-green-600 uppercase tracking-wider">Delivery History</p>
+              <div className="text-3xl font-bold text-green-900 mt-1">{deliveryHistory.length}</div>
+            </div>
+            <div className="h-12 w-12 bg-green-500 rounded-xl flex items-center justify-center text-white shadow-lg">
+              <CheckCircle2 className="h-7 w-7" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-indigo-50 border-indigo-100 shadow-sm transition-all hover:shadow-md cursor-default">
+          <CardContent className="p-6 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-semibold text-indigo-600 uppercase tracking-wider">Total Parties</p>
+              <div className="text-3xl font-bold text-indigo-900 mt-1">{totalParties}</div>
+            </div>
+            <div className="h-12 w-12 bg-indigo-500 rounded-xl flex items-center justify-center text-white shadow-lg">
+              <Users className="h-7 w-7" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <Card className="border-0 shadow-lg">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-xl">Sales Delivery Management</CardTitle>
-          <p className="text-sm text-gray-500 mt-1">
-            Pending: {orders.length} | History: {deliveryHistory.length}
-          </p>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="space-y-0">
-            <div className="flex bg-gray-100 p-1 rounded-t-lg">
-              <button
-                onClick={() => setActiveTab("pending")}
-                className={`flex-1 py-3 px-4 text-sm font-medium rounded-lg transition-all text-center ${
-                  activeTab === "pending" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                Pending ({orders.length})
-              </button>
-              <button
-                onClick={() => setActiveTab("history")}
-                className={`flex-1 py-3 px-4 text-sm font-medium rounded-lg transition-all text-center ${
-                  activeTab === "history" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
-                }`}
-              >
-                History ({deliveryHistory.length})
-              </button>
-            </div>
-
-            <div className="bg-white p-4 border-b border-gray-200">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search orders..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 h-10 border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-gray-50 w-full"
-                />
-              </div>
-            </div>
-
-            <div className="hidden lg:block overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50 hover:bg-gray-50 border-b border-gray-200">
-                    {activeTab === "pending" && (
-                      <TableHead className="font-semibold text-gray-900 py-4 px-6">Action</TableHead>
-                    )}
-                    {activeTab === "history" && (
-                      <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Bill Date</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Bill No.</TableHead>
-                      </>
-                    )}
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">D-Sr Number</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Delivery Order No.</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Party Name</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-4 px-6">Product Name</TableHead>
-                    {activeTab === "pending" && (
-                      <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Planned Date</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Transport Type</TableHead>
-                      </>
-                    )}
-                    {activeTab === "history" && (
-                      <>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Quantity Delivered</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Rate of Material</TableHead>
-                        <TableHead className="font-semibold text-gray-900 py-4 px-6">Source</TableHead>
-                      </>
-                    )}
-                  </TableRow>
-                </TableHeader>
-
-                <TableBody>
-                  {(activeTab === "pending" ? pendingOrders : historyOrders).length === 0 ? (
-                    <TableRow>
-                      <TableCell 
-                        colSpan={activeTab === "pending" ? 8 : 9} 
-                        className="text-center py-8 text-gray-500"
-                      >
-                        No {activeTab === "pending" ? "pending" : "history"} orders found
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    (activeTab === "pending" ? pendingOrders : historyOrders).map((order) => {
-                      if (activeTab === "pending") {
-                        return (
-                          <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
-                            <TableCell className="py-4 px-6">
-                              <Button
-                                size="sm"
-                                onClick={() => handleSales(order)}
-                                className="bg-green-600 hover:bg-green-700"
-                                disabled={submitting}
-                              >
-                                Sales Form
-                              </Button>
-                            </TableCell>
-                             <TableCell className="py-4 px-6">
-                              <Badge variant="outline" className="rounded-full">
-                                {order.dSrNumber}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="py-4 px-6">
-                              <span className="font-medium">{order.deliveryOrderNo || "N/A"}</span>
-                            </TableCell>
-                            <TableCell className="py-4 px-6">{order.partyName}</TableCell>
-                            <TableCell className="py-4 px-6">{order.productName}</TableCell>
-                           
-                            <TableCell className="py-4 px-6">{order.planned4}</TableCell>
-                            <TableCell className="py-4 px-6">
-                              <Badge variant="outline" className="rounded-full">
-                                {order.typeOfTransporting}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      } else {
-                        return (
-                          <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
-                            <TableCell className="py-4 px-6 whitespace-nowrap">
-                              {order.billDate ? order.billDate.split(' ')[0] : "N/A"}
-                            </TableCell>
-                            <TableCell className="py-4 px-6">
-                              <Badge className="bg-purple-500 text-white rounded-full">
-                                {order.billNo}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="py-4 px-6">
-                              <span className="font-medium">{order.deliveryOrderNo}</span>
-                            </TableCell>
-                            <TableCell className="py-4 px-6">{order.partyName}</TableCell>
-                            <TableCell className="py-4 px-6">{order.productName}</TableCell>
-                            <TableCell className="py-4 px-6">
-                              <Badge variant="outline" className="rounded-full">
-                                {order.logisticNo || "N/A"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="py-4 px-6 font-medium">{order.quantityDelivered}</TableCell>
-                            <TableCell className="py-4 px-6">
-                              ₹{order.rateOfMaterial || "0"}
-                            </TableCell>
-                            <TableCell className="py-4 px-6">
-                              <Badge className={`rounded-full ${
-                                order.givingFromWhere === 'Production' ? 'bg-blue-500' : 'bg-green-500'
-                              } text-white`}>
-                                {order.givingFromWhere || "N/A"}
-                              </Badge>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      }
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Mobile View */}
-            <div className="lg:hidden">
-              <div className="p-4 space-y-4 max-h-96 overflow-y-auto">
-                {(activeTab === "pending" ? pendingOrders : historyOrders).length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">
-                    No {activeTab === "pending" ? "pending" : "history"} orders found
-                  </p>
-                ) : (
-                  (activeTab === "pending" ? pendingOrders : historyOrders).map((order) => {
-                    if (activeTab === "pending") {
-                      return (
-                        <div key={order.id} className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
-                          <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <p className="font-semibold text-gray-900">{order.partyName}</p>
-                              <p className="text-xs text-gray-500">
-                                DO: {order.deliveryOrderNo} | DS: {order.dSrNumber}
-                              </p>
-                              <p className="text-xs text-gray-500 mt-1">
-                                Planned: {order.planned4}
-                              </p>
-                            </div>
-                            <Button
-                              size="sm"
-                              onClick={() => handleSales(order)}
-                              className="bg-green-600 hover:bg-green-700"
-                              disabled={submitting}
-                            >
-                              Sales
-                            </Button>
-                          </div>
-
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Product:</span>
-                              <span className="font-medium">{order.productName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Transport:</span>
-                              <Badge variant="outline" className="text-xs">
-                                {order.typeOfTransporting}
-                              </Badge>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Transporter:</span>
-                              <span className="text-right">{order.transporterName}</span>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    } else {
-                      return (
-                        <div key={order.id} className="p-4 rounded-lg border border-gray-200 bg-white shadow-sm">
-                          <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge className="bg-purple-500 text-white text-xs">
-                                  {order.billNo}
-                                </Badge>
-                                <Badge className={`text-xs ${
-                                  order.givingFromWhere === 'Production' ? 'bg-blue-500' : 'bg-green-500'
-                                } text-white`}>
-                                  {order.givingFromWhere}
-                                </Badge>
-                              </div>
-                              <p className="font-semibold text-gray-900">{order.partyName}</p>
-                              <p className="text-xs text-gray-500">
-                                DO: {order.deliveryOrderNo} | Bill Date: {order.billDate?.split(' ')[0]}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm font-medium">{order.quantityDelivered} units</p>
-                              <p className="text-xs text-gray-500">
-                                ₹{order.rateOfMaterial || "0"}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Product:</span>
-                              <span>{order.productName}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">LGST No:</span>
-                              <span>{order.logisticNo || "N/A"}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Transport:</span>
-                              <span>{order.typeOfTransporting}</span>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    }
-                  })
-                )}
-              </div>
-            </div>
-
-            <div className="px-4 sm:px-6 py-3 bg-gray-50 text-sm text-gray-600 rounded-b-lg border-t border-gray-200">
-              Showing {activeTab === "pending" ? pendingOrders.length : historyOrders.length} orders
-            </div>
+      <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+        {/* Search & Tabs Header */}
+        <div className="p-4 border-b bg-gray-50/50 flex flex-col lg:flex-row gap-4 items-center">
+          <div className="w-full lg:max-w-md relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search by Party, DO, Product..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 h-10 w-full border-gray-200 focus:ring-green-500 rounded-lg shadow-sm"
+            />
           </div>
-        </CardContent>
-      </Card>
+
+          <div className="flex bg-gray-200/50 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveTab("pending")}
+              className={`px-6 py-1.5 rounded-md text-sm font-semibold transition-all ${activeTab === "pending"
+                ? "bg-white text-green-700 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+                }`}
+            >
+              Pending ({orders.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`px-6 py-1.5 rounded-md text-sm font-semibold transition-all ${activeTab === "history"
+                ? "bg-white text-green-700 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+                }`}
+            >
+              History ({deliveryHistory.length})
+            </button>
+          </div>
+
+          <Button
+            onClick={() => fetchData()}
+            variant="ghost"
+            size="sm"
+            className="ml-auto text-gray-400 hover:text-green-600"
+            disabled={loading}
+          >
+            <Loader2 className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50 border-b border-gray-200">
+                {activeTab === "pending" && (
+                  <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Action</TableHead>
+                )}
+                {activeTab === "history" && (
+                  <>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Bill Date</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Bill No.</TableHead>
+                  </>
+                )}
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">D-Sr Number</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Delivery Order No.</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Party Name</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Product Name</TableHead>
+                {activeTab === "pending" && (
+                  <>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Planned Date</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transport Type</TableHead>
+                  </>
+                )}
+                {activeTab === "history" && (
+                  <>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Quantity Delivered</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Rate of Material</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Source</TableHead>
+                  </>
+                )}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(activeTab === "pending" ? pendingOrders : historyOrders).length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={activeTab === "pending" ? 8 : 9}
+                    className="text-center py-8 text-gray-500"
+                  >
+                    <div className="flex flex-col items-center gap-2">
+                      <span className="text-lg">No {activeTab} orders found</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                (activeTab === "pending" ? pendingOrders : historyOrders).map((order) => {
+                  if (activeTab === "pending") {
+                    return (
+                      <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
+                        <TableCell className="py-2 px-4 min-w-[100px]">
+                          <Button
+                            size="sm"
+                            onClick={() => handleSales(order)}
+                            className="bg-green-600 hover:bg-green-700 h-8 text-xs"
+                            disabled={submitting}
+                          >
+                            Sales Form
+                          </Button>
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px]">
+                          <Badge variant="outline" className="rounded-sm font-normal text-xs">
+                            {order.dSrNumber}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] font-medium text-sm">
+                          {order.deliveryOrderNo || "N/A"}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.partyName}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.productName}</TableCell>
+
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.planned4}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px]">
+                          <Badge variant="outline" className="rounded-sm font-normal text-xs">
+                            {order.typeOfTransporting}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  } else {
+                    return (
+                      <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
+                        <TableCell className="py-2 px-4 min-w-[120px] whitespace-nowrap text-sm">
+                          {order.billDate ? order.billDate.split(' ')[0] : "N/A"}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[100px]">
+                          <Badge className="bg-purple-500 text-white rounded-sm text-xs">
+                            {order.billNo}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">
+                          <Badge variant="outline" className="rounded-sm font-normal text-xs">
+                            {order.dSrNumber || "-"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] font-medium text-sm">
+                          {order.deliveryOrderNo}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.partyName}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.productName}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[100px] font-medium text-sm">{order.quantityDelivered}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">
+                          ₹{order.rateOfMaterial || "0"}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[100px]">
+                          <Badge className={`rounded-sm text-xs ${order.givingFromWhere === 'Production' ? 'bg-blue-500' : 'bg-green-500'
+                            } text-white`}>
+                            {order.givingFromWhere || "N/A"}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  }
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
 
       {/* Sales Form Modal */}
       {selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
               <CardTitle className="text-lg lg:text-xl">Sales Delivery Form</CardTitle>
@@ -738,46 +558,49 @@ export default function SalesFormPage({ user }) {
             <CardContent className="p-4 lg:p-6">
               <div className="space-y-6">
                 {/* Order Info */}
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">Order Information</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wider">Order Information</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-y-4 gap-x-6">
                     <div>
-                      <Label className="text-sm text-gray-500">Delivery Order No.</Label>
-                      <p className="font-medium">{selectedOrder.deliveryOrderNo || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Delivery Order No.</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.deliveryOrderNo || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">D-Sr Number</Label>
-                      <p className="font-medium">{selectedOrder.dSrNumber}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">D-Sr Number</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.dSrNumber}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Party Name</Label>
-                      <p className="font-medium">{selectedOrder.partyName}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Party Name</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.partyName}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Product Name</Label>
-                      <p className="font-medium">{selectedOrder.productName}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Product Name</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.productName}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">LGST Number</Label>
+                      <Label className="text-xs text-gray-500 block mb-1">LGST Number</Label>
                       <p className="font-medium text-blue-600">{selectedOrder.lgstNumber || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Planned4 Date</Label>
-                      <p className="font-medium">{selectedOrder.planned4}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Planned4 Date</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.planned4}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Actual Truck Qty</Label>
-                      <p className="font-medium">{selectedOrder.actualTruckQty || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Actual Truck Qty</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.actualTruckQty || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-sm text-gray-500">Transporter</Label>
-                      <p className="font-medium">{selectedOrder.transporterName || "N/A"}</p>
+                      <Label className="text-xs text-gray-500 block mb-1">Transporter</Label>
+                      <p className="font-medium text-gray-900">{selectedOrder.transporterName || "N/A"}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="border-t pt-6">
-                  <h3 className="text-lg font-semibold mb-3">Sales Details *</h3>
+                <div>
+                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                    <span className="w-1 h-6 bg-green-600 rounded-full inline-block"></span>
+                    Sales Details
+                  </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-sm">Bill Date *</Label>
@@ -798,10 +621,10 @@ export default function SalesFormPage({ user }) {
                           <CalendarComponent
                             mode="single"
                             selected={new Date(formData.billDate)}
-                            onSelect={(date) => 
-                              setFormData(prev => ({ 
-                                ...prev, 
-                                billDate: format(date, "yyyy-MM-dd") 
+                            onSelect={(date) =>
+                              setFormData(prev => ({
+                                ...prev,
+                                billDate: format(date, "yyyy-MM-dd")
                               }))
                             }
                             initialFocus
@@ -809,7 +632,7 @@ export default function SalesFormPage({ user }) {
                         </PopoverContent>
                       </Popover>
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label className="text-sm">Quantity Delivered *</Label>
                       <Input
@@ -822,7 +645,7 @@ export default function SalesFormPage({ user }) {
                         disabled={submitting}
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label className="text-sm">Rate Of Material *</Label>
                       <Input
@@ -835,14 +658,14 @@ export default function SalesFormPage({ user }) {
                         disabled={submitting}
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label className="text-sm">Giving From Where *</Label>
                       <Select
                         value={formData.givingFromWhere}
                         onValueChange={(value) => {
-                          setFormData(prev => ({ 
-                            ...prev, 
+                          setFormData(prev => ({
+                            ...prev,
                             givingFromWhere: value,
                             qty: value === "Production" ? "" : "0" // Reset if Production, set 0 for Purchase
                           }))
@@ -858,7 +681,7 @@ export default function SalesFormPage({ user }) {
                         </SelectContent>
                       </Select>
                     </div>
-                    
+
                     {formData.givingFromWhere === "Production" && (
                       <div className="space-y-2">
                         <Label className="text-sm">Quantity *</Label>
@@ -873,7 +696,7 @@ export default function SalesFormPage({ user }) {
                         />
                       </div>
                     )}
-                    
+
                     <div className="space-y-2">
                       <Label className="text-sm">Bill No. *</Label>
                       <Input
@@ -884,52 +707,42 @@ export default function SalesFormPage({ user }) {
                         disabled={submitting}
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
-                      <Label className="text-sm">Logistic No.</Label>
-                      <Input
-                        value={formData.logisticNo}
-                        className="h-10"
-                        disabled
-                      />
+                      <Label className="text-sm text-gray-500">Logistic No.</Label>
+                      <div className="h-10 px-3 py-2 bg-gray-50 border rounded-md text-sm text-gray-500">
+                        {formData.logisticNo || "N/A"}
+                      </div>
                     </div>
-                    
+
                     <div className="space-y-2">
-                      <Label className="text-sm">Type of Transporting</Label>
-                      <Input
-                        value={formData.typeOfTransporting}
-                        className="h-10"
-                        disabled
-                      />
+                      <Label className="text-sm text-gray-500">Type of Transporting</Label>
+                      <div className="h-10 px-3 py-2 bg-gray-50 border rounded-md text-sm text-gray-500">
+                        {formData.typeOfTransporting || "N/A"}
+                      </div>
                     </div>
-                    
+
                     <div className="space-y-2">
-                      <Label className="text-sm">Transporter Name</Label>
-                      <Input
-                        value={formData.transporterName}
-                        className="h-10"
-                        disabled
-                      />
+                      <Label className="text-sm text-gray-500">Transporter Name</Label>
+                      <div className="h-10 px-3 py-2 bg-gray-50 border rounded-md text-sm text-gray-500">
+                        {formData.transporterName || "N/A"}
+                      </div>
                     </div>
-                    
+
                     <div className="space-y-2">
-                      <Label className="text-sm">Vehicle Number</Label>
-                      <Input
-                        value={formData.vehicleNumber}
-                        className="h-10"
-                        disabled
-                      />
+                      <Label className="text-sm text-gray-500">Vehicle Number</Label>
+                      <div className="h-10 px-3 py-2 bg-gray-50 border rounded-md text-sm text-gray-500">
+                        {formData.vehicleNumber || "N/A"}
+                      </div>
                     </div>
-                    
+
                     <div className="space-y-2">
-                      <Label className="text-sm">Bilty Number</Label>
-                      <Input
-                        value={formData.biltyNumber}
-                        className="h-10"
-                        disabled
-                      />
+                      <Label className="text-sm text-gray-500">Bilty Number</Label>
+                      <div className="h-10 px-3 py-2 bg-gray-50 border rounded-md text-sm text-gray-500">
+                        {formData.biltyNumber || "N/A"}
+                      </div>
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label className="text-sm">Indent No.</Label>
                       <Input
@@ -945,23 +758,23 @@ export default function SalesFormPage({ user }) {
 
                 <div className="border-t pt-6">
                   <div className="flex flex-col sm:flex-row justify-end gap-3">
-                    <Button 
-                      variant="outline" 
-                      onClick={handleCancel} 
-                      className="w-full sm:w-auto" 
+                    <Button
+                      variant="outline"
+                      onClick={handleCancel}
+                      className="w-full sm:w-auto"
                       disabled={submitting}
                     >
                       Cancel
                     </Button>
-                    <Button 
-                      onClick={handleSubmit} 
+                    <Button
+                      onClick={handleSubmit}
                       className="bg-green-600 hover:bg-green-700 w-full sm:w-auto"
                       disabled={
                         !formData.billDate ||
                         !formData.quantityDelivered ||
                         !formData.rateOfMaterial ||
                         !formData.givingFromWhere ||
-                        !formData.billNo || // Bill No. is now required
+                        !formData.billNo ||
                         (formData.givingFromWhere === "Production" && !formData.qty) ||
                         submitting
                       }
@@ -982,19 +795,6 @@ export default function SalesFormPage({ user }) {
           </Card>
         </div>
       )}
-
-      <div className="flex justify-center">
-        <Button 
-          onClick={fetchData} 
-          variant="outline" 
-          size="sm"
-          className="flex items-center gap-2"
-          disabled={submitting}
-        >
-          <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh Data
-        </Button>
-      </div>
     </div>
   )
 }

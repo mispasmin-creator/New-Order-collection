@@ -7,102 +7,60 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
-import { fetchUsersData } from "@/lib/users"
+import { supabase } from "@/lib/supabaseClient"
 
 export default function LoginForm({ onLogin }) {
   const [credentials, setCredentials] = useState({ username: "", password: "" })
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
-  const [users, setUsers] = useState([])
-  const [loadingUsers, setLoadingUsers] = useState(true)
-  const [demoCredentials, setDemoCredentials] = useState([])
 
-  // Fetch users from Google Sheet on component mount
-  useEffect(() => {
-    const loadUsers = async () => {
-      try {
-        setLoadingUsers(true)
-        const usersData = await fetchUsersData()
-        setUsers(usersData)
-        
-        // Create demo credentials from the first few users
-        const demos = usersData.slice(0, 3).map((user, index) => ({
-          id: user.username,
-          password: user.password,
-          role: user.role,
-          name: user.name
-        }))
-        setDemoCredentials(demos)
-      } catch (error) {
-        console.error("Failed to load users:", error)
-        setError("Failed to load user database. Using fallback credentials.")
-        
-        // Fallback to hardcoded users if sheet fails
-        const fallbackUsers = [
-          { id: "admin", username: "admin", password: "admin12345", name: "Admin", role: "master", firm: "ALL", pageAccess: ["Dashboard", "Order", "Check PO", "Received Accounts", "Check for Delivery", "Dispatch Planning", "Logistic", "Load Material", "Invoice", "Sales Form", "Wetman Entry", "Fullkiting", "Bilty Entry", "CRM", "Test Report", "MATERIAL RECEIPT"] },
-          { id: "user", username: "user", password: "user123", name: "Mukesh", role: "user", firm: "AAA", pageAccess: ["Dashboard", "Order", "Check PO", "Received Accounts", "Check for Delivery", "Dispatch Planning"] },
-          { id: "purchaser", username: "Purchaser", password: "P@12345", name: "EA", role: "admin", firm: "EA", pageAccess: ["Dashboard", "Order", "Check PO", "Received Accounts", "Check for Delivery", "Dispatch Planning"] },
-        ]
-        setUsers(fallbackUsers)
-        setDemoCredentials(fallbackUsers.slice(0, 3))
-      } finally {
-        setLoadingUsers(false)
-      }
-    }
-    
-    loadUsers()
-  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError("")
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    try {
+      const { data, error } = await supabase
+        .from('USER')
+        .select('*')
+        .eq('Username', credentials.username)
+        .eq('Password', credentials.password)
+        .single()
 
-    const user = users.find((u) => 
-      u.username.toLowerCase() === credentials.username.toLowerCase() && 
-      u.password === credentials.password
-    )
+      if (error) {
+        // If no rows found, .single() returns an error
+        console.error("Login error:", error)
+        setError("Invalid credentials. Please check your username and password.")
+      } else if (data) {
+        // Parse Page Access (comma separated string to array)
+        let pageAccess = []
+        if (data["Page Acess"]) {
+          pageAccess = data["Page Acess"].split(',').map(p => p.trim())
+        }
 
-    if (user) {
-      // Prepare user object for the main app
-      const loginUser = {
-        id: user.username,
-        username: user.username,
-        name: user.name,
-        role: user.role,
-        firm: user.firm,
-        pageAccess: user.pageAccess || []
+        // Prepare user object
+        const loginUser = {
+          id: data.id,
+          username: data.Username,
+          name: data.Username, // Use Username as name if no Name column
+          role: data.Role,
+          firm: data["Firm_Name"], // Keep as string, components will split if needed
+          pageAccess: pageAccess
+        }
+        onLogin(loginUser)
+      } else {
+        setError("Invalid credentials. Please check your username and password.")
       }
-      onLogin(loginUser)
-    } else {
-      setError("Invalid credentials. Please check your username and password.")
+    } catch (err) {
+      console.error("Unexpected login error:", err)
+      setError("An unexpected error occurred.")
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
-  if (loadingUsers) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm">
-          <Card className="shadow-xl border-0">
-            <CardHeader className="text-center space-y-2 pb-6">
-              <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800">
-                Order 2 Delivery
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="w-12 h-12 animate-spin text-blue-600 mb-4" />
-              <p className="text-gray-600">Loading user database...</p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    )
-  }
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4 sm:p-6 lg:p-8">
@@ -156,7 +114,7 @@ export default function LoginForm({ onLogin }) {
               <Button
                 type="submit"
                 className="w-full h-11 bg-blue-600 hover:bg-blue-700 text-white font-medium"
-                disabled={loading || loadingUsers}
+                disabled={loading}
               >
                 {loading ? (
                   <>

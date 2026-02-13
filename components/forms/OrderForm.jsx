@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -8,12 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { X, Plus, Package, Trash2, Upload } from "lucide-react"
+import { X, Plus, Package, Trash2 } from "lucide-react"
+import { supabase } from "@/lib/supabaseClient"
 
-// Google Apps Script URL
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec";
+// Google Apps Script URL for Master Data and File Upload ONLY
+const GOOGLE_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec";
 const FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-";
-export default function OrderForm({ onSubmit, onCancel, user }) {
+
+export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
   const [formData, setFormData] = useState({
     // Basic Information
     "Timestamp": "",
@@ -23,13 +26,13 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     "Party Name": "",
     "Gst Number": "",
     "Address": "",
-    "Firm Name": user.role === "master" ? "" : user.firm,
-    
+    "Firm Name": "",
+
     // Contact & Transport
     "Type Of Transporting": "",
     "Contact Person Name": "",
     "Contact Person WhatsApp No.": "",
-    
+
     // Order Details
     "Order Received From": "",
     "Type Of Measurement": "",
@@ -38,7 +41,8 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     "Free Replacement (FOC)": "",
     "Adjusted Amount": "",
     "Reference No.": "",
-    
+    "TC Required": "No",
+
     // Payment & Terms
     "Total PO Basic Value": "",
     "Payment to Be Taken": "",
@@ -46,15 +50,15 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     "Retention Percentage": "",
     "Lead Time for Retention": "",
     "Specific Concern": "",
-    
+
     // Technical & Lead Time
     "Lead Time For Collection Of Final Payment": "",
     "Type Of Application": "",
-    
+
     // Agent & Marketing
     "Is This Order Through Some Agent": "",
     "Marketing Mangager Name": "",
-    
+
     // Product specific fields
     "Product Name": "",
     "Quantity": "",
@@ -63,10 +67,10 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     "Iron%": "",
     "Advance": "",
     "Basic": "",
-    
+
     // File upload
     "Upload SO": null,
-    
+
     // Products array for multiple products
     products: [],
   })
@@ -89,6 +93,7 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     retentionPayments: ["Yes", "No"]
   })
 
+  const [masterRecords, setMasterRecords] = useState([])
   const [lastDoNumber, setLastDoNumber] = useState(0)
   const [showProductForm, setShowProductForm] = useState(false)
   const [currentProduct, setCurrentProduct] = useState({
@@ -104,6 +109,7 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
   })
 
   const [loading, setLoading] = useState(false)
+  const { toast } = useToast()
   const [success, setSuccess] = useState(false)
   const [isDoNumberFetched, setIsDoNumberFetched] = useState(false)
 
@@ -113,108 +119,82 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     fetchLastDoNumber();
   }, [])
 
-  // Generate timestamp in format: 12/24/2022 13:45:01
+  // Generate timestamp in IST format
   const generateTimestamp = () => {
     const now = new Date();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const year = now.getFullYear();
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    
-    return `${month}/${day}/${year} ${hours}:${minutes}:${seconds}`;
+    const offset = 5.5 * 60 * 60 * 1000; // IST offset
+    const istDate = new Date(now.getTime() + offset);
+    return istDate.toISOString().replace("T", " ").slice(0, 19);
   }
 
-  // Generate DO number like DO-958, DO-959, etc.
-  // const generateDoNumber = () => {
-  //   if (!isDoNumberFetched || lastDoNumber === 0) {
-  //     // Fetch last DO number first
-  //     fetchLastDoNumber();
-  //     return "DO-1";
-  //   }
-  //   return `DO-${lastDoNumber + 1}`;
-  // }
+  const fetchLastDoNumber = async () => {
+    try {
+      setLoading(true);
 
- const fetchLastDoNumber = async () => {
-  try {
-    setLoading(true);
+      const { data, error } = await supabase
+        .from('ORDER RECEIPT')
+        .select('"DO-Delivery Order No."')
+        .order('id', { ascending: false })
+        .limit(50); // Check last 50 entries to be safe
 
-    const response = await fetch(`${GOOGLE_SCRIPT_URL}?sheet=ORDER RECEIPT`);
-    const result = await response.json();
+      if (error) throw error;
 
-    if (result.success && result.data && result.data.length > 1) {
-      const data = result.data;
-      const headers = data[0].map(h => h.trim());
-      const doNumberIndex = headers.indexOf("DO-Delivery Order No.");
-
-      if (doNumberIndex === -1) {
-        console.error("DO column not found");
-        return;
+      if (data && data.length > 0) {
+        let maxNumber = 0;
+        data.forEach(row => {
+          const value = row['DO-Delivery Order No.'];
+          if (value && String(value).startsWith("DO-")) {
+            const num = parseInt(String(value).replace("DO-", ""), 10);
+            if (!isNaN(num)) maxNumber = Math.max(maxNumber, num);
+          }
+        });
+        setLastDoNumber(maxNumber);
+        console.log("Last DO found:", maxNumber);
+      } else {
+        setLastDoNumber(0);
       }
-
-      let maxNumber = 0;
-
-      data.slice(1).forEach(row => {
-        const value = row[doNumberIndex];
-        if (value && String(value).startsWith("DO-")) {
-          const num = parseInt(String(value).replace("DO-", ""), 10);
-          if (!isNaN(num)) maxNumber = Math.max(maxNumber, num);
-        }
-      });
-
-      setLastDoNumber(maxNumber);
       setIsDoNumberFetched(true);
-      console.log("Last DO found:", maxNumber);
+    } catch (err) {
+      console.error("Error fetching last DO number from Supabase:", err);
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    console.error("Error fetching last DO number:", err);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
 
   const fetchDropdownData = async () => {
     try {
       setLoading(true);
-      
-      // Fetch data from Master sheet
-      const response = await fetch(`${GOOGLE_SCRIPT_URL}?sheet=Master`);
-      const result = await response.json();
-      
-      if (result.success && result.data) {
-        const masterData = result.data;
-        
-        if (masterData.length === 0) {
-          console.warn("No data found in Master sheet");
-          return;
-        }
-        
-        const headers = masterData[0].map(h => h.trim());
-        console.log("Master sheet headers:", headers);
-        
-        // Find column indices
-        const firmNameIndex = headers.indexOf("Firm Name");
-        const partyNameIndex = headers.findIndex(h => h.includes("Party"));
-        const addressIndex = headers.indexOf("Address");
-        const gstNumberIndex = headers.findIndex(h => h.includes("GST"));
-        const customerCategoryIndex = headers.findIndex(h => h.includes("Customer Category"));
-        const typeOfPiIndex = headers.findIndex(h => h.includes("Type of PI") || h.includes("Type Of PI"));
-        const marketingManagerIndex = headers.findIndex(h => 
-          h.includes("Marketing Sales Person") || 
-          h.includes("Marketing Mangager Name") ||
-          h.includes("Sales Person")
-        );
-        const productNameIndex = headers.findIndex(h => h.includes("Product Name"));
-        const uomIndex = headers.findIndex(h => h.includes("UOM") || h.includes("Unit"));
-        
-        console.log("Column indices:", {
-          partyNameIndex,
-          marketingManagerIndex,
-          productNameIndex
-        });
-        
+
+      // Fetch data from Master table in Supabase
+      const { data: masterData, error } = await supabase
+        .from('MASTER')
+        .select('*');
+
+      if (error) {
+        console.error("Error fetching Master data:", error);
+        return;
+      }
+
+      console.log("Master Data Fetched:", masterData);
+
+      if (masterData && masterData.length > 0) {
+        setMasterRecords(masterData);
+
+        // Find keys dynamically from the first row to handle variations
+        const keys = Object.keys(masterData[0]);
+        const findKey = (search) => keys.find(k => k.toLowerCase().includes(search.toLowerCase()));
+
+        const firmNameKey = keys.find(k => k.trim() === "Firm Name") || findKey("Firm Name");
+        const partyNameKey = keys.find(k => k.trim() === "Party Name" || k.trim() === "Party Names") || findKey("Party");
+        const addressKey = findKey("Address");
+        const gstNumberKey = findKey("GST");
+        const customerCategoryKey = findKey("Customer Category");
+        const typeOfPiKey = findKey("Type of PI");
+        const marketingManagerKey = findKey("Marketing") || findKey("Sales Person");
+        const productNameKey = findKey("Product Name");
+        const uomKey = findKey("UOM") || findKey("Unit");
+
         // Initialize sets
         const firmNamesSet = new Set();
         const partyNamesSet = new Set();
@@ -226,45 +206,19 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
         const productNamesSet = new Set();
         const uomsSet = new Set();
 
-        // Extract data from each row
-        masterData.slice(1).forEach(row => {
-          if (firmNameIndex !== -1 && row[firmNameIndex]) {
-            firmNamesSet.add(String(row[firmNameIndex]).trim());
-          }
-          if (partyNameIndex !== -1 && row[partyNameIndex]) {
-            const partyName = String(row[partyNameIndex]).trim();
-            if (partyName) partyNamesSet.add(partyName);
-          }
-          if (gstNumberIndex !== -1 && row[gstNumberIndex]) {
-            gstNumbersSet.add(String(row[gstNumberIndex]).trim());
-          }
-          if (addressIndex !== -1 && row[addressIndex]) {
-            addressesSet.add(String(row[addressIndex]).trim());
-          }
-          if (typeOfPiIndex !== -1 && row[typeOfPiIndex]) {
-            typeOfPisSet.add(String(row[typeOfPiIndex]).trim());
-          }
-          if (customerCategoryIndex !== -1 && row[customerCategoryIndex]) {
-            customerCategoriesSet.add(String(row[customerCategoryIndex]).trim());
-          }
-          if (marketingManagerIndex !== -1 && row[marketingManagerIndex]) {
-            const managerName = String(row[marketingManagerIndex]).trim();
-            if (managerName) marketingManagersSet.add(managerName);
-          }
-          if (productNameIndex !== -1 && row[productNameIndex]) {
-            productNamesSet.add(String(row[productNameIndex]).trim());
-          }
-          if (uomIndex !== -1 && row[uomIndex]) {
-            uomsSet.add(String(row[uomIndex]).trim());
-          }
+        // Extract data
+        masterData.forEach(row => {
+          if (firmNameKey && row[firmNameKey]) firmNamesSet.add(String(row[firmNameKey]).trim());
+          if (partyNameKey && row[partyNameKey]) partyNamesSet.add(String(row[partyNameKey]).trim());
+          if (gstNumberKey && row[gstNumberKey]) gstNumbersSet.add(String(row[gstNumberKey]).trim());
+          if (addressKey && row[addressKey]) addressesSet.add(String(row[addressKey]).trim());
+          if (typeOfPiKey && row[typeOfPiKey]) typeOfPisSet.add(String(row[typeOfPiKey]).trim());
+          if (customerCategoryKey && row[customerCategoryKey]) customerCategoriesSet.add(String(row[customerCategoryKey]).trim());
+          if (marketingManagerKey && row[marketingManagerKey]) marketingManagersSet.add(String(row[marketingManagerKey]).trim());
+          if (productNameKey && row[productNameKey]) productNamesSet.add(String(row[productNameKey]).trim());
+          if (uomKey && row[uomKey]) uomsSet.add(String(row[uomKey]).trim());
         });
-        
-        console.log("Dropdown data counts:", {
-          partyNames: Array.from(partyNamesSet).length,
-          marketingManagers: Array.from(marketingManagersSet).length,
-          productNames: Array.from(productNamesSet).length
-        });
-        
+
         setDropdownData(prev => ({
           ...prev,
           firmNames: Array.from(firmNamesSet).filter(Boolean),
@@ -275,8 +229,8 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
           customerCategories: Array.from(customerCategoriesSet).filter(Boolean),
           marketingMangagerNames: Array.from(marketingManagersSet).filter(Boolean),
           productNames: Array.from(productNamesSet).filter(Boolean),
-          uoms: Array.from(uomsSet).filter(Boolean),
-          typeOfTransportings: ["FOR", "Ex Factory", "Ex Factory But paid by Us"],
+          uoms: Array.from(uomsSet).filter(Boolean).filter(uom => !['yz', 'kl'].includes(uom.toLowerCase())).concat(['SQN']),
+          typeOfTransportings: ["FOR", "Ex Factory", "Ex Factory But paid by Us", "Owned Truck"],
         }));
       }
     } catch (error) {
@@ -287,50 +241,34 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
   }
 
   // Fetch address and GST when party name is selected
-  const fetchPartyDetails = async (partyName) => {
-    if (!partyName) return;
-    
+  // Fetch address and GST when party name is selected
+  const fetchPartyDetails = (partyName) => {
+    if (!partyName || masterRecords.length === 0) return;
+
     try {
-      const response = await fetch(`${GOOGLE_SCRIPT_URL}?sheet=Master`);
-      const result = await response.json();
-      
-      if (result.success && result.data) {
-        const masterData = result.data;
-        const headers = masterData[0].map(h => h.trim());
-        
-        const partyNameIndex = headers.findIndex(h => h.includes("Party"));
-        const addressIndex = headers.indexOf("Address");
-        const gstNumberIndex = headers.findIndex(h => h.includes("GST"));
-        const firmNameIndex = headers.indexOf("Firm Name");
-        
-        // Find the row with matching party name
-        const partyRow = masterData.slice(1).find(row => {
-          return row[partyNameIndex] && String(row[partyNameIndex]).trim() === partyName.trim();
-        });
-        
-        if (partyRow) {
-          const updates = {};
-          
-          if (addressIndex !== -1 && partyRow[addressIndex]) {
-            updates["Address"] = String(partyRow[addressIndex]).trim();
-          }
-          
-          if (gstNumberIndex !== -1 && partyRow[gstNumberIndex]) {
-            updates["Gst Number"] = String(partyRow[gstNumberIndex]).trim();
-          }
-          
-          if (firmNameIndex !== -1 && partyRow[firmNameIndex] && user.role === "master") {
-            updates["Firm Name"] = String(partyRow[firmNameIndex]).trim();
-          }
-          
-          setFormData(prev => ({ 
-            ...prev, 
-            ...updates
-          }));
-        }
+      const keys = Object.keys(masterRecords[0]);
+      const findKey = (search) => keys.find(k => k.toLowerCase().includes(search.toLowerCase()));
+
+      const partyNameKey = keys.find(k => k.trim() === "Party Name" || k.trim() === "Party Names") || findKey("Party");
+      const addressKey = findKey("Address");
+      const gstNumberKey = findKey("GST");
+      const firmNameKey = keys.find(k => k.trim() === "Firm Name") || findKey("Firm Name");
+
+      // Find the row with matching party name
+      const partyRow = masterRecords.find(row => {
+        return partyNameKey && String(row[partyNameKey]).trim() === partyName.trim();
+      });
+
+      if (partyRow) {
+        const updates = {};
+        if (addressKey && partyRow[addressKey]) updates["Address"] = String(partyRow[addressKey]).trim();
+        if (gstNumberKey && partyRow[gstNumberKey]) updates["Gst Number"] = String(partyRow[gstNumberKey]).trim();
+        if (firmNameKey && partyRow[firmNameKey] && user.role === "master") updates["Firm Name"] = String(partyRow[firmNameKey]).trim();
+
+        setFormData(prev => ({ ...prev, ...updates }));
       }
     } catch (error) {
-      console.error("Error fetching party details:", error);
+      console.error("Error setting party details:", error);
     }
   }
 
@@ -338,8 +276,6 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     if (field === "Party Name") {
       setFormData(prev => ({ ...prev, [field]: value }));
       fetchPartyDetails(value);
-    } else if (field === "Gst Number") {
-      setFormData(prev => ({ ...prev, [field]: value }));
     } else {
       setFormData(prev => ({ ...prev, [field]: value }));
     }
@@ -347,32 +283,32 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
 
   const handleProductChange = (field, value) => {
     const updatedProduct = { ...currentProduct, [field]: value };
-    
+
     if (field === "Quantity" || field === "Rate Of Material") {
       const quantity = field === "Quantity" ? parseFloat(value) || 0 : parseFloat(currentProduct["Quantity"]) || 0;
       const rate = field === "Rate Of Material" ? parseFloat(value) || 0 : parseFloat(currentProduct["Rate Of Material"]) || 0;
       updatedProduct["Total PO Basic Value"] = (quantity * rate).toString();
     }
-    
+
     setCurrentProduct(updatedProduct);
   }
 
   const addProduct = () => {
-    if (currentProduct["Product Name"] && currentProduct["Quantity"]) {
+    if (currentProduct["Product Name"] && currentProduct["Quantity"] && currentProduct["Rate Of Material"]) {
       const newProduct = {
-        ...currentProduct, 
+        ...currentProduct,
         id: Date.now(),
-        "Total PO Basic Value": currentProduct["Total PO Basic Value"] || 
+        "Total PO Basic Value": currentProduct["Total PO Basic Value"] ||
           (parseFloat(currentProduct["Quantity"]) * parseFloat(currentProduct["Rate Of Material"]) || 0).toString()
       };
-      
+
       setFormData((prev) => ({
         ...prev,
         products: [...prev.products, newProduct],
-        "Total PO Basic Value": (parseFloat(prev["Total PO Basic Value"] || 0) + 
+        "Total PO Basic Value": (parseFloat(prev["Total PO Basic Value"] || 0) +
           parseFloat(newProduct["Total PO Basic Value"])).toString()
       }));
-      
+
       setCurrentProduct({
         "Product Name": "",
         "Quantity": "",
@@ -390,12 +326,12 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
 
   const removeProduct = (productId) => {
     const productToRemove = formData.products.find(p => p.id === productId);
-    
+
     setFormData((prev) => {
       const updatedProducts = prev.products.filter((p) => p.id !== productId);
-      const totalValue = updatedProducts.reduce((sum, product) => 
+      const totalValue = updatedProducts.reduce((sum, product) =>
         sum + parseFloat(product["Total PO Basic Value"] || 0), 0);
-      
+
       return {
         ...prev,
         products: updatedProducts,
@@ -408,244 +344,245 @@ export default function OrderForm({ onSubmit, onCancel, user }) {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Just store the file, don't upload yet - upload will happen on form submission
+    setFormData(prev => ({
+      ...prev,
+      "Upload SO": file,
+    }));
+
+    toast({
+      title: "File Selected",
+      description: `${file.name} ready to upload`,
+    });
+  }
+
+  // Prepare input for Supabase
+  const prepareRowData = (doNumber, uploadedFileUrl = "") => {
+    const timestamp = generateTimestamp();
+
+    return {
+      "Timestamp": timestamp,
+      "DO-Delivery Order No.": doNumber,
+      "PARTY PO NO (As Per Po Exact)": formData["PARTY PO NO (As Per Po Exact)"],
+      "Party PO Date": formData["Party PO Date"],
+      "Party Names": formData["Party Name"],
+      "Product Name": "",
+      "Quantity": 0,
+      "Rate Of Material": 0,
+      "Type Of Transporting": formData["Type Of Transporting"],
+      "Type Of Packaging": formData["Type of Packaging"],
+      "Upload SO": uploadedFileUrl,
+      "Is This Order Through Some Agent": formData["Is This Order Through Some Agent"],
+      "Order Received From": formData["Order Received From"],
+      "Type Of Measurement": "",
+      "Contact Person Name": formData["Contact Person Name"],
+      "Contact Person WhatsApp No.": formData["Contact Person WhatsApp No."],
+      "Alumina%": 0,
+      "Iron%": 0,
+      "Type Of PI": formData["Type Of PI"],
+      "Lead Time For Collection Of Final Payment": parseInt(formData["Lead Time For Collection Of Final Payment"]) || null,
+      "Type Of Application": formData["Type Of Application"],
+      "Customer Category": formData["Customer Category"],
+      "Free Replacement (FOC)": formData["Free Replacement (FOC)"],
+      "Gst Number": formData["Gst Number"],
+      "Address": formData["Address"],
+      "Firm Name": formData["Firm Name"],
+      "Total PO Basic Value": 0,
+      "Payment to Be Taken": formData["Payment to Be Taken"],
+      "Advance": 0,
+      "Basic": 0,
+      "Retention Payment": formData["Retention Payment"],
+      "Retention Percentage": parseFloat(formData["Retention Percentage"]) || 0,
+      "Lead Time for Retention": parseInt(formData["Lead Time for Retention"]) || null,
+      "Specific Concern": formData["Specific Concern"],
+      "Reference No.": formData["Reference No."],
+      "TC Required": formData["TC Required"],
+      "Adjusted Amount": parseFloat(formData["Adjusted Amount"]) || 0,
+      "Marketing Mangager Name": formData["Marketing Mangager Name"],
+      "Status": "New Order"
+    };
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (formData.products.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please add at least one product",
+      })
+      return;
+    }
+
+    if (!formData["Upload SO"]) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please upload the SO file",
+      })
+      return;
+    }
+
+    // Additional validation for mandatory fields
+    const mandatoryFields = [
+      { key: "Firm Name", label: "Firm Name" },
+      { key: "PARTY PO NO (As Per Po Exact)", label: "PARTY PO NO" },
+      { key: "Party PO Date", label: "Party PO Date" },
+      { key: "Party Name", label: "Party Name" },
+      { key: "Contact Person Name", label: "Contact Person Name" },
+      { key: "Contact Person WhatsApp No.", label: "Contact Person WhatsApp No." }
+    ];
+
+    for (const field of mandatoryFields) {
+      if (!formData[field.key]) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: `Please fill in ${field.label}`,
+        })
+        return;
+      }
+    }
+
     try {
       setLoading(true);
-      
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      
-      reader.onloadend = async () => {
-        const base64Data = reader.result;
-        
-        const formData = new FormData();
-        formData.append("action", "uploadFile");
-        formData.append("base64Data", base64Data);
-        formData.append("fileName", file.name);
-        formData.append("mimeType", file.type);
-        formData.append("folderId", FOLDER_ID);
-        
-        const response = await fetch(GOOGLE_SCRIPT_URL, {
-          method: "POST",
-          body: formData,
-        });
-        
-        const result = await response.json();
-        if (result.success) {
-          setFormData(prev => ({ 
-            ...prev, 
-            "Upload SO": file,
-            "Upload SO URL": result.fileUrl 
-          }));
+
+      // ✅ Upload file to Supabase Storage images/orders/ folder
+      let uploadedFileUrl = "";
+      if (formData["Upload SO"]) {
+        const file = formData["Upload SO"];
+        const timestamp = Date.now();
+        const fileExt = file.name.split('.').pop();
+        const fileName = `orders/so_${timestamp}.${fileExt}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('images')
+          .upload(fileName, file, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (uploadError) {
+          console.error("Error uploading to Supabase Storage:", uploadError);
+          toast({
+            variant: "destructive",
+            title: "Upload Failed",
+            description: "Failed to upload SO file. Please try again.",
+          });
+          setLoading(false);
+          return;
         }
-      };
-    } catch (error) {
-      console.error("Error uploading file:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  // Prepare row data according to your exact header requirements
-const prepareRowData = (doNumber) => {
-  const timestamp = generateTimestamp();
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('images')
+          .getPublicUrl(fileName);
 
-  return {
-    "Timestamp": timestamp,
-    "DO-Delivery Order No.": doNumber,
-    "PARTY PO NO (As Per Po Exact)": formData["PARTY PO NO (As Per Po Exact)"],
-    "Party PO Date": formData["Party PO Date"],
-    "Party Names": formData["Party Name"],
-    "Product Name": "",
-    "Quantity": "",
-    "Rate Of Material": "",
-    "Type Of Transporting": formData["Type Of Transporting"],
-    "Upload SO": formData["Upload SO URL"] || "",
-    "Is This Order Through Some Agent": formData["Is This Order Through Some Agent"],
-    "Order Received From": formData["Order Received From"],
-    "Type Of Measurement": "",
-    "Contact Person Name": formData["Contact Person Name"],
-    "Contact Person WhatsApp No.": formData["Contact Person WhatsApp No."],
-    "Alumina%": "",
-    "Iron%": "",
-    "Type Of PI": formData["Type Of PI"],
-    "Lead Time For Collection Of Final Payment": formData["Lead Time For Collection Of Final Payment"],
-    "Type Of Application": formData["Type Of Application"],
-    "Customer Category": formData["Customer Category"],
-    "Free Replacement (FOC)": formData["Free Replacement (FOC)"],
-    "Gst Number": formData["Gst Number"],
-    "Address": formData["Address"],
-    "Firm Name": formData["Firm Name"],
-    "Total PO Basic Value": "",
-    "Payment to Be Taken": formData["Payment to Be Taken"],
-    "Advance": "",
-    "Basic": "",
-    "Retention Payment": formData["Retention Payment"],
-    "Retention Percentage": formData["Retention Percentage"],
-    "Lead Time for Retention": formData["Lead Time for Retention"],
-    "Specific Concern": formData["Specific Concern"],
-    "Reference No.": formData["Reference No."],
-    "Adjusted Amount": formData["Adjusted Amount"],
-    "Marketing Mangager Name": formData["Marketing Mangager Name"],
-  };
-};
-
- const handleSubmit = async (e) => {
-  e.preventDefault();
-
-  if (formData.products.length === 0) {
-    alert("Please add at least one product");
-    return;
-  }
-
-  try {
-    setLoading(true);
-
-    // ✅ Ensure latest DO is fetched
-    if (!isDoNumberFetched) {
-      await fetchLastDoNumber();
-    }
-
-    // ✅ SINGLE SOURCE OF TRUTH
-    const generatedDo = `DO-${lastDoNumber + 1}`;
-
-    const rowsToInsert = formData.products.map(product => {
-      const baseRow = prepareRowData(generatedDo);
-
-      return {
-        ...baseRow,
-        "Product Name": product["Product Name"],
-        "Quantity": product["Quantity"],
-        "Rate Of Material": product["Rate Of Material"],
-        "Type Of Measurement": product["Type Of Measurement"],
-        "Alumina%": product["Alumina%"],
-        "Iron%": product["Iron%"],
-        "Advance": product["Advance"],
-        "Basic": product["Basic"],
-        "Total PO Basic Value": product["Total PO Basic Value"],
-      };
-    });
-     
-      // Convert to array format in EXACT header order
-      const rowArrays = rowsToInsert.map(row => {
-        return [
-          row["Timestamp"],
-          row["DO-Delivery Order No."],
-          row["PARTY PO NO (As Per Po Exact)"],
-          row["Party PO Date"],
-          row["Party Names"],
-          row["Product Name"],
-          row["Quantity"],
-          row["Rate Of Material"],
-          row["Type Of Transporting"],
-          row["Upload SO"],
-          row["Is This Order Through Some Agent"],
-          row["Order Received From"],
-          row["Type Of Measurement"],
-          row["Contact Person Name"],
-          row["Contact Person WhatsApp No."],
-          row["Alumina%"],
-          row["Iron%"],
-          row["Type Of PI"],
-          row["Lead Time For Collection Of Final Payment"],
-          row["Type Of Application"],
-          row["Customer Category"],
-          row["Free Replacement (FOC)"],
-          row["Gst Number"],
-          row["Address"],
-          row["Firm Name"],
-          row["Total PO Basic Value"],
-          row["Payment to Be Taken"],
-          row["Advance"],
-          row["Basic"],
-          row["Retention Payment"],
-          row["Retention Percentage"],
-          row["Lead Time for Retention"],
-          row["Specific Concern"],
-          row["Reference No."],
-          row["Adjusted Amount"],
-          row["Marketing Mangager Name"] // Last field - column 35
-        ];
-      });
-      
-      console.log("Submitting data:", {
-        doNumbers: rowsToInsert.map(r => r["DO-Delivery Order No."]),
-        marketingManager: formData["Marketing Mangager Name"],
-        rowCount: rowArrays.length
-      });
-      
-      // Submit to Google Sheets
-      const formDataToSend = new FormData();
-      formDataToSend.append("action", "batchInsert");
-      formDataToSend.append("sheetName", "ORDER RECEIPT");
-      formDataToSend.append("rowsData", JSON.stringify(rowArrays));
-      
-      const response = await fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        body: formDataToSend,
-      });
-      
-      const result = await response.json();
-      console.log("Submission result:", result);
-      
-      if (result.success) {
-        // Update last DO number for next submission
-          setLastDoNumber(prev => prev + 1);
-        
-        setSuccess(true);
-        // Reset form
-        const timestamp = generateTimestamp();
-        setFormData({
-          "Timestamp": timestamp,
-          "DO-Delivery Order No.": "",
-          "PARTY PO NO (As Per Po Exact)": "",
-          "Party PO Date": "",
-          "Party Name": "",
-          "Gst Number": "",
-          "Address": "",
-          "Firm Name": user.role === "master" ? "" : user.firm,
-          "Type Of Transporting": "",
-          "Contact Person Name": "",
-          "Contact Person WhatsApp No.": "",
-          "Order Received From": "",
-          "Type Of Measurement": "",
-          "Type Of PI": "",
-          "Customer Category": "",
-          "Free Replacement (FOC)": "",
-          "Adjusted Amount": "",
-          "Reference No.": "",
-          "Total PO Basic Value": "",
-          "Payment to Be Taken": "",
-          "Retention Payment": "",
-          "Retention Percentage": "",
-          "Lead Time for Retention": "",
-          "Specific Concern": "",
-          "Lead Time For Collection Of Final Payment": "",
-          "Type Of Application": "",
-          "Is This Order Through Some Agent": "",
-          "Marketing Mangager Name": "",
-          "Product Name": "",
-          "Quantity": "",
-          "Rate Of Material": "",
-          "Alumina%": "",
-          "Iron%": "",
-          "Advance": "",
-          "Basic": "",
-          "Upload SO": null,
-          products: [],
-        });
-      } else {
-        alert("Error submitting form: " + (result.message || "Unknown error"));
+        uploadedFileUrl = publicUrl;
+        console.log("File uploaded successfully:", uploadedFileUrl);
       }
+
+      // ✅ Ensure latest DO is fetched
+      if (!isDoNumberFetched) {
+        await fetchLastDoNumber();
+      }
+
+      // ✅ SINGLE SOURCE OF TRUTH
+      const generatedDo = `DO-${lastDoNumber + 1}`;
+
+      const rowsToInsert = formData.products.map(product => {
+        const baseRow = prepareRowData(generatedDo, uploadedFileUrl);
+
+        return {
+          ...baseRow,
+          "Product Name": product["Product Name"],
+          "Quantity": parseFloat(product["Quantity"]) || 0,
+          "Rate Of Material": parseFloat(product["Rate Of Material"]) || 0,
+          "Type Of Measurement": product["Type Of Measurement"],
+          "Alumina%": parseFloat(product["Alumina%"]) || 0,
+          "Iron%": parseFloat(product["Iron%"]) || 0,
+          "Advance": parseFloat(product["Advance"]) || 0,
+          "Basic": parseFloat(product["Basic"]) || 0,
+          "Total PO Basic Value": parseFloat(product["Total PO Basic Value"]) || 0,
+        };
+      });
+
+      console.log("Submitting data to Supabase:", rowsToInsert.length, "rows");
+
+      // Submit to Supabase
+      const { data, error } = await supabase
+        .from('ORDER RECEIPT')
+        .insert(rowsToInsert);
+
+      if (error) throw error;
+
+      console.log("Submission success");
+
+      // Update last DO number for next submission
+      setLastDoNumber(prev => prev + 1);
+
+      setSuccess(true);
+      // Reset form
+      const timestamp = generateTimestamp();
+      setFormData({
+        "Timestamp": timestamp,
+        "DO-Delivery Order No.": "",
+        "PARTY PO NO (As Per Po Exact)": "",
+        "Party PO Date": "",
+        "Party Name": "",
+        "Gst Number": "",
+        "Address": "",
+        "Firm Name": user.role === "master" ? "" : user.firm,
+        "Type Of Transporting": "",
+        "Contact Person Name": "",
+        "Contact Person WhatsApp No.": "",
+        "Order Received From": "",
+        "Type Of Measurement": "",
+        "Type Of PI": "",
+        "Customer Category": "",
+        "Free Replacement (FOC)": "",
+        "Adjusted Amount": "",
+        "Reference No.": "",
+        "Total PO Basic Value": "",
+        "Payment to Be Taken": "",
+        "Retention Payment": "",
+        "Retention Percentage": "",
+        "Lead Time for Retention": "",
+        "Specific Concern": "",
+        "Lead Time For Collection Of Final Payment": "",
+        "Type Of Application": "",
+        "Is This Order Through Some Agent": "",
+        "Marketing Mangager Name": "",
+        "Product Name": "",
+        "Quantity": "",
+        "Rate Of Material": "",
+        "Alumina%": "",
+        "Iron%": "",
+        "Advance": "",
+        "Basic": "",
+        "Upload SO": null,
+        products: [],
+      });
+
+      // Notify parent if prop is provided
+      if (onSuccess) {
+        onSuccess();
+      }
+
     } catch (error) {
       console.error("Error submitting form:", error);
-      alert("Error submitting form. Please try again.");
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Error submitting form. Please try again: " + error.message,
+      })
     } finally {
       setLoading(false);
     }
   }
 
   if (success) {
-    const nextDoNumber = lastDoNumber > 0 ? lastDoNumber + 1 : 1;
     return (
       <div className="w-full flex items-center justify-center min-h-[400px]">
         <Card className="w-full max-w-md text-center">
@@ -655,7 +592,7 @@ const prepareRowData = (doNumber) => {
           <CardContent className="space-y-4">
             <p className="text-gray-600">Order has been recorded in the system.</p>
             <p className="text-sm text-gray-500">Last DO Number: DO-{lastDoNumber}</p>
-            <Button 
+            <Button
               onClick={() => {
                 setSuccess(false);
                 const timestamp = generateTimestamp();
@@ -694,7 +631,7 @@ const prepareRowData = (doNumber) => {
 
       <div className="p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
         <form onSubmit={handleSubmit} className="space-y-8">
-          
+
           {/* BASIC INFORMATION SECTION */}
           <div className="space-y-6">
             <div className="flex items-center gap-3">
@@ -708,12 +645,11 @@ const prepareRowData = (doNumber) => {
               {/* Firm Name */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Firm Name *
+                  Firm Name <span className="text-red-500">*</span>
                 </Label>
                 <Select
                   value={formData["Firm Name"]}
                   onValueChange={(value) => handleInputChange("Firm Name", value)}
-                  disabled={user.role !== "master"}
                 >
                   <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
                     <SelectValue placeholder="Select Firm" />
@@ -733,7 +669,7 @@ const prepareRowData = (doNumber) => {
               {/* PARTY PO NO */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  PARTY PO NO (As Per Po Exact) *
+                  PARTY PO NO (As Per Po Exact) <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   value={formData["PARTY PO NO (As Per Po Exact)"]}
@@ -747,7 +683,7 @@ const prepareRowData = (doNumber) => {
               {/* Party PO Date */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Party PO Date *
+                  Party PO Date <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   type="date"
@@ -761,7 +697,7 @@ const prepareRowData = (doNumber) => {
               {/* Party Name Dropdown */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Party Name *
+                  Party Name <span className="text-red-500">*</span>
                 </Label>
                 <Select
                   value={formData["Party Name"]}
@@ -830,10 +766,30 @@ const prepareRowData = (doNumber) => {
                 </Select>
               </div>
 
+              {/* Type of Packaging */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">
+                  Type of Packaging
+                </Label>
+                <Select
+                  value={formData["Type of Packaging"]}
+                  onValueChange={(value) => handleInputChange("Type of Packaging", value)}
+                >
+                  <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
+                    <SelectValue placeholder="Select packaging type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PR bags">PR bags</SelectItem>
+                    <SelectItem value="Jumbo bags">Jumbo bags</SelectItem>
+                    <SelectItem value="Small PP bags">Small PP bags</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Upload SO */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Upload SO
+                  Upload PO <span className="text-red-500">*</span>
                 </Label>
                 <div className="flex items-center gap-2">
                   <Input
@@ -884,7 +840,7 @@ const prepareRowData = (doNumber) => {
               {/* Contact Person Name */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Contact Person Name *
+                  Contact Person Name <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   value={formData["Contact Person Name"]}
@@ -898,7 +854,7 @@ const prepareRowData = (doNumber) => {
               {/* Contact Person WhatsApp No. */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Contact Person WhatsApp No. *
+                  Contact Person WhatsApp No. <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   type="tel"
@@ -982,10 +938,10 @@ const prepareRowData = (doNumber) => {
                 </Select>
               </div>
 
-              {/* Marketing Mangager Name */}
+              {/* Marketing Sales Person */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Marketing Mangager Name
+                  Marketing Sales Person
                 </Label>
                 <Select
                   value={formData["Marketing Mangager Name"]}
@@ -1020,16 +976,17 @@ const prepareRowData = (doNumber) => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pl-11">
-              {/* Total PO Basic Value (auto-calculated from products) */}
+              {/* Total PO Value With Tax */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Total PO Basic Value
+                  Total PO Value With Tax
                 </Label>
                 <Input
-                  value={formData["Total PO Basic Value"]}
-                  readOnly
-                  className="h-11 border-gray-300 bg-gray-50"
-                  placeholder="Auto-calculated from products"
+                  type="number"
+                  value={formData["Adjusted Amount"]}
+                  onChange={(e) => handleInputChange("Adjusted Amount", e.target.value)}
+                  className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Enter total PO value with tax"
                 />
               </div>
 
@@ -1137,6 +1094,25 @@ const prepareRowData = (doNumber) => {
                   className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                   placeholder="Enter reference number"
                 />
+              </div>
+
+              {/* TC Required */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">
+                  TC Required
+                </Label>
+                <Select
+                  value={formData["TC Required"]}
+                  onValueChange={(value) => handleInputChange("TC Required", value)}
+                >
+                  <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Yes">Yes</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Free Replacement (FOC) */}
@@ -1251,16 +1227,6 @@ const prepareRowData = (doNumber) => {
                             <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">
                               Fe₂O₃: {product["Iron%"]}%
                             </Badge>
-                            {product["Advance"] && (
-                              <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
-                                Advance: {product["Advance"]}%
-                              </Badge>
-                            )}
-                            {product["Basic"] && (
-                              <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200">
-                                Basic: {product["Basic"]}%
-                              </Badge>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -1301,7 +1267,7 @@ const prepareRowData = (doNumber) => {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                       {/* Product Name */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Product Name *</Label>
+                        <Label className="text-sm font-medium text-gray-700">Product Name <span className="text-red-500">*</span></Label>
                         <Select
                           value={currentProduct["Product Name"]}
                           onValueChange={(value) => handleProductChange("Product Name", value)}
@@ -1325,7 +1291,7 @@ const prepareRowData = (doNumber) => {
 
                       {/* Quantity */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Quantity *</Label>
+                        <Label className="text-sm font-medium text-gray-700">Quantity <span className="text-red-500">*</span></Label>
                         <Input
                           type="number"
                           value={currentProduct["Quantity"]}
@@ -1338,7 +1304,7 @@ const prepareRowData = (doNumber) => {
 
                       {/* Rate Of Material */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Rate Of Material *</Label>
+                        <Label className="text-sm font-medium text-gray-700">Rate Of Material <span className="text-red-500">*</span></Label>
                         <Input
                           type="number"
                           value={currentProduct["Rate Of Material"]}
@@ -1407,7 +1373,7 @@ const prepareRowData = (doNumber) => {
 
                       {/* Advance */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Advance %</Label>
+                        <Label className="text-sm font-medium text-gray-700">Advance</Label>
                         <Input
                           type="number"
                           value={currentProduct["Advance"]}
@@ -1419,7 +1385,7 @@ const prepareRowData = (doNumber) => {
 
                       {/* Basic */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Basic %</Label>
+                        <Label className="text-sm font-medium text-gray-700">Basic</Label>
                         <Input
                           type="number"
                           value={currentProduct["Basic"]}
@@ -1442,7 +1408,7 @@ const prepareRowData = (doNumber) => {
                         type="button"
                         onClick={addProduct}
                         className="flex-1 h-11 bg-orange-600 hover:bg-orange-700"
-                        disabled={!currentProduct["Product Name"] || !currentProduct["Quantity"]}
+                        disabled={!currentProduct["Product Name"] || !currentProduct["Quantity"] || !currentProduct["Rate Of Material"]}
                       >
                         Add Product
                       </Button>
@@ -1463,8 +1429,8 @@ const prepareRowData = (doNumber) => {
             >
               Cancel
             </Button>
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               className="flex-1 h-12 bg-gradient-to-r from-blue-600 to-orange-600 hover:from-blue-700 hover:to-orange-700 shadow-lg"
               disabled={loading || formData.products.length === 0}
             >
