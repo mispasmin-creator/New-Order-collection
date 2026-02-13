@@ -12,8 +12,8 @@ import { supabase } from "@/lib/supabaseClient"
 export default function LoginForm({ onLogin }) {
   const [credentials, setCredentials] = useState({ username: "", password: "" })
   const [error, setError] = useState("")
-  const [loading, setLoading] = useState(false)
-
+  const [loading, setLoading] = useState(false)  
+  
 
   const handleSubmit = async (e) => {
     e.preventDefault()
