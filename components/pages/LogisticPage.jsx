@@ -77,7 +77,7 @@ export default function LogisticPage({ user }) {
   const transporterOptions = useMemo(() => {
     return transporters.length > 0
       ? transporters
-      : ["Owned Truck", "External Transporter"]
+      : ["External Transporter"]
   }, [transporters])
 
   // Fetch data with error handling and caching

@@ -786,7 +786,6 @@ export default function DispatchPlanningPage({ user }) {
                             <SelectItem value="Ex Factory">Ex Factory</SelectItem>
                             <SelectItem value="Ex Factory But Paid By US">Ex Factory But Paid By US</SelectItem>
                             <SelectItem value="direct Suply">direct Suply</SelectItem>
-                            <SelectItem value="Owned Truck">Owned Truck</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

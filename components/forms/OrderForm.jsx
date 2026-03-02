@@ -229,8 +229,8 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
           customerCategories: Array.from(customerCategoriesSet).filter(Boolean),
           marketingMangagerNames: Array.from(marketingManagersSet).filter(Boolean),
           productNames: Array.from(productNamesSet).filter(Boolean),
-          uoms: Array.from(uomsSet).filter(Boolean).filter(uom => !['yz', 'kl'].includes(uom.toLowerCase())).concat(['SQN']),
-          typeOfTransportings: ["FOR", "Ex Factory", "Ex Factory But paid by Us", "Owned Truck"],
+          uoms: Array.from(uomsSet).filter(Boolean).filter(uom => !['yz', 'kl'].includes(uom.toLowerCase())).concat(['SQM']),
+          typeOfTransportings: ["FOR", "Ex Factory", "Ex Factory But paid by us"],
         }));
       }
     } catch (error) {
@@ -240,7 +240,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     }
   }
 
-  // Fetch address and GST when party name is selected
   // Fetch address and GST when party name is selected
   const fetchPartyDetails = (partyName) => {
     if (!partyName || masterRecords.length === 0) return;
@@ -272,10 +271,44 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     }
   }
 
+  // Fetch details (Party Name and Address) when GST number is selected
+  const fetchDetailsByGST = (gstNumber) => {
+    if (!gstNumber || masterRecords.length === 0) return;
+
+    try {
+      const keys = Object.keys(masterRecords[0]);
+      const findKey = (search) => keys.find(k => k.toLowerCase().includes(search.toLowerCase()));
+
+      const partyNameKey = keys.find(k => k.trim() === "Party Name" || k.trim() === "Party Names") || findKey("Party");
+      const addressKey = findKey("Address");
+      const gstNumberKey = findKey("GST");
+      const firmNameKey = keys.find(k => k.trim() === "Firm Name") || findKey("Firm Name");
+
+      // Find the row with matching GST number
+      const row = masterRecords.find(r => {
+        return gstNumberKey && r[gstNumberKey] && String(r[gstNumberKey]).trim() === gstNumber.trim();
+      });
+
+      if (row) {
+        const updates = {};
+        if (addressKey && row[addressKey]) updates["Address"] = String(row[addressKey]).trim();
+        if (partyNameKey && row[partyNameKey]) updates["Party Name"] = String(row[partyNameKey]).trim();
+        if (firmNameKey && row[firmNameKey] && user.role === "master") updates["Firm Name"] = String(row[firmNameKey]).trim();
+
+        setFormData(prev => ({ ...prev, ...updates }));
+      }
+    } catch (error) {
+      console.error("Error setting details by GST:", error);
+    }
+  }
+
   const handleInputChange = (field, value) => {
     if (field === "Party Name") {
       setFormData(prev => ({ ...prev, [field]: value }));
       fetchPartyDetails(value);
+    } else if (field === "Gst Number") {
+      setFormData(prev => ({ ...prev, [field]: value }));
+      fetchDetailsByGST(value);
     } else {
       setFormData(prev => ({ ...prev, [field]: value }));
     }
@@ -694,6 +727,25 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                 />
               </div>
 
+              {/* GST Number */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">
+                  GST Number
+                </Label>
+                <Input
+                  value={formData["Gst Number"]}
+                  onChange={(e) => handleInputChange("Gst Number", e.target.value)}
+                  className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Enter or Search GST number"
+                  list="gst-list"
+                />
+                <datalist id="gst-list">
+                  {dropdownData.gstNumbers.map((gst, index) => (
+                    <option key={index} value={gst} />
+                  ))}
+                </datalist>
+              </div>
+
               {/* Party Name Dropdown */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
@@ -720,19 +772,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                 </Select>
               </div>
 
-              {/* GST Number */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">
-                  GST Number
-                </Label>
-                <Input
-                  value={formData["Gst Number"]}
-                  onChange={(e) => handleInputChange("Gst Number", e.target.value)}
-                  className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Enter GST number"
-                />
-              </div>
-
               {/* Address (auto-filled) */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
@@ -742,7 +781,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                   value={formData["Address"]}
                   readOnly
                   className="h-20 border-gray-300 bg-gray-50"
-                  placeholder="Auto-filled from Party Name"
+                  placeholder="Auto-filled from Party Name or GST"
                 />
               </div>
 
@@ -779,7 +818,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                     <SelectValue placeholder="Select packaging type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PR bags">PR bags</SelectItem>
+                    <SelectItem value="PR bags">PP bags</SelectItem>
                     <SelectItem value="Jumbo bags">Jumbo bags</SelectItem>
                     <SelectItem value="Small PP bags">Small PP bags</SelectItem>
                   </SelectContent>
@@ -1379,7 +1418,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                           value={currentProduct["Advance"]}
                           onChange={(e) => handleProductChange("Advance", e.target.value)}
                           className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
-                          placeholder="Advance percentage"
+                          placeholder="Advance"
                         />
                       </div>
 
@@ -1391,7 +1430,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                           value={currentProduct["Basic"]}
                           onChange={(e) => handleProductChange("Basic", e.target.value)}
                           className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
-                          placeholder="Basic percentage"
+                          placeholder="Basic"
                         />
                       </div>
                     </div>
