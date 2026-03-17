@@ -167,7 +167,7 @@ export default function MakeInvoicePage({ user }) {
   const searchFilteredOrders = (ordersList) => {
     if (!searchTerm) return ordersList
 
-    return ordersList.filter((order) =>
+    return ordersList.filter((order) => 
       Object.values(order).some((value) =>
         value?.toString().toLowerCase().includes(searchTerm.toLowerCase())
       )

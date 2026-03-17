@@ -23,6 +23,7 @@ import {
   User,
   X,
   Bell,
+  RotateCcw,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -43,6 +44,8 @@ const pageIcons = {
   "Bilty Entry": FileImage,
   "CRM": Layers,
   "MATERIAL RECEIPT": Archive,
+  "Material Return": RotateCcw,
+  "Debit Note": FileText,
 }
 
 const pageRoutes = {
@@ -61,6 +64,8 @@ const pageRoutes = {
   "Bilty Entry": "/bilty-entry",
   "CRM": "/crm",
   "MATERIAL RECEIPT": "/material-receipt",
+  "Material Return": "/material-return",
+  "Debit Note": "/debit-note",
 }
 
 // Default page order for sorting
@@ -79,7 +84,9 @@ const defaultPageOrder = [
   "Fullkiting",
   "Bilty Entry",
   "CRM",
-  "MATERIAL RECEIPT"
+  "MATERIAL RECEIPT",
+  "Material Return",
+  "Debit Note"
 ]
 
 import { useNotification } from "@/components/providers/NotificationProvider"

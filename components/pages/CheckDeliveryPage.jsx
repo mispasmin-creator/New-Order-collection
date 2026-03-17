@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, Fragment } from "react"
 import { getISTDisplayDate, getISTTimestamp } from "@/lib/dateUtils"
 import { supabase } from "@/lib/supabaseClient"
 import { useToast } from "@/hooks/use-toast"
@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { X, Search, CheckCircle2, Loader2, FileText } from "lucide-react"
+import { X, Search, CheckCircle2, Loader2, FileText, ChevronRight, ChevronDown, Package, Truck, User, Building } from "lucide-react"
 import { useNotification } from "@/components/providers/NotificationProvider"
 
 // Your Google Apps Script web app URL
@@ -34,6 +34,7 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
   const [submitting, setSubmitting] = useState(false)
   const { toast } = useToast()
   const [submitSuccess, setSubmitSuccess] = useState(false)
+  const [expandedRow, setExpandedRow] = useState(null)
 
   // Format date for display
   const formatDate = useCallback((dateString) => {
@@ -124,8 +125,19 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
           productName: row["Product Name"] || "",
           quantity: parseFloat(row["Quantity"]) || 0,
           rate: parseFloat(row["Rate Of Material"]) || 0,
+          transportType: row["Type Of Transporting"] || "",
           firmName: row["Firm Name"] || "",
           contactPersonName: row["Contact Person Name"] || "",
+          contactWhatsApp: row["Contact Person WhatsApp No."],
+          aluminaPercent: row["Alumina%"],
+          ironPercent: row["Iron%"],
+          measurementType: row["Type Of Measurement"],
+          applicationType: row["Type Of Application"],
+          totalPOValue: parseFloat(row["Total PO Basic Value"]) || 0,
+          advance: parseFloat(row["Advance"]) || 0,
+          retentionPercentage: parseFloat(row["Retention Percentage"]) || 0,
+          gstNumber: row["Gst Number"],
+          address: row["Address"],
           planned3: formatDate(row["Planned 3"]),
           actual3: formatDate(row["Actual 3"]),
           inStockOrNot: row["In Stock Or Not"] || "",
@@ -308,6 +320,91 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
     })
   }
 
+  const toggleRowExpansion = (orderId) => {
+    setExpandedRow(expandedRow === orderId ? null : orderId)
+  }
+
+  const renderOrderDetails = (order) => {
+    return (
+      <div className="space-y-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <h4 className="font-semibold text-sm text-gray-700 flex items-center gap-2">
+              <Package className="w-4 h-4" />
+              Product Details
+            </h4>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Product:</span>
+                <span className="font-medium text-right">{order.productName}</span>
+              </div>
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Quantity:</span>
+                <span className="font-medium text-right">{order.quantity}</span>
+              </div>
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Rate:</span>
+                <span className="font-medium text-right">₹{order.rate.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Transport:</span>
+                <span className="font-medium text-right">{order.transportType}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="font-semibold text-sm text-gray-700">Technical Specs</h4>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Alumina %:</span>
+                <span className="font-medium text-right">{order.aluminaPercent}</span>
+              </div>
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Iron %:</span>
+                <span className="font-medium text-right">{order.ironPercent}</span>
+              </div>
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Measurement:</span>
+                <span className="font-medium text-right">{order.measurementType}</span>
+              </div>
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Application:</span>
+                <span className="font-medium text-right">{order.applicationType}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="font-semibold text-sm text-gray-700">Payment & Contact</h4>
+            <div className="space-y-1 text-sm">
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Total Value:</span>
+                <span className="font-bold text-green-600 text-right">₹{order.totalPOValue.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Advance:</span>
+                <span className="font-medium text-right">₹{order.advance.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Retention:</span>
+                <span className="font-medium text-right">{order.retentionPercentage}%</span>
+              </div>
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">Gst Number:</span>
+                <span className="font-medium text-right">{order.gstNumber}</span>
+              </div>
+              <div className="flex justify-between border-b pb-1">
+                <span className="text-gray-600">WhatsApp:</span>
+                <span className="font-medium text-right">{order.contactWhatsApp}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (loading && orders.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
@@ -432,12 +529,13 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Indent/Self Batch No</TableHead>
                   </>
                 )}
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[50px]">Details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {displayOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "pending" ? 7 : 13} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={activeTab === "pending" ? 8 : 14} className="text-center py-8 text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <span className="text-lg">No {activeTab === "pending" ? "pending" : "historical"} orders found</span>
                     </div>
@@ -445,7 +543,8 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
                 </TableRow>
               ) : (
                 displayOrders.map((order) => (
-                  <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
+                  <Fragment key={order.id}>
+                    <TableRow key={order.id} className={`hover:bg-gray-50 transition-colors border-b border-gray-100 ${expandedRow === order.id ? "bg-blue-50" : ""}`}>
                     {activeTab === "pending" && (
                       <TableCell className="py-2 px-4 min-w-[100px]">
                         <Button
@@ -483,9 +582,33 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
                         <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.indentSelfBatchNumber || "-"}</TableCell>
                       </>
                     )}
+                  <TableCell className="py-2 px-4 min-w-[50px]">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={() => toggleRowExpansion(order.id)}
+                    >
+                      {expandedRow === order.id ? (
+                        <ChevronDown className="w-4 h-4" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+                {expandedRow === order.id && (
+                  <TableRow>
+                    <TableCell colSpan={activeTab === "pending" ? 8 : 14} className="p-0 border-b border-gray-100 bg-gray-50/50">
+                      <div className="p-4">
+                        {renderOrderDetails(order)}
+                      </div>
+                    </TableCell>
                   </TableRow>
-                ))
-              )}
+                )}
+              </Fragment>
+            ))
+          )}
             </TableBody>
           </Table>
         </div>

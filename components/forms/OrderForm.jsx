@@ -226,7 +226,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
           gstNumbers: Array.from(gstNumbersSet).filter(Boolean),
           addresses: Array.from(addressesSet).filter(Boolean),
           typeOfPis: Array.from(typeOfPisSet).filter(Boolean),
-          customerCategories: Array.from(customerCategoriesSet).filter(Boolean),
+          customerCategories: Array.from(customerCategoriesSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
           marketingMangagerNames: Array.from(marketingManagersSet).filter(Boolean),
           productNames: Array.from(productNamesSet).filter(Boolean),
           uoms: Array.from(uomsSet).filter(Boolean).filter(uom => !['yz', 'kl'].includes(uom.toLowerCase())).concat(['SQN']),
@@ -779,7 +779,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                     <SelectValue placeholder="Select packaging type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PR bags">PR bags</SelectItem>
+                    <SelectItem value="PP bags">PP bags</SelectItem>
                     <SelectItem value="Jumbo bags">Jumbo bags</SelectItem>
                     <SelectItem value="Small PP bags">Small PP bags</SelectItem>
                   </SelectContent>
@@ -1373,7 +1373,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
 
                       {/* Advance */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Advance</Label>
+                        <Label className="text-sm font-medium text-gray-700">Advance%</Label>
                         <Input
                           type="number"
                           value={currentProduct["Advance"]}
@@ -1385,7 +1385,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
 
                       {/* Basic */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Basic</Label>
+                        <Label className="text-sm font-medium text-gray-700">Basic%</Label>
                         <Input
                           type="number"
                           value={currentProduct["Basic"]}

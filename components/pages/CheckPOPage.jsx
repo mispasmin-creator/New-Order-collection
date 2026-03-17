@@ -27,6 +27,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useNotification } from "@/components/providers/NotificationProvider"
+import { getSignedUrl } from "@/lib/storageUtils"
+import { Eye } from "lucide-react"
 
 export default function CheckPOPage({ user, onNavigate }) {
   const { updateCount } = useNotification()
@@ -140,6 +142,7 @@ export default function CheckPOPage({ user, onNavigate }) {
           actualDate: formatDate(row["Actual 1"]),
           expectedDeliveryDate: formatDate(row["Expected Delivery Date"]),
           status: row["Status"] || "Pending",
+          poCopyUrl: row["Upload SO"],
           rawData: row
         }))
 
@@ -297,6 +300,64 @@ export default function CheckPOPage({ user, onNavigate }) {
     }
   }
 
+  // Function to handle Google Drive link conversion
+  const getGoogleDriveViewLink = (link) => {
+    if (!link || typeof link !== 'string' || link.trim() === "" || link === "N/A") {
+      return link;
+    }
+
+    const trimmedLink = link.trim();
+
+    // If it's a direct URL (like from Supabase storage), return as is
+    if (trimmedLink.startsWith('http')) {
+      return trimmedLink;
+    }
+
+    // Check if it's already a full Google Drive URL
+    if (trimmedLink.includes('drive.google.com')) {
+      // Convert edit links to view links
+      if (trimmedLink.includes('/edit')) {
+        return trimmedLink.replace('/edit', '/view');
+      }
+      // Already a view link or other format
+      return trimmedLink;
+    }
+
+    // Check for Google Drive file ID patterns
+    const idMatch1 = trimmedLink.match(/id=([a-zA-Z0-9_-]+)/);
+    if (idMatch1 && idMatch1[1]) {
+      return `https://drive.google.com/file/d/${idMatch1[1]}/view`;
+    }
+
+    // Direct file ID
+    if (/^[a-zA-Z0-9_-]{15,}$/.test(trimmedLink)) {
+      return `https://drive.google.com/file/d/${trimmedLink}/view`;
+    }
+
+    return trimmedLink;
+  };
+
+  const handleView = async (url) => {
+    if (!url) return;
+
+    // First process potential Drive URL
+    let target = getGoogleDriveViewLink(url);
+
+    // If getGoogleDriveViewLink returned a drive link, it starts with https://drive.google.com...
+    // If it returned the original string, we check for supabase or relative path
+    // Also ensuring target is a string before checking methods
+    if (target && typeof target === 'string') {
+      const isSupabase = target.includes('supabase.co') || !target.startsWith('http');
+
+      if (isSupabase) {
+        const signed = await getSignedUrl(target);
+        if (signed) target = signed;
+      }
+
+      window.open(target, '_blank');
+    }
+  };
+
   const toggleRowExpansion = useCallback((orderId) => {
     setExpandedRow(expandedRow === orderId ? null : orderId)
   }, [expandedRow])
@@ -371,6 +432,18 @@ export default function CheckPOPage({ user, onNavigate }) {
                 <span className="text-gray-600">GST:</span>
                 <span className="font-medium text-right">{order.gstNumber}</span>
               </div>
+              {order.poCopyUrl && (
+                <div className="flex justify-between pt-2">
+                  <span className="text-gray-600 font-semibold">PO Copy:</span>
+                  <div 
+                    onClick={() => handleView(order.poCopyUrl)} 
+                    className="flex items-center gap-1 text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
+                  >
+                    <Eye className="w-4 h-4" />
+                    View PO
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

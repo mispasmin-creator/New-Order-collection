@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { X, Search, CheckCircle2, Loader2, FileText, CheckSquare, Layers } from "lucide-react"
 import { supabase } from "@/lib/supabaseClient"
 import { useNotification } from "@/components/providers/NotificationProvider"
+import { getSignedUrl } from "@/lib/storageUtils"
 
 export default function CRMDonePage({ user }) {
   const [orders, setOrders] = useState([])
@@ -37,6 +38,23 @@ export default function CRMDonePage({ user }) {
         .not('Planned 4', 'is', null)
 
       if (error) throw error
+
+      // Fetch Test Certificate data from DISPATCH table
+      const { data: dispatchData, error: dispatchError } = await supabase
+        .from('DISPATCH')
+        .select('"Delivery Order No.", "Trust Certificate Made"')
+        .not('"Trust Certificate Made"', 'is', null)
+
+      if (dispatchError) console.error("Error fetching dispatch certs:", dispatchError)
+
+      // Create a map for quick lookup by Delivery Order No.
+      const certMap = {}
+      dispatchData?.forEach(d => {
+        if (d["Delivery Order No."]) {
+          // If multiple, the latest one stays
+          certMap[d["Delivery Order No."]] = d["Trust Certificate Made"]
+        }
+      })
 
       if (data) {
         const pendingOrders = []
@@ -74,6 +92,7 @@ export default function CRMDonePage({ user }) {
             rawActual4: row["Actual4"],
 
             delay4: row["Delay4"],
+            testCertificate: certMap[row["Delivery Order No."]] || null,
           }
 
           if (!order.rawActual4) {
@@ -120,6 +139,21 @@ export default function CRMDonePage({ user }) {
 
   const handleCRMDone = (order) => {
     setSelectedOrder(order)
+  }
+
+  const handleViewCertificate = async (url) => {
+    if (!url) return
+    try {
+      const signedUrl = await getSignedUrl(url)
+      window.open(signedUrl, '_blank')
+    } catch (error) {
+      console.error("Error opening certificate:", error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Could not open certificate"
+      })
+    }
   }
 
   // Format date to dd/mm/yyyy - SAFE VERSION
@@ -349,11 +383,13 @@ export default function CRMDonePage({ user }) {
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Planned4 Date</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Rate</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Total Amount</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Test Cert</TableHead>
                   </>
                 )}
                 {activeTab === "history" && (
                   <>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Actual4 Date</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Test Cert</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Status</TableHead>
                   </>
                 )}
@@ -407,10 +443,19 @@ export default function CRMDonePage({ user }) {
                         <TableCell className="py-2 px-4 min-w-[120px] text-sm">{formatDate(order.planned4)}</TableCell>
                         <TableCell className="py-2 px-4 min-w-[100px] text-sm">₹{order.rateOfMaterial || "0"}</TableCell>
                         <TableCell className="py-2 px-4 min-w-[120px] font-bold text-sm">
-                          ₹{(
-                            parseFloat(order.quantityDelivered || 0) *
-                            parseFloat(order.rateOfMaterial || 0)
-                          ).toFixed(2)}
+                          ₹{(parseFloat(order.quantityDelivered || 0) * parseFloat(order.rateOfMaterial || 0)).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="py-2 px-4">
+                          {order.testCertificate ? (
+                            <button 
+                              onClick={() => handleViewCertificate(order.testCertificate)} 
+                              className="text-blue-600 hover:underline flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer"
+                            >
+                              <FileText className="h-4 w-4" /> View
+                            </button>
+                          ) : (
+                            <span className="text-gray-400 text-xs">N/A</span>
+                          )}
                         </TableCell>
                       </>
                     )}
@@ -418,6 +463,18 @@ export default function CRMDonePage({ user }) {
                       <>
                         <TableCell className="py-2 px-4 min-w-[120px] text-sm">
                           {formatDate(order.actual4)}
+                        </TableCell>
+                        <TableCell className="py-2 px-4">
+                          {order.testCertificate ? (
+                            <button 
+                              onClick={() => handleViewCertificate(order.testCertificate)} 
+                              className="text-blue-600 hover:underline flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer"
+                            >
+                              <FileText className="h-4 w-4" /> View
+                            </button>
+                          ) : (
+                            <span className="text-gray-400 text-xs">N/A</span>
+                          )}
                         </TableCell>
                         <TableCell className="py-2 px-4 min-w-[100px]">
                           <Badge className="bg-green-500 text-white rounded-sm text-xs">
@@ -496,6 +553,21 @@ export default function CRMDonePage({ user }) {
                               ₹{(parseFloat(order.quantityDelivered || 0) * parseFloat(order.rateOfMaterial || 0)).toFixed(2)}
                             </p>
                           </div>
+                          <div className="col-span-2 mt-1">
+                            <span className="text-gray-500 text-xs">Test Certificate:</span>
+                            <div className="mt-1">
+                              {order.testCertificate ? (
+                                <button 
+                                  onClick={() => handleViewCertificate(order.testCertificate)} 
+                                  className="text-blue-600 text-sm font-medium flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer"
+                                >
+                                  <FileText className="h-4 w-4" /> View Certificate
+                                </button>
+                              ) : (
+                                <span className="text-gray-400 text-xs italic">Not Uploaded</span>
+                              )}
+                            </div>
+                          </div>
                         </>
                       )}
                       {activeTab === "history" && (
@@ -509,6 +581,21 @@ export default function CRMDonePage({ user }) {
                             <Badge className="bg-green-500 text-white rounded-sm text-xs">
                               Completed
                             </Badge>
+                          </div>
+                          <div className="col-span-2 mt-1 border-t border-gray-100 pt-2">
+                            <span className="text-gray-500 text-xs">Test Certificate:</span>
+                            <div className="mt-1">
+                              {order.testCertificate ? (
+                                <button 
+                                  onClick={() => handleViewCertificate(order.testCertificate)} 
+                                  className="text-blue-600 text-sm font-medium flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer"
+                                >
+                                  <FileText className="h-4 w-4" /> View Certificate
+                                </button>
+                              ) : (
+                                <span className="text-gray-400 text-xs italic">Not Uploaded</span>
+                              )}
+                            </div>
                           </div>
                         </>
                       )}
@@ -577,6 +664,21 @@ export default function CRMDonePage({ user }) {
                           parseFloat(selectedOrder.rateOfMaterial || 0)
                         ).toFixed(2)}
                       </span>
+                    </div>
+
+                    <div className="flex justify-between items-center border-t border-gray-200 pt-2">
+                      <span className="text-gray-600">Test Certificate:</span>
+                      {selectedOrder.testCertificate ? (
+                        <button 
+                          onClick={() => handleViewCertificate(selectedOrder.testCertificate)} 
+                          className="bg-blue-50 text-blue-700 px-3 py-1 rounded text-sm font-medium border border-blue-200 flex items-center gap-2 hover:bg-blue-100 transition-colors cursor-pointer"
+                        >
+                          <FileText className="h-4 w-4" />
+                          View Certificate
+                        </button>
+                      ) : (
+                        <span className="text-red-500 text-sm font-medium">Not Available</span>
+                      )}
                     </div>
                   </div>
 

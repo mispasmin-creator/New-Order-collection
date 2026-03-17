@@ -509,6 +509,7 @@ export default function FullKittingPage({ user }) {
                 <TableHead className="font-semibold text-gray-900 py-4 px-6">Bill No.</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-4 px-6">Bill Date</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-4 px-6">Delivery Order No.</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-4 px-6">Logistic No.</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-4 px-6">Party Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-4 px-6">Product Name</TableHead>
                 {activeTab === "pending" && (
@@ -532,7 +533,7 @@ export default function FullKittingPage({ user }) {
               {displayOrders.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeTab === "pending" ? 13 : 10}
+                    colSpan={activeTab === "pending" ? 14 : 11}
                     className="text-center py-8 text-gray-500"
                   >
                     <div className="flex flex-col items-center gap-2">
@@ -581,6 +582,9 @@ export default function FullKittingPage({ user }) {
                     </TableCell>
                     <TableCell className="py-2 px-6 text-sm">
                       <span className="font-medium">{order.deliveryOrderNo}</span>
+                    </TableCell>
+                    <TableCell className="py-2 px-6 text-sm">
+                      <span className="font-medium">{order.logisticNo || "N/A"}</span>
                     </TableCell>
                     <TableCell className="py-2 px-6 text-sm">
                       <div className="truncate max-w-[150px]">{order.partyName}</div>

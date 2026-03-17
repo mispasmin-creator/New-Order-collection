@@ -31,8 +31,8 @@ export default function DispatchPlanningPage({ user }) {
     typeOfTransporting: "",
     dateOfDispatch: "",
     toBeReconfirm: "Yes",
-    trustCertificateMade: "No",
-    trustCertificateFile: null,
+    testCertificateMade: "No",
+    testCertificateFile: null,
   })
 
   useEffect(() => {
@@ -256,14 +256,14 @@ export default function DispatchPlanningPage({ user }) {
       const timestamp = getISTTimestamp()
       const dSrNumber = await generateNewDSrNumber()
 
-      // Upload trust certificate file if provided
-      let trustCertificateUrl = ""
-      if (formData.trustCertificateMade === "Yes" && formData.trustCertificateFile) {
+      // Upload test certificate file if provided
+      let testCertificateUrl = ""
+      if (formData.testCertificateMade === "Yes" && formData.testCertificateFile) {
         try {
-          const file = formData.trustCertificateFile
+          const file = formData.testCertificateFile
           const fileExt = file.name.split('.').pop()
-          const fileName = `${dSrNumber}_trust_cert_${Date.now()}.${fileExt}`
-          const filePath = `dispatch/trust-certificates/${fileName}`
+          const fileName = `${dSrNumber}_test_cert_${Date.now()}.${fileExt}`
+          const filePath = `dispatch/test-certificates/${fileName}`
 
           const { data: uploadData, error: uploadError } = await supabase.storage
             .from('images')
@@ -279,13 +279,13 @@ export default function DispatchPlanningPage({ user }) {
             .from('images')
             .getPublicUrl(filePath)
 
-          trustCertificateUrl = publicUrl
+          testCertificateUrl = publicUrl
         } catch (uploadError) {
-          console.error("Error uploading trust certificate:", uploadError)
+          console.error("Error uploading test certificate:", uploadError)
           toast({
             variant: "destructive",
             title: "Upload Failed",
-            description: "Failed to upload trust certificate file"
+            description: "Failed to upload test certificate file"
           })
           throw uploadError
         }
@@ -315,7 +315,7 @@ export default function DispatchPlanningPage({ user }) {
         "Type Of Transporting": formData.typeOfTransporting,
         "Date Of Dispatch": formData.dateOfDispatch,
         "To Be Reconfirm": formData.toBeReconfirm,
-        "Trust Certificate Made": trustCertificateUrl || null
+        "Trust Certificate Made": testCertificateUrl || null
       }
 
       const { error: dispatchError } = await supabase
@@ -361,8 +361,8 @@ export default function DispatchPlanningPage({ user }) {
         typeOfTransporting: "",
         dateOfDispatch: "",
         toBeReconfirm: "Yes",
-        trustCertificateMade: "No",
-        trustCertificateFile: null,
+        testCertificateMade: "No",
+        testCertificateFile: null,
       })
 
     } catch (error) {
@@ -384,8 +384,8 @@ export default function DispatchPlanningPage({ user }) {
       typeOfTransporting: "",
       dateOfDispatch: "",
       toBeReconfirm: "Yes",
-      trustCertificateMade: "No",
-      trustCertificateFile: null,
+      testCertificateMade: "No",
+      testCertificateFile: null,
     })
   }
 
@@ -817,12 +817,12 @@ export default function DispatchPlanningPage({ user }) {
                         </Select>
                       </div>
 
-                      {/* Trust Certificate Made */}
+                      {/* Test Certificate Made */}
                       <div className="space-y-2">
-                        <Label className="text-sm">Trust Certificate Made *</Label>
+                        <Label className="text-sm">Test Certificate Made *</Label>
                         <Select
-                          value={formData.trustCertificateMade}
-                          onValueChange={(value) => setFormData(prev => ({ ...prev, trustCertificateMade: value, trustCertificateFile: value === "No" ? null : prev.trustCertificateFile }))}
+                          value={formData.testCertificateMade}
+                          onValueChange={(value) => setFormData(prev => ({ ...prev, testCertificateMade: value, testCertificateFile: value === "No" ? null : prev.testCertificateFile }))}
                           disabled={submitting}
                         >
                           <SelectTrigger className="h-10">
@@ -835,10 +835,10 @@ export default function DispatchPlanningPage({ user }) {
                         </Select>
                       </div>
 
-                      {/* Trust Certificate File Upload - Only show if Yes */}
-                      {formData.trustCertificateMade === "Yes" && (
+                      {/* Test Certificate File Upload - Only show if Yes */}
+                      {formData.testCertificateMade === "Yes" && (
                         <div className="space-y-2 col-span-2">
-                          <Label className="text-sm">Upload Trust Certificate *</Label>
+                          <Label className="text-sm">Upload Test Certificate *</Label>
                           <div className="flex items-center gap-2">
                             <Input
                               type="file"
@@ -855,13 +855,13 @@ export default function DispatchPlanningPage({ user }) {
                                     e.target.value = ""
                                     return
                                   }
-                                  setFormData(prev => ({ ...prev, trustCertificateFile: file }))
+                                  setFormData(prev => ({ ...prev, testCertificateFile: file }))
                                 }
                               }}
                               className="h-10"
                               disabled={submitting}
                             />
-                            {formData.trustCertificateFile && (
+                            {formData.testCertificateFile && (
                               <span className="text-sm text-green-600 truncate flex-shrink-0">
                                 ✓ Selected
                               </span>
@@ -892,8 +892,8 @@ export default function DispatchPlanningPage({ user }) {
                           !formData.typeOfTransporting ||
                           !formData.dateOfDispatch ||
                           !formData.toBeReconfirm ||
-                          !formData.trustCertificateMade ||
-                          (formData.trustCertificateMade === "Yes" && !formData.trustCertificateFile) ||
+                          !formData.testCertificateMade ||
+                          (formData.testCertificateMade === "Yes" && !formData.testCertificateFile) ||
                           submitting
                         }
                       >

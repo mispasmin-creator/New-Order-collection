@@ -743,16 +743,7 @@ export default function SalesFormPage({ user }) {
                       </div>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label className="text-sm">Indent No.</Label>
-                      <Input
-                        value={formData.indentNo}
-                        onChange={(e) => setFormData(prev => ({ ...prev, indentNo: e.target.value }))}
-                        className="h-10"
-                        placeholder="Enter indent number"
-                        disabled={submitting}
-                      />
-                    </div>
+
                   </div>
                 </div>
 

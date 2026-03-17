@@ -154,6 +154,23 @@ export default function LogisticPage({ user }) {
     return Array.from(transportersSet)
   }, [])
 
+  const formatDate = (dateString) => {
+    if (!dateString) return ""
+    try {
+      if (typeof dateString === 'string' && dateString.match(/^\d{1,2}\/\d{1,2}\/\d{4}/)) {
+        return dateString.split(' ')[0]
+      }
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return dateString
+      const day = date.getDate().toString().padStart(2, '0')
+      const month = (date.getMonth() + 1).toString().padStart(2, '0')
+      const year = date.getFullYear()
+      return `${day}/${month}/${year}`
+    } catch {
+      return dateString
+    }
+  }
+
   // Get pending orders (Planned1 has value, Actual1 is empty/null)
   const getPendingOrders = useCallback((data) => {
     if (!data) return []
@@ -177,8 +194,8 @@ export default function LogisticPage({ user }) {
       productName: row[DB_COLUMNS.PRODUCT_NAME] || "",
       qtyToBeDispatched: row[DB_COLUMNS.QTY_TO_BE_DISPATCHED] || "",
       typeOfTransporting: row[DB_COLUMNS.TYPE_OF_TRANSPORTING] || "",
-      dateOfDispatch: row[DB_COLUMNS.DATE_OF_DISPATCH] || "",
-      planned1: row[DB_COLUMNS.PLANNED1] || "",
+      dateOfDispatch: formatDate(row[DB_COLUMNS.DATE_OF_DISPATCH]),
+      planned1: formatDate(row[DB_COLUMNS.PLANNED1]),
     }))
   }, [])
 
@@ -205,7 +222,7 @@ export default function LogisticPage({ user }) {
       partyName: row[DB_COLUMNS.PARTY_NAME] || "",
       productName: row[DB_COLUMNS.PRODUCT_NAME] || "",
       lgstSrNumber: row[DB_COLUMNS.LGST_SR_NUMBER] || "",
-      actual1: row[DB_COLUMNS.ACTUAL1] || "",
+      actual1: formatDate(row[DB_COLUMNS.ACTUAL1]),
       actualTruckQty: row[DB_COLUMNS.ACTUAL_TRUCK_QTY] || "",
       typeOfTransporting: row[DB_COLUMNS.TYPE_OF_TRANSPORTING_LOGISTIC] || "",
       transporterName: row[DB_COLUMNS.TRANSPORTER_NAME] || "",
@@ -552,7 +569,7 @@ export default function LogisticPage({ user }) {
                   <div>
                     <p className="text-xs text-gray-500">Date</p>
                     <p className="font-medium text-gray-900">
-                      {activeTab === "pending" ? order.dateOfDispatch : (order.actual1 ? order.actual1.split(' ')[0] : 'N/A')}
+                      {activeTab === "pending" ? order.dateOfDispatch : order.actual1 || "N/A"}
                     </p>
                   </div>
                 </div>
