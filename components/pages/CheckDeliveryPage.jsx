@@ -29,7 +29,8 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
     orderNumberProduction: "",
     qtyTransferred: "",
     batchNumberRemarks: "",
-    indentSelfBatchNumber: ""
+    indentSelfBatchNumber: "",
+    gpPercent: ""
   })
   const [submitting, setSubmitting] = useState(false)
   const { toast } = useToast()
@@ -242,7 +243,8 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
       orderNumberProduction: order.orderNumberProduction || "",
       qtyTransferred: order.qtyTransferred || "",
       batchNumberRemarks: order.batchNumberRemarks || "",
-      indentSelfBatchNumber: order.indentSelfBatchNumber || ""
+      indentSelfBatchNumber: order.indentSelfBatchNumber || "",
+      gpPercent: order.gpPercent || ""
     })
   }
 
@@ -258,7 +260,8 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
       // Base updates
       const updates = {
         "Actual 3": timestamp,
-        "In Stock Or Not": formData.inStockOrNot
+        "In Stock Or Not": formData.inStockOrNot,
+        "GP%": formData.inStockOrNot === "For Production Planning" ? formData.gpPercent : null
       }
 
       // Conditional updates
@@ -316,7 +319,8 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
       orderNumberProduction: "",
       qtyTransferred: "",
       batchNumberRemarks: "",
-      indentSelfBatchNumber: ""
+      indentSelfBatchNumber: "",
+      gpPercent: ""
     })
   }
 
@@ -788,6 +792,20 @@ export default function CheckDeliveryPage({ user, onNavigate }) {
                         onChange={(e) => setFormData((prev) => ({ ...prev, indentSelfBatchNumber: e.target.value }))}
                         className="h-9 text-sm"
                         placeholder="Enter indent/self batch number"
+                        disabled={submitting}
+                      />
+                    </div>
+                  )}
+
+                  {/* Conditional field for "For Production Planning" */}
+                  {formData.inStockOrNot === "For Production Planning" && (
+                    <div className="space-y-2">
+                      <Label className="text-xs">GP % *</Label>
+                      <Input
+                        value={formData.gpPercent}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, gpPercent: e.target.value }))}
+                        className="h-9 text-sm"
+                        placeholder="Enter GP %"
                         disabled={submitting}
                       />
                     </div>
