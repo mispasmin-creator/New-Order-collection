@@ -259,6 +259,16 @@ export default function CheckPOPage({ user, onNavigate }) {
   const handleSubmit = async () => {
     if (selectedOrders.length === 0) return
 
+    const missingDate = selectedOrders.some(id => !deliveryDates[id]);
+    if (missingDate) {
+      toast({
+        variant: "destructive",
+        title: "Missing Information",
+        description: "Please pick an Expected Delivery date for all the orders you've selected before submitting.",
+      });
+      return;
+    }
+
     setLoading(true)
     try {
       const now = getISTTimestamp()
@@ -620,7 +630,7 @@ export default function CheckPOPage({ user, onNavigate }) {
                     </TableHead>
                   )}
                   {activeTab === "pending" && (
-                    <TableHead className="px-4 min-w-[180px] font-semibold text-gray-900">PO Date</TableHead>
+                    <TableHead className="px-4 min-w-[180px] font-semibold text-gray-900">Expected Delivery <span className="text-red-500">*</span></TableHead>
                   )}
                   <TableHead className="px-4 min-w-[120px] font-semibold text-gray-900">DO Number</TableHead>
                   <TableHead className="px-4 min-w-[100px] font-semibold text-gray-900">Firm</TableHead>
@@ -632,7 +642,7 @@ export default function CheckPOPage({ user, onNavigate }) {
                   <TableHead className="px-4 min-w-[100px] font-semibold text-gray-900">Planned Date</TableHead>
                   {activeTab === "history" && (
                     <>
-                      <TableHead className="px-4 min-w-[120px] font-semibold text-gray-900">PO Date</TableHead>
+                      <TableHead className="px-4 min-w-[120px] font-semibold text-gray-900">Expected Delivery</TableHead>
                       <TableHead className="px-4 min-w-[120px] font-semibold text-gray-900">Actual Date</TableHead>
                     </>
                   )}

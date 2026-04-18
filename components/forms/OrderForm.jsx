@@ -782,6 +782,10 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                     <SelectItem value="PP bags">PP bags</SelectItem>
                     <SelectItem value="Jumbo bags">Jumbo bags</SelectItem>
                     <SelectItem value="Small PP bags">Small PP bags</SelectItem>
+                    <SelectItem value="25 Kg Ton Bag">25 Kg Ton Bag</SelectItem>
+                    <SelectItem value="50 kg Ton Bag">50 kg Ton Bag</SelectItem>
+                    <SelectItem value="25 Kg Bag (Normal)">25 Kg Bag (Normal)</SelectItem>
+                    <SelectItem value="50 Kg Bag (Normal)">50 Kg Bag (Normal)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -805,25 +809,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                 </div>
               </div>
 
-              {/* Is This Order Through Some Agent */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">
-                  Is This Order Through Some Agent
-                </Label>
-                <Select
-                  value={formData["Is This Order Through Some Agent"]}
-                  onValueChange={(value) => handleInputChange("Is This Order Through Some Agent", value)}
-                >
-                  <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dropdownData.agents.map((agent, index) => (
-                      <SelectItem key={index} value={agent}>{agent}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+
             </div>
           </div>
 
