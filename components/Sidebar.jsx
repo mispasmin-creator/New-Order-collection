@@ -40,6 +40,7 @@ const pageIcons = {
   "Logistic": Package,
   "Load Material": Truck,
   "Invoice": Receipt,
+  "TC": FileCheck,
   "Wetman Entry": Scale,
   "Bilty Entry": FileImage,
   "CRM": Layers,
@@ -60,6 +61,7 @@ const pageRoutes = {
   "Logistic": "/logistic",
   "Load Material": "/load-material",
   "Invoice": "/invoice",
+  "TC": "/tc",
   "Wetman Entry": "/wetman-entry",
   "Bilty Entry": "/bilty-entry",
   "CRM": "/crm",
@@ -82,6 +84,7 @@ const defaultPageOrder = [
   "Load Material",
   "Wetman Entry",
   "Invoice",
+  "TC",
   "Bilty Entry",
   "CRM",
   "MATERIAL RECEIPT",
@@ -263,6 +266,31 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
           (!row["Actual4"] || String(row["Actual4"]).trim() === "")
         ).length
         counts["Invoice"] = count
+      }
+
+      // Fetch real-time count for "TC"
+      const { data: tcDispatchData, error: tcDispatchError } = await supabase
+        .from('DISPATCH')
+        .select('"D-Sr Number", Actual4')
+        .not('Actual4', 'is', null)
+
+      const { data: tcDeliveryData, error: tcDeliveryError } = await supabase
+        .from('DELIVERY')
+        .select('"D-Sr Number"')
+
+      if (!tcDispatchError && !tcDeliveryError && tcDispatchData && tcDeliveryData) {
+        const completedDispatchNumbers = new Set(
+          tcDeliveryData
+            .map(row => row["D-Sr Number"])
+            .filter(value => value && String(value).trim() !== "")
+        )
+
+        const count = tcDispatchData.filter(row => {
+          const dispatchNumber = row["D-Sr Number"]
+          return dispatchNumber && !completedDispatchNumbers.has(dispatchNumber)
+        }).length
+
+        counts["TC"] = count
       }
 
       // Fetch real-time count for "CRM" from Supabase

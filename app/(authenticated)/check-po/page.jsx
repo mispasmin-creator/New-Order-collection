@@ -20,6 +20,7 @@ export default function CheckPOPageRoute() {
             "Load Material": "/load-material",
             "Invoice": "/invoice",
             "Wetman Entry": "/wetman-entry",
+            "TC": "/tc",
             "Bilty Entry": "/bilty-entry",
             "CRM": "/crm",
             "MATERIAL RECEIPT": "/material-receipt",

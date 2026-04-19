@@ -10,6 +10,7 @@ import DispatchPlanningPage from "./pages/DispatchPlanningPage"
 import LogisticPage from "./pages/LogisticPage"
 import TestReportPage from "./pages/TestReportPage"
 import InvoicePage from "./pages/InvoicePage"
+import TCPage from "./pages/TCPage"
 import WetmanEntryPage from "./pages/WetmanEntryPage"
 import ReceivedAccounts from "./pages/ReceivedAccounts"
 import MaterialReceiptPage from "./pages/MaterialReceiptPage"
@@ -70,10 +71,12 @@ export default function MainLayout({ user, onLogout, orders, updateOrders }) {
         return <LogisticPage {...pageProps} />
       case "Load Material":
         return <TestReportPage {...pageProps} />
-      case "Invoice":
-        return <InvoicePage {...pageProps} />
       case "Wetman Entry":
         return <WetmanEntryPage {...pageProps} />
+      case "Invoice":
+        return <InvoicePage {...pageProps} />
+      case "TC":
+        return <TCPage {...pageProps} />
       case "Bilty Entry":
         return <BiltyEntry {...pageProps} />
       case "CRM":
