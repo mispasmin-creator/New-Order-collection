@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Loader2, CheckSquare, XCircle, LayoutList, Truck, SplitSquareVertical } from "lucide-react"
+import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 export default function LogisticsApproval() {
   const [orders, setOrders] = useState([])
@@ -28,6 +29,14 @@ export default function LogisticsApproval() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [fetchingTransporters, setFetchingTransporters] = useState(false)
   const { toast } = useToast()
+  const groupedOrders = useMemo(
+    () =>
+      groupRowsByPo(orders, {
+        poNumberKey: "PARTY PO NO (As Per Po Exact)",
+        partyNameKey: "Party Names",
+      }),
+    [orders]
+  )
 
   useEffect(() => {
     fetchOrders()
@@ -301,7 +310,20 @@ export default function LogisticsApproval() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  orders.map((order) => (
+                  groupedOrders.map((group) => (
+                    <Fragment key={group.key}>
+                      <TableRow className="bg-slate-50">
+                        <TableCell colSpan={6} className="px-4 py-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
+                              <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
+                            </div>
+                            <span className="text-xs text-slate-500">{group.rows.length} item{group.rows.length > 1 ? "s" : ""}</span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {group.rows.map((order) => (
                     <TableRow key={order.id}>
                       <TableCell className="font-mono text-xs">{order.id}</TableCell>
                       <TableCell>{order["DO-Delivery Order No."]}</TableCell>
@@ -319,6 +341,8 @@ export default function LogisticsApproval() {
                         </Button>
                       </TableCell>
                     </TableRow>
+                      ))}
+                    </Fragment>
                   ))
                 )}
               </TableBody>

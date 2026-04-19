@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useNotification } from "@/components/providers/NotificationProvider"
 import { getSignedUrl } from "@/lib/storageUtils"
+import { groupRowsByPo } from "@/lib/workflowGrouping"
 import { Eye } from "lucide-react"
 
 export default function CheckPOPage({ user, onNavigate }) {
@@ -219,6 +220,7 @@ export default function CheckPOPage({ user, onNavigate }) {
   }, [pendingOrders, updateCount])
 
   const filteredOrders = activeTab === "pending" ? pendingOrders : historyOrders
+  const groupedFilteredOrders = useMemo(() => groupRowsByPo(filteredOrders), [filteredOrders])
 
   const handleOrderSelection = useCallback((orderId, checked) => {
     if (checked) {
@@ -653,7 +655,7 @@ export default function CheckPOPage({ user, onNavigate }) {
                 {filteredOrders.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={12}
+                      colSpan={11}
                       className="text-center py-12 text-gray-500"
                     >
                       <div className="flex flex-col items-center gap-2">
@@ -662,10 +664,24 @@ export default function CheckPOPage({ user, onNavigate }) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredOrders.map((order) => (
-                    <Fragment key={order.id}>
+                  groupedFilteredOrders.map((group) => (
+                    <Fragment key={group.key}>
+                      <TableRow className="bg-slate-50">
+                        <TableCell colSpan={11} className="px-4 py-3">
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
+                              <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
+                            </div>
+                            <Badge variant="outline" className="w-fit bg-white">
+                              {group.rows.length} item{group.rows.length > 1 ? "s" : ""}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {group.rows.map((order) => (
+                        <Fragment key={order.id}>
                       <TableRow
-                        key={order.id}
                         className={`hover:bg-gray-50 transition-colors border-b border-gray-100 ${selectedOrders.includes(order.id) ? "bg-blue-50" : ""
                           }`}
                       >
@@ -739,13 +755,15 @@ export default function CheckPOPage({ user, onNavigate }) {
                       </TableRow>
                       {expandedRow === order.id && (
                         <TableRow>
-                          <TableCell colSpan={activeTab === "pending" ? 11 : 13} className="p-0 border-b border-gray-100 bg-gray-50/50">
+                          <TableCell colSpan={11} className="p-0 border-b border-gray-100 bg-gray-50/50">
                             <div className="p-4">
                               {renderOrderDetails(order)}
                             </div>
                           </TableCell>
                         </TableRow>
                       )}
+                        </Fragment>
+                      ))}
                     </Fragment>
                   ))
                 )}

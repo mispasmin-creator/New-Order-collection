@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { X, Search, Loader2, CheckCircle2, Truck } from "lucide-react"
 import { supabase } from "@/lib/supabaseClient"
+import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 const TRANSPORT_TYPES = [
   "Ex Factory",
@@ -84,22 +85,30 @@ export default function LogisticPage() {
     try {
       setLoading(true)
 
-      const { data: dispatchData, error: dispatchError } = await supabase
-        .from("DISPATCH")
-        .select("*")
-        .order("id", { ascending: false })
+      const [{ data: dispatchData, error: dispatchError }, { data: orderData, error: orderError }] = await Promise.all([
+        supabase.from("DISPATCH").select("*").order("id", { ascending: false }),
+        supabase.from("ORDER RECEIPT").select('id, "PARTY PO NO (As Per Po Exact)", "Party Names"'),
+      ])
 
       if (dispatchError) throw dispatchError
+      if (orderError) throw orderError
+
+      const orderMap = new Map()
+      ;(orderData || []).forEach((row) => {
+        orderMap.set(row.id, row)
+      })
 
       const pending = []
       const history = []
 
       ;(dispatchData || []).forEach((row) => {
+        const order = row.po_id ? orderMap.get(row.po_id) : null
         const mapped = {
           id: row.id,
+          partyPONumber: order?.["PARTY PO NO (As Per Po Exact)"] || "",
           dSrNumber: row[DB_COLUMNS.DSR_NUMBER] || "",
           deliveryOrderNo: row[DB_COLUMNS.DELIVERY_ORDER_NO] || "",
-          partyName: row[DB_COLUMNS.PARTY_NAME] || "",
+          partyName: row[DB_COLUMNS.PARTY_NAME] || order?.["Party Names"] || "",
           productName: row[DB_COLUMNS.PRODUCT_NAME] || "",
           qtyToBeDispatched: row[DB_COLUMNS.QTY_TO_BE_DISPATCHED] || "",
           typeOfTransporting: row[DB_COLUMNS.TYPE_OF_TRANSPORTING] || "",
@@ -169,6 +178,7 @@ export default function LogisticPage() {
       )
     )
   }, [activeTab, historyOrders, orders, searchTerm])
+  const groupedDisplayOrders = useMemo(() => groupRowsByPo(displayOrders), [displayOrders])
 
   const generateLGSTNumber = useCallback(() => {
     if (historyOrders.length === 0) return "LGST-001"
@@ -400,12 +410,25 @@ export default function LogisticPage() {
             <TableBody>
               {displayOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "pending" ? 8 : 8} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
                     No rows found
                   </TableCell>
                 </TableRow>
               ) : (
-                displayOrders.map((row) => (
+                groupedDisplayOrders.map((group) => (
+                  <Fragment key={group.key}>
+                    <TableRow className="bg-slate-50">
+                      <TableCell colSpan={7} className="px-4 py-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
+                            <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
+                          </div>
+                          <span className="text-xs text-slate-500">{group.rows.length} row{group.rows.length > 1 ? "s" : ""}</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {group.rows.map((row) => (
                   <TableRow key={row.id}>
                     {activeTab === "pending" && (
                       <TableCell>
@@ -422,6 +445,8 @@ export default function LogisticPage() {
                     <TableCell>{activeTab === "pending" ? row.qtyToBeDispatched : row.actualTruckQty}</TableCell>
                     <TableCell>{activeTab === "pending" ? row.planned1 : row.actual1}</TableCell>
                   </TableRow>
+                    ))}
+                  </Fragment>
                 ))
               )}
             </TableBody>

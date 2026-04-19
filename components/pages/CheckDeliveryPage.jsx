@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { supabase } from "@/lib/supabaseClient"
 import { useToast } from "@/hooks/use-toast"
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Loader2, Search, CheckCircle2, X } from "lucide-react"
 import { useNotification } from "@/components/providers/NotificationProvider"
+import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 const STATUS_APPROVED = "Approved"
 const STATUS_CHECKED = "Checked"
@@ -159,6 +160,7 @@ export default function CheckDeliveryPage({ user }) {
       )
     )
   }, [activeTab, historyRows, pendingRows, searchTerm])
+  const groupedDisplayRows = useMemo(() => groupRowsByPo(displayRows), [displayRows])
 
   const handleOpen = (row) => {
     setSelectedRow(row)
@@ -334,12 +336,25 @@ export default function CheckDeliveryPage({ user }) {
             <TableBody>
               {displayRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "pending" ? 7 : 8} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
                     No rows found
                   </TableCell>
                 </TableRow>
-              ) : (
-                displayRows.map((row) => (
+                ) : (
+                groupedDisplayRows.map((group) => (
+                  <Fragment key={group.key}>
+                    <TableRow className="bg-slate-50">
+                      <TableCell colSpan={7} className="px-4 py-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
+                            <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
+                          </div>
+                          <span className="text-xs text-slate-500">{group.rows.length} split row{group.rows.length > 1 ? "s" : ""}</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {group.rows.map((row) => (
                   <TableRow key={row.id}>
                     {activeTab === "pending" && (
                       <TableCell>
@@ -356,6 +371,8 @@ export default function CheckDeliveryPage({ user }) {
                     <TableCell>{row.splitStatus}</TableCell>
                     {activeTab === "history" && <TableCell>{formatDate(row.checkDeliveryActual)}</TableCell>}
                   </TableRow>
+                    ))}
+                  </Fragment>
                 ))
               )}
             </TableBody>

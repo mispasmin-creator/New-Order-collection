@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { Fragment, useState, useEffect, useCallback, useMemo } from "react"
 import { getISTDate, getISTTimestamp } from "@/lib/dateUtils"
 import { supabase } from "@/lib/supabaseClient"
 import { Button } from "@/components/ui/button"
@@ -48,6 +48,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useNotification } from "@/components/providers/NotificationProvider"
 import { getSignedUrl } from "@/lib/storageUtils"
+import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 export default function ReceivedInAccountsPage({ user, onNavigate }) {
   const [orders, setOrders] = useState([])
@@ -102,6 +103,8 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
         // Transform data
         const transformedOrders = data.map((row) => ({
           id: row.id,
+          partyPONumber: row["PARTY PO NO (As Per Po Exact)"] || "N/A",
+          partyName: row["Party Names"] || "N/A",
           productName: row["Product Name"] || "N/A",
           quantity: row["Quantity"] || 0,
           rate: row["Rate Of Material"] || 0,
@@ -286,6 +289,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
   const displayOrders = activeTab === "pending"
     ? applyStatusFilter(searchFilteredOrders(pendingOrders))
     : applyStatusFilter(searchFilteredOrders(historyOrders))
+  const groupedDisplayOrders = useMemo(() => groupRowsByPo(displayOrders), [displayOrders])
 
 
   const openActionDialog = (order) => {
@@ -523,10 +527,12 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
         <div className="hidden lg:block overflow-x-auto">
           <Table>
             <TableHeader className="bg-gray-50">
-              <TableRow>
-                <TableHead className="w-[120px]">Action</TableHead>
-                <TableHead>DO No.</TableHead>
-                <TableHead>Product</TableHead>
+                <TableRow>
+                  <TableHead className="w-[120px]">Action</TableHead>
+                  <TableHead>DO No.</TableHead>
+                  <TableHead>PO Number</TableHead>
+                  <TableHead>Party Name</TableHead>
+                  <TableHead>Product</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead>Rate</TableHead>
                 <TableHead>Transport</TableHead>
@@ -546,13 +552,28 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
             <TableBody>
               {displayOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={17} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={19} className="text-center py-8 text-gray-500">
                     No orders found
                   </TableCell>
                 </TableRow>
               ) : (
-                displayOrders.map((order) => {
-                  return (
+                groupedDisplayOrders.map((group) => (
+                  <Fragment key={group.key}>
+                    <TableRow className="bg-slate-50">
+                      <TableCell colSpan={19} className="px-4 py-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
+                            <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
+                          </div>
+                          <Badge variant="outline" className="w-fit bg-white">
+                            {group.rows.length} item{group.rows.length > 1 ? "s" : ""}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {group.rows.map((order) => {
+                      return (
                     <TableRow key={order.id} className="hover:bg-gray-50">
                       <TableCell>
                         {activeTab === "pending" ? (
@@ -576,6 +597,8 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
                         )}
                       </TableCell>
                       <TableCell className="font-mono text-xs">{order.doNumber}</TableCell>
+                      <TableCell className="text-sm font-medium">{order.partyPONumber}</TableCell>
+                      <TableCell className="text-sm">{order.partyName}</TableCell>
                       <TableCell className="text-sm">{order.productName}</TableCell>
                       <TableCell className="text-sm">{order.quantity}</TableCell>
                       <TableCell className="text-sm">{order.rate}</TableCell>
@@ -602,8 +625,9 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
                       <TableCell className="text-sm">{order.leadTime}</TableCell>
                       <TableCell className="text-sm">{order.planned2Date}</TableCell>
                     </TableRow>
-                  );
-                })
+                  )})}
+                  </Fragment>
+                ))
               )}
             </TableBody>
           </Table>
@@ -611,7 +635,13 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
 
         {/* Mobile View */}
         <div className="lg:hidden divide-y">
-          {displayOrders.map((order) => (
+          {groupedDisplayOrders.map((group) => (
+            <div key={group.key}>
+              <div className="px-4 py-3 bg-slate-50 border-b">
+                <p className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</p>
+                <p className="text-xs text-slate-600">Party Name: {group.partyName}</p>
+              </div>
+              {group.rows.map((order) => (
             <div key={order.id} className="p-4 space-y-2">
               <div className="flex justify-between">
                 <div className="font-medium">{order.productName}</div>
@@ -633,6 +663,8 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
                   Mark Received
                 </Button>
               )}
+            </div>
+              ))}
             </div>
           ))}
           {displayOrders.length === 0 && (

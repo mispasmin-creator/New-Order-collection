@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { Fragment, useState, useEffect, useMemo, useRef } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { X, Search, CheckCircle2, Loader2, Upload, Eye, Trash2, Truck } from "lucide-react"
 import { getSignedUrl } from "@/lib/storageUtils"
+import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 // Image storage constants
 const STORAGE_BUCKET = "images"
@@ -54,14 +55,18 @@ export default function TestReportPage({ user }) {
     try {
       setLoading(true)
 
-      const { data, error } = await supabase
-        .from('DISPATCH')
-        .select('*')
-        .not('Planned2', 'is', null)
+      const [{ data, error }, { data: orderData, error: orderError }] = await Promise.all([
+        supabase.from('DISPATCH').select('*').not('Planned2', 'is', null),
+        supabase.from('ORDER RECEIPT').select('id, "PARTY PO NO (As Per Po Exact)"'),
+      ])
 
-      if (error) {
-        throw error
-      }
+      if (error) throw error
+      if (orderError) throw orderError
+
+      const orderMap = new Map()
+      ;(orderData || []).forEach((row) => {
+        orderMap.set(row.id, row)
+      })
 
       console.log("Raw DISPATCH Supabase response:", data)
 
@@ -69,8 +74,10 @@ export default function TestReportPage({ user }) {
       const history = []
 
       data.forEach(row => {
+        const orderRef = row.po_id ? orderMap.get(row.po_id) : null
         const order = {
           id: row.id,
+          partyPONumber: orderRef?.["PARTY PO NO (As Per Po Exact)"] || "",
           timestamp: row["Timestamp"],
           dSrNumber: row["D-Sr Number"],
           deliveryOrderNo: row["Delivery Order No."],
@@ -148,6 +155,7 @@ export default function TestReportPage({ user }) {
   const displayOrders = activeTab === "pending"
     ? searchFilteredOrders(pendingOrders)
     : searchFilteredOrders(historyOrders)
+  const groupedDisplayOrders = useMemo(() => groupRowsByPo(displayOrders), [displayOrders])
 
   const handleLoadMaterial = (order) => {
     setSelectedOrder(order)
@@ -456,7 +464,7 @@ export default function TestReportPage({ user }) {
               {displayOrders.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeTab === "pending" ? 10 : 11}
+                    colSpan={10}
                     className="text-center py-8 text-gray-500"
                   >
                     <div className="flex flex-col items-center gap-2">
@@ -469,7 +477,20 @@ export default function TestReportPage({ user }) {
                   </TableCell>
                 </TableRow>
               ) : (
-                displayOrders.map((order) => (
+                groupedDisplayOrders.map((group) => (
+                  <Fragment key={group.key}>
+                    <TableRow className="bg-slate-50">
+                      <TableCell colSpan={10} className="px-4 py-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
+                            <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
+                          </div>
+                          <span className="text-xs text-slate-500">{group.rows.length} row{group.rows.length > 1 ? "s" : ""}</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {group.rows.map((order) => (
                   <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
                     {activeTab === "pending" && (
                       <TableCell className="py-2 px-4 min-w-[100px]">
@@ -559,6 +580,8 @@ export default function TestReportPage({ user }) {
                       </TableCell>
                     )}
                   </TableRow>
+                    ))}
+                  </Fragment>
                 ))
               )}
             </TableBody>

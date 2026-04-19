@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { X, Search, CheckCircle2, Loader2, Truck, FileText } from "lucide-react"
 import { useNotification } from "@/components/providers/NotificationProvider"
 import { supabase } from "@/lib/supabaseClient"
+import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 const STATUS_CHECKED = "Checked"
 const STATUS_DISPATCHED = "Dispatched"
@@ -125,6 +126,7 @@ export default function DispatchPlanningPage({ user }) {
           id: row.id,
           dSrNumber: row["D-Sr Number"] || "",
           deliveryOrderNo: row["Delivery Order No."] || order?.["DO-Delivery Order No."] || "",
+          partyPONumber: order?.["PARTY PO NO (As Per Po Exact)"] || "",
           partyName: row["Party Name"] || order?.["Party Names"] || "",
           productName: row["Product Name"] || order?.["Product Name"] || "",
           qtyToBeDispatched: row["Qty To Be Dispatched"] || 0,
@@ -172,6 +174,7 @@ export default function DispatchPlanningPage({ user }) {
       )
     )
   }, [activeTab, dispatchHistory, pendingRows, searchTerm])
+  const groupedDisplayRows = useMemo(() => groupRowsByPo(displayRows), [displayRows])
 
   const generateNewDSrNumber = async () => {
     try {
@@ -457,12 +460,25 @@ export default function DispatchPlanningPage({ user }) {
             <TableBody>
               {displayRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "pending" ? 7 : 8} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
                     No rows found
                   </TableCell>
                 </TableRow>
-              ) : (
-                displayRows.map((row) => (
+                ) : (
+                groupedDisplayRows.map((group) => (
+                  <Fragment key={group.key}>
+                    <TableRow className="bg-slate-50">
+                      <TableCell colSpan={7} className="px-4 py-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
+                            <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
+                          </div>
+                          <span className="text-xs text-slate-500">{group.rows.length} row{group.rows.length > 1 ? "s" : ""}</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {group.rows.map((row) => (
                   <TableRow key={row.id}>
                     {activeTab === "pending" && (
                       <TableCell>
@@ -485,6 +501,8 @@ export default function DispatchPlanningPage({ user }) {
                       </>
                     )}
                   </TableRow>
+                    ))}
+                  </Fragment>
                 ))
               )}
             </TableBody>
