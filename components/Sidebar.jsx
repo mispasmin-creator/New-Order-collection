@@ -40,9 +40,7 @@ const pageIcons = {
   "Logistic": Package,
   "Load Material": Truck,
   "Invoice": Receipt,
-  "Sales Form": FileText,
   "Wetman Entry": Scale,
-  "Fullkiting": Layers,
   "Bilty Entry": FileImage,
   "CRM": Layers,
   "MATERIAL RECEIPT": Archive,
@@ -62,9 +60,7 @@ const pageRoutes = {
   "Logistic": "/logistic",
   "Load Material": "/load-material",
   "Invoice": "/invoice",
-  "Sales Form": "/sales-form",
   "Wetman Entry": "/wetman-entry",
-  "Fullkiting": "/fullkiting",
   "Bilty Entry": "/bilty-entry",
   "CRM": "/crm",
   "MATERIAL RECEIPT": "/material-receipt",
@@ -84,10 +80,8 @@ const defaultPageOrder = [
   "Dispatch Planning",
   "Logistic",
   "Load Material",
-  "Invoice",
-  "Sales Form",
   "Wetman Entry",
-  "Fullkiting",
+  "Invoice",
   "Bilty Entry",
   "CRM",
   "MATERIAL RECEIPT",
@@ -260,43 +254,15 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
       // Fetch real-time count for "Invoice" from Supabase
       const { data: invoiceData, error: invoiceError } = await supabase
         .from('DISPATCH')
-        .select('Planned3, Actual3')
-        .not('Planned3', 'is', null)
-
-      if (!invoiceError && invoiceData) {
-        const count = invoiceData.filter(row =>
-          row["Planned3"] &&
-          (!row["Actual3"] || String(row["Actual3"]).trim() === "")
-        ).length
-        counts["Invoice"] = count
-      }
-
-      // Fetch real-time count for "Sales Form" from Supabase
-      const { data: salesData, error: salesError } = await supabase
-        .from('DISPATCH')
         .select('Planned4, Actual4')
         .not('Planned4', 'is', null)
 
-      if (!salesError && salesData) {
-        const count = salesData.filter(row =>
+      if (!invoiceError && invoiceData) {
+        const count = invoiceData.filter(row =>
           row["Planned4"] &&
           (!row["Actual4"] || String(row["Actual4"]).trim() === "")
         ).length
-        counts["Sales Form"] = count
-      }
-
-      // Fetch real-time count for "Full Kitting" from Supabase
-      const { data: fullKittingData, error: fullKittingError } = await supabase
-        .from('DELIVERY')
-        .select('"Planned 2", "Actual 2"')
-        .not('Planned 2', 'is', null)
-
-      if (!fullKittingError && fullKittingData) {
-        const count = fullKittingData.filter(row =>
-          row["Planned 2"] &&
-          (!row["Actual 2"] || String(row["Actual 2"]).trim() === "")
-        ).length
-        counts["Fullkiting"] = count
+        counts["Invoice"] = count
       }
 
       // Fetch real-time count for "CRM" from Supabase

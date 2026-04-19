@@ -13,8 +13,6 @@ import InvoicePage from "./pages/InvoicePage"
 import WetmanEntryPage from "./pages/WetmanEntryPage"
 import ReceivedAccounts from "./pages/ReceivedAccounts"
 import MaterialReceiptPage from "./pages/MaterialReceiptPage"
-import Sales from "./pages/Sales"
-import Fullkiting from "./pages/Fullkitting"
 import Crm from "./pages/Crm"
 import BiltyEntry from "./pages/BiltyEntry"
 
@@ -74,12 +72,8 @@ export default function MainLayout({ user, onLogout, orders, updateOrders }) {
         return <TestReportPage {...pageProps} />
       case "Invoice":
         return <InvoicePage {...pageProps} />
-      case "Sales Form":
-        return <Sales {...pageProps} />
       case "Wetman Entry":
         return <WetmanEntryPage {...pageProps} />
-      case "Fullkiting":
-        return <Fullkiting {...pageProps} />
       case "Bilty Entry":
         return <BiltyEntry {...pageProps} />
       case "CRM":

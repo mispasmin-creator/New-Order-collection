@@ -36,7 +36,7 @@ export default function MakeInvoicePage({ user }) {
       const { data, error } = await supabase
         .from('DISPATCH')
         .select('*')
-        .not('Planned3', 'is', null)
+        .not('Planned4', 'is', null)
 
       if (error) {
         throw error
@@ -92,29 +92,29 @@ export default function MakeInvoicePage({ user }) {
           biltyNo: row["Bilty No."],
           gstNumber: orderReceiptInfo.gstNumber || "N/A",
           address: orderReceiptInfo.address || "N/A",
-          planned3: row["Planned3"],
-          actual3: row["Actual3"]
+          planned4: row["Planned4"],
+          actual4: row["Actual4"]
         }
 
-        if (order.actual3 === null || order.actual3 === "" || order.actual3 === " ") {
+        if (order.actual4 === null || order.actual4 === "" || order.actual4 === " ") {
           pending.push(order)
         } else {
           history.push(order)
         }
       })
 
-      // Sort pending orders by Planned3 date (most recent first)
+      // Sort pending orders by Planned4 date (most recent first)
       pending.sort((a, b) => {
-        if (!a.planned3) return 1
-        if (!b.planned3) return -1
-        return new Date(b.planned3) - new Date(a.planned3)
+        if (!a.planned4) return 1
+        if (!b.planned4) return -1
+        return new Date(b.planned4) - new Date(a.planned4)
       })
 
-      // Sort completed orders by Actual3 date (most recent first)
+      // Sort completed orders by Actual4 date (most recent first)
       history.sort((a, b) => {
-        if (!a.actual3) return 1
-        if (!b.actual3) return -1
-        return new Date(b.actual3) - new Date(a.actual3)
+        if (!a.actual4) return 1
+        if (!b.actual4) return -1
+        return new Date(b.actual4) - new Date(a.actual4)
       })
 
       setOrders(pending)
@@ -194,7 +194,7 @@ export default function MakeInvoicePage({ user }) {
       const { error } = await supabase
         .from('DISPATCH')
         .update({
-          "Actual3": actualDateTime
+          "Actual4": actualDateTime
         })
         .eq('id', selectedOrder.id)
 
@@ -241,7 +241,7 @@ export default function MakeInvoicePage({ user }) {
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Make Invoice</h1>
-          <p className="text-gray-600">Mark orders as done by updating Actual3 column</p>
+          <p className="text-gray-600">Mark orders as done by updating Actual4 column</p>
         </div>
       </div>
 
@@ -435,8 +435,8 @@ export default function MakeInvoicePage({ user }) {
                       <div className="truncate max-w-[120px]">{order.biltyNo || "N/A"}</div>
                     </TableCell>
                     <TableCell className="py-2 px-4 min-w-[120px] text-sm font-medium">
-                      {order.planned3 ? (
-                        <span className="text-orange-600">{formatDateOnly(order.planned3)}</span>
+                      {order.planned4 ? (
+                        <span className="text-orange-600">{formatDateOnly(order.planned4)}</span>
                       ) : "N/A"}
                     </TableCell>
                   </TableRow>
@@ -475,7 +475,7 @@ export default function MakeInvoicePage({ user }) {
                       <span>LGST-Sr:</span> <span className="text-gray-900">{selectedOrder.lgstSrNumber}</span>
                       <span>Party:</span> <span className="text-gray-900 truncate">{selectedOrder.partyName}</span>
                       <span>Product:</span> <span className="text-gray-900 truncate">{selectedOrder.productName}</span>
-                      <span>Planned:</span> <span className="text-gray-900">{formatDateTime(selectedOrder.planned3)}</span>
+                      <span>Planned:</span> <span className="text-gray-900">{formatDateTime(selectedOrder.planned4)}</span>
                     </div>
                   </div>
                 </div>

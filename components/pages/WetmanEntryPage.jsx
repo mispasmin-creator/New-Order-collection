@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { getISTDisplayDate } from "@/lib/dateUtils"
+import { getISTDisplayDate, getISTTimestamp, getISTFullDisplayDateTime, getISTDate } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { X, Search, CheckCircle2, Loader2, Upload, Eye } from "lucide-react"
 
 import { supabase } from "@/lib/supabaseClient"
-import { getISTDate } from "@/lib/dateUtils"
 import { useNotification } from "@/components/providers/NotificationProvider"
 import { Package, Truck, Scale } from "lucide-react"
 import { getSignedUrl } from "@/lib/storageUtils"
@@ -45,11 +44,11 @@ export default function WeighmentEntryPage({ user }) {
     try {
       setLoading(true)
 
-      // Fetch from DELIVERY table where Planned 1 is not null
+      // Fetch from DISPATCH table where Planned3 is not null (set after Stage 2: Load Material)
       const { data, error } = await supabase
-        .from('DELIVERY')
+        .from('DISPATCH')
         .select('*')
-        .not('Planned 1', 'is', null)
+        .not('Planned3', 'is', null)
 
       if (error) throw error
 
@@ -61,44 +60,37 @@ export default function WeighmentEntryPage({ user }) {
           // Map row to order object
           const order = {
             id: row.id,
-            rowIndex: row.id, // Using ID as reference
+            rowIndex: row.id, 
             timestamp: row["Timestamp"],
-            billDate: formatDate(row["Bill Date"]),
             deliveryOrderNo: row["Delivery Order No."],
             dSrNumber: row["D-Sr Number"],
             partyName: row["Party Name"],
             productName: row["Product Name"],
-            // Note: Sales.jsx uses "Quantity Delivered."
-            quantityDelivered: row["Quantity Delivered."] || row["Quantity Delivered"] || "",
-            billNo: row["Bill No."],
-            logisticNo: row["Losgistic no."] || row["Logistic No."] || "", // Handled typo from Sales.jsx
-            rateOfMaterial: row["Rate Of Material"],
+            qtyToBeDispatched: row["Qty To Be Dispatched"] || "",
             typeOfTransporting: row["Type Of Transporting"],
             transporterName: row["Transporter Name"],
-            vehicleNumber: row["Vehicle Number."] || row["Vehicle Number"],
-            biltyNumber: row["Bilty Number."] || row["Bilty Number"],
-            givingFromWhere: row["Giving From Where"],
+            vehicleNumber: row["Truck No."] || "",
+            actualTruckQty: row["Actual Truck Qty"],
+            
+            // Stage 3 Specific columns
+            planned3: formatDate(row["Planned3"]),
+            actual3: row["Actual3"] ? formatDate(row["Actual3"]) : "",
+            rawActual3: row["Actual3"],
 
-            // Weighment specific columns
-            planned1: formatDate(row["Planned 1"]),
-            actual1: row["Actual 1"] ? formatDate(row["Actual 1"]) : "",
-            rawActual1: row["Actual 1"],
-
-            imageOfSlip: row["Image Of Slip"] || row["Loading Image 1"],
-            imageOfSlip2: row["Image Of Slip2"] || row["Loading Image 2"],
-            imageOfSlip3: row["Image Of Slip3"] || row["Loading Image 3"],
+            imageOfSlip: row["Image Of Slip"] || "",
+            imageOfSlip2: row["Image Of Slip2"] || "",
+            imageOfSlip3: row["Image Of Slip3"] || "",
             remarks: row["Remarks"],
-            actualQtyLoadedInTruck: row["Actual Qty loaded In Truck (Total Qty)"] || row["Actual Truck Qty"],
             actualQtyAsPerWeighmentSlip: row["Actual Qty As Per Weighment Slip"],
 
-            // Helper booleans
-            hasImageOfSlip: !!(row["Image Of Slip"] || row["Loading Image 1"]),
-            hasImageOfSlip2: !!(row["Image Of Slip2"] || row["Loading Image 2"]),
-            hasImageOfSlip3: !!(row["Image Of Slip3"] || row["Loading Image 3"]),
+            // History helper for Load Material (Stage 2)
+            loadingImage1: row["Loading Image 1"],
+            loadingImage2: row["Loading Image 2"],
+            loadingImage3: row["Loading Image 3"],
           }
 
-          // Logic: Pending if Planned 1 exists (query ensures this) AND Actual 1 is null.
-          if (!order.rawActual1) {
+          // Logic: Pending if Planned3 exists (query ensures this) AND Actual3 is null.
+          if (!order.rawActual3) {
             pendingOrders.push(order)
           } else {
             historyOrdersData.push(order)
@@ -112,7 +104,7 @@ export default function WeighmentEntryPage({ user }) {
         // Update notification count for sidebar
         updateCount?.("Weighment Entry", pendingOrders.length)
 
-        console.log("Supabase Delivery Data - Pending:", pendingOrders.length, "History:", historyOrdersData.length)
+        console.log("Supabase DISPATCH Data - Pending:", pendingOrders.length, "History:", historyOrdersData.length)
       }
 
     } catch (error) {
@@ -174,7 +166,6 @@ export default function WeighmentEntryPage({ user }) {
     : searchFilteredOrders(historyOrders)
 
   const handleWeighment = (order) => {
-    const actual1Date = getISTDate()
 
     setSelectedOrder(order)
     setFormData({
@@ -195,7 +186,7 @@ export default function WeighmentEntryPage({ user }) {
     try {
       setSubmitting(true)
 
-      const actual1Date = getISTDate() // Used standardized date utility
+      const actual3Date = getISTTimestamp() // Use timestamp for Stage 3
 
       // Helper function to upload file to Supabase Storage
       const uploadFileToSupabase = async (file, path) => {
@@ -229,10 +220,10 @@ export default function WeighmentEntryPage({ user }) {
       ]
 
       for (const fileField of fileFields) {
-        if (fileField.field) {
+        if (fileField.field && fileField.field instanceof File) {
           try {
             // Create a unique file path
-            const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const dateStr = new Date().toISOString().split('T')[0]; 
             const safeFileName = fileField.field.name.replace(/[^a-zA-Z0-9.]/g, '_')
             const filePath = `weighment/${selectedOrder.id}_${fileField.name}_${dateStr}_${safeFileName}`
 
@@ -240,26 +231,21 @@ export default function WeighmentEntryPage({ user }) {
 
             if (publicUrl) {
               uploadedFiles.push({
-                type: fileField.type,
-                url: publicUrl
+                  type: fileField.type,
+                  url: publicUrl
               })
             }
           } catch (uploadError) {
             console.error(`Error uploading ${fileField.type}:`, uploadError)
-            toast({
-              variant: "destructive",
-              title: "Upload Failed",
-              description: `Failed to upload ${fileField.type}. proceeding without it.`
-            })
           }
         }
       }
 
-      // Update DELIVERY table in Supabase
+      // Update DISPATCH table in Supabase
       const updatePayload = {
-        "Actual 1": actual1Date,
+        "Actual3": actual3Date,
         "Remarks": formData.remarks || "",
-        "Actual Qty loaded In Truck (Total Qty)": formData.actualQtyLoadedInTruck ? parseFloat(formData.actualQtyLoadedInTruck) : null,
+        "Actual Truck Qty": formData.actualQtyLoadedInTruck ? parseFloat(formData.actualQtyLoadedInTruck) : selectedOrder.actualTruckQty,
         "Actual Qty As Per Weighment Slip": formData.actualQtyAsPerWeighmentSlip ? parseFloat(formData.actualQtyAsPerWeighmentSlip) : null,
       }
 
@@ -274,7 +260,7 @@ export default function WeighmentEntryPage({ user }) {
       if (slip3Url) updatePayload["Image Of Slip3"] = slip3Url
 
       const { error: updateError } = await supabase
-        .from('DELIVERY')
+        .from('DISPATCH')
         .update(updatePayload)
         .eq('id', selectedOrder.id)
 
@@ -293,7 +279,7 @@ export default function WeighmentEntryPage({ user }) {
 
       toast({
         title: "Success",
-        description: `Weighment entry submitted successfully! Actual1 Date: ${actual1Date}`,
+        description: `Weighment entry submitted successfully!`,
       })
 
     } catch (error) {
@@ -456,15 +442,11 @@ export default function WeighmentEntryPage({ user }) {
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Qty</p>
-                    <p className="font-medium text-gray-900">{order.quantityDelivered}</p>
+                    <p className="font-medium text-gray-900">{order.qtyToBeDispatched}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500">Bill Date</p>
-                    <p className="font-medium text-gray-900">{order.billDate}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Planned1</p>
-                    <p className="font-medium text-gray-900">{order.planned1}</p>
+                    <p className="text-xs text-gray-500">Planned3</p>
+                    <p className="font-medium text-gray-900 text-orange-600">{order.planned3}</p>
                   </div>
                 </div>
 
@@ -578,8 +560,8 @@ export default function WeighmentEntryPage({ user }) {
                         <span className="break-words">{order.productName}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[100px] font-medium text-sm">{order.quantityDelivered}</TableCell>
-                    <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.planned1 || "N/A"}</TableCell>
+                    <TableCell className="py-2 px-4 min-w-[100px] font-medium text-sm">{order.qtyToBeDispatched}</TableCell>
+                    <TableCell className="py-2 px-4 min-w-[120px] text-sm text-orange-600 font-medium">{order.planned3 || "N/A"}</TableCell>
                     {activeTab === "pending" && (
                       <>
                         <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.logisticNo || "N/A"}</TableCell>
@@ -587,10 +569,10 @@ export default function WeighmentEntryPage({ user }) {
                         <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.vehicleNumber || "N/A"}</TableCell>
                       </>
                     )}
-                    {activeTab === "history" && (
+                     {activeTab === "history" && (
                       <>
-                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.actual1}</TableCell>
-                        <TableCell className="py-2 px-4 min-w-[100px] text-sm">{order.actualQtyLoadedInTruck || "N/A"}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.actual3}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[100px] text-sm">{order.actualTruckQty || "N/A"}</TableCell>
                         <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.actualQtyAsPerWeighmentSlip || "N/A"}</TableCell>
                         <TableCell className="py-2 px-4 min-w-[150px]">
                           <div className="flex gap-1 flex-wrap">
@@ -659,16 +641,10 @@ export default function WeighmentEntryPage({ user }) {
                   </p>
                   <p className="text-sm text-gray-600">Product: {selectedOrder.productName}</p>
                   <p className="text-sm text-gray-600">
-                    Quantity: {selectedOrder.quantityDelivered} | Planned: {selectedOrder.planned1}
+                    Quantity: {selectedOrder.qtyToBeDispatched} | Planned: {selectedOrder.planned3}
                   </p>
                   <p className="text-sm text-green-600 font-medium mt-1">
-                    Actual1 will be set to: {(() => {
-                      const now = new Date()
-                      const day = now.getDate().toString().padStart(2, '0')
-                      const month = (now.getMonth() + 1).toString().padStart(2, '0')
-                      const year = now.getFullYear().toString().slice(-2)
-                      return `${day}/${month}/${year}`
-                    })()}
+                    Actual3 will be set to: {getISTFullDisplayDateTime(new Date())}
                   </p>
                 </div>
 
