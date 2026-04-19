@@ -24,6 +24,7 @@ import {
   X,
   Bell,
   RotateCcw,
+  PackageCheck,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -42,11 +43,10 @@ const pageIcons = {
   "Invoice": Receipt,
   "TC": FileCheck,
   "Wetman Entry": Scale,
-  "Bilty Entry": FileImage,
   "CRM": Layers,
-  "MATERIAL RECEIPT": Archive,
   "Material Return": RotateCcw,
   "Debit Note": FileText,
+  "Logistics Fulfillment": PackageCheck,
 }
 
 const pageRoutes = {
@@ -68,6 +68,7 @@ const pageRoutes = {
   "MATERIAL RECEIPT": "/material-receipt",
   "Material Return": "/material-return",
   "Debit Note": "/debit-note",
+  "Logistics Fulfillment": "/logistics-fulfillment",
 }
 
 // Default page order for sorting
@@ -85,9 +86,8 @@ const defaultPageOrder = [
   "Wetman Entry",
   "Invoice",
   "TC",
-  "Bilty Entry",
+  "Logistics Fulfillment",
   "CRM",
-  "MATERIAL RECEIPT",
   "Material Return",
   "Debit Note"
 ]
@@ -338,6 +338,8 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         counts["MATERIAL RECEIPT"] = count
       }
 
+      counts["Logistics Fulfillment"] = (counts["Bilty Entry"] || 0) + (counts["MATERIAL RECEIPT"] || 0)
+      
       updateCounts(counts)
       console.log("Notification counts fetched:", counts)
     } catch (error) {

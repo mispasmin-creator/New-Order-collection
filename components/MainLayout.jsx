@@ -15,7 +15,7 @@ import WetmanEntryPage from "./pages/WetmanEntryPage"
 import ReceivedAccounts from "./pages/ReceivedAccounts"
 import MaterialReceiptPage from "./pages/MaterialReceiptPage"
 import Crm from "./pages/Crm"
-import BiltyEntry from "./pages/BiltyEntry"
+import UnifiedLogistics from "./pages/UnifiedLogistics"
 
 export default function MainLayout({ user, onLogout, orders, updateOrders }) {
   const [currentPage, setCurrentPage] = useState("Dashboard")
@@ -78,11 +78,13 @@ export default function MainLayout({ user, onLogout, orders, updateOrders }) {
       case "TC":
         return <TCPage {...pageProps} />
       case "Bilty Entry":
-        return <BiltyEntry {...pageProps} />
+        return <UnifiedLogistics {...pageProps} />
       case "CRM":
         return <Crm {...pageProps} />
       case "MATERIAL RECEIPT":
-        return <MaterialReceiptPage {...pageProps} />
+        return <UnifiedLogistics {...pageProps} />
+      case "Logistics Fulfillment":
+        return <UnifiedLogistics {...pageProps} />
       default:
         return <Dashboard {...pageProps} />
     }
