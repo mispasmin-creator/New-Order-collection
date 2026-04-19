@@ -130,11 +130,12 @@ export default function LogisticsApproval() {
     setIsLegacyTransporters(false)
   }
 
-  const handleApprove = async () => {
+  const handleApprove = async (selectedSplitId = null) => {
     try {
       setIsSubmitting(true)
 
       if (selectedPlan && !isLegacyTransporters) {
+        // Update Plan Status
         const { error: approvePlanError } = await supabase
           .from("po_logistics_plans")
           .update({ status: "Approved" })
@@ -142,12 +143,29 @@ export default function LogisticsApproval() {
 
         if (approvePlanError) throw approvePlanError
 
-        const { error: splitApproveError } = await supabase
-          .from("po_logistics_splits")
-          .update({ status: "Approved" })
-          .eq("plan_id", selectedPlan.id)
+        // If a specific split is selected (Single/Comparison mode)
+        if (selectedSplitId) {
+          // Approve the selected one
+          await supabase
+            .from("po_logistics_splits")
+            .update({ status: "Approved" })
+            .eq("id", selectedSplitId)
 
-        if (splitApproveError) throw splitApproveError
+          // Reject the others
+          await supabase
+            .from("po_logistics_splits")
+            .update({ status: "Rejected" })
+            .eq("plan_id", selectedPlan.id)
+            .neq("id", selectedSplitId)
+        } else {
+          // Default: Approve all splits (Split logistics)
+          const { error: splitApproveError } = await supabase
+            .from("po_logistics_splits")
+            .update({ status: "Approved" })
+            .eq("plan_id", selectedPlan.id)
+
+          if (splitApproveError) throw splitApproveError
+        }
 
         const { error: updateOrderError } = await supabase
           .from("ORDER RECEIPT")
@@ -215,22 +233,15 @@ export default function LogisticsApproval() {
       setIsSubmitting(true)
 
       if (selectedPlan && !isLegacyTransporters) {
-        const { error: rejectPlanError } = await supabase
+        await supabase
           .from("po_logistics_plans")
           .update({ status: "Rejected" })
           .eq("id", selectedPlan.id)
-
-        if (rejectPlanError) throw rejectPlanError
 
         await supabase
           .from("po_logistics_splits")
           .update({ status: "Rejected" })
           .eq("plan_id", selectedPlan.id)
-      } else {
-        await supabase
-          .from("po_transporters")
-          .update({ status: "Rejected" })
-          .eq("po_id", selectedOrder.id)
       }
 
       const { error: updateOrderError } = await supabase
@@ -244,9 +255,9 @@ export default function LogisticsApproval() {
       if (updateOrderError) throw updateOrderError
 
       toast({
-        title: "Arrangement Rejected",
+        title: "Arrangement Sent Back",
         description: "The PO has been sent back for a new logistics arrangement.",
-        className: "bg-red-50 text-red-800 border-red-200",
+        className: "bg-orange-50 text-orange-800 border-orange-200",
       })
 
       closeDialog()
@@ -262,6 +273,67 @@ export default function LogisticsApproval() {
       setIsSubmitting(false)
     }
   }
+
+  const handleFullReject = async () => {
+    try {
+      setIsSubmitting(true)
+
+      if (selectedPlan && !isLegacyTransporters) {
+        await supabase
+          .from("po_logistics_plans")
+          .update({ status: "Rejected" })
+          .eq("id", selectedPlan.id)
+
+        await supabase
+          .from("po_logistics_splits")
+          .update({ status: "Rejected" })
+          .eq("plan_id", selectedPlan.id)
+      }
+
+      const { error: updateOrderError } = await supabase
+        .from("ORDER RECEIPT")
+        .update({
+          logistics_status: "Logistics Rejected",
+          approved_logistics_plan_id: null,
+        })
+        .eq("id", selectedOrder.id)
+
+      if (updateOrderError) throw updateOrderError
+
+      toast({
+        title: "Logistics Fully Rejected",
+        description: "The logistics for this PO have been cancelled and removed from the active pipeline.",
+        className: "bg-red-50 text-red-800 border-red-200",
+      })
+
+      closeDialog()
+      fetchOrders()
+    } catch (error) {
+      console.error("Full rejection error:", error)
+      toast({
+        title: "Error during full rejection",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Helper to determine if we are in comparison mode (either explicitly or auto-detected)
+  const isComparisonMode = useMemo(() => {
+    if (!selectedPlan || !selectedOrder) return false;
+    if (selectedPlan.mode === "single") return true;
+    
+    // Auto-detection: If it's saved as "split" but we have multiple rows 
+    // where each row has the FULL quantity, it's actually a comparison (options).
+    const orderQty = parseFloat(selectedOrder.Quantity) || 0;
+    if (selectedPlan.mode === "split" && transporters.length > 1 && orderQty > 0) {
+      return transporters.every(t => Math.abs((parseFloat(t.allocated_qty) || 0) - orderQty) < 0.01);
+    }
+    
+    return false;
+  }, [selectedPlan, selectedOrder, transporters]);
 
   if (loading) {
     return (
@@ -386,9 +458,9 @@ export default function LogisticsApproval() {
                     )}
                   </p>
                   <p className="mt-1 text-xs text-gray-600">
-                    {selectedPlan && !isLegacyTransporters
-                      ? "Review the full arrangement and approve or reject it as one plan."
-                      : "Fallback legacy mode. The first option will be treated as the approved transporter."}
+                    {isComparisonMode
+                      ? "Choose the best transporter option from the list below."
+                      : "Review the full arrangement and approve or reject it as one plan."}
                   </p>
                 </div>
                 <div className="flex gap-2 flex-wrap">
@@ -396,8 +468,8 @@ export default function LogisticsApproval() {
                     Rows: {transporters.length}
                   </Badge>
                   {selectedPlan && !isLegacyTransporters && (
-                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
-                      Mode: {selectedPlan.mode}
+                    <Badge variant="outline" className={`border-2 ${isComparisonMode && selectedPlan.mode === "split" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-purple-50 text-purple-700 border-purple-200"}`}>
+                      Mode: {isComparisonMode ? "comparison (options)" : selectedPlan.mode}
                     </Badge>
                   )}
                 </div>
@@ -410,20 +482,39 @@ export default function LogisticsApproval() {
                       <TableHead>Transporter</TableHead>
                       <TableHead>Allocated Qty</TableHead>
                       <TableHead>Rate</TableHead>
+                      <TableHead>Vehicle Details</TableHead>
                       <TableHead>Contact</TableHead>
                       <TableHead>Availability</TableHead>
                       <TableHead>Remarks</TableHead>
+                      {isComparisonMode && <TableHead className="text-right">Action</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transporters.map((row) => (
+                    {transporters.map((row, index) => (
                       <TableRow key={row.id}>
-                        <TableCell className="font-medium">{row.transporter_name}</TableCell>
+                        <TableCell className="font-medium">
+                          {isComparisonMode && <span className="text-xs text-blue-600 block">Option {index + 1}</span>}
+                          {row.transporter_name}
+                        </TableCell>
                         <TableCell>{row.allocated_qty ?? selectedOrder?.Quantity ?? "N/A"}</TableCell>
                         <TableCell>{row.rate ?? "N/A"}</TableCell>
+                        <TableCell>{row.vehicle_details || "N/A"}</TableCell>
                         <TableCell>{row.contact_number || "N/A"}</TableCell>
                         <TableCell>{row.availability || "N/A"}</TableCell>
                         <TableCell>{row.remarks || "N/A"}</TableCell>
+                        {isComparisonMode && (
+                          <TableCell className="text-right">
+                            <Button 
+                              size="sm" 
+                              className="bg-green-600 hover:bg-green-700 text-white font-bold"
+                              onClick={() => handleApprove(row.id)}
+                              disabled={isSubmitting}
+                            >
+                              <CheckSquare className="w-4 h-4 mr-2" />
+                              Approve Option {index + 1}
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -437,18 +528,26 @@ export default function LogisticsApproval() {
               Close
             </Button>
             <Button
-              className="bg-green-600 hover:bg-green-700"
-              onClick={handleApprove}
-              disabled={isSubmitting || fetchingTransporters || transporters.length === 0}
+              className="bg-green-600 hover:bg-green-700 font-bold"
+              onClick={() => handleApprove()}
+              disabled={isSubmitting || fetchingTransporters || transporters.length === 0 || isComparisonMode}
             >
-              <CheckSquare className="w-4 h-4 mr-2" /> Approve Plan
+              <CheckSquare className="w-4 h-4 mr-2" /> Approve All Splits
             </Button>
             <Button
-              variant="destructive"
+              variant="outline"
+              className="border-orange-200 text-orange-700 hover:bg-orange-50 font-medium"
               onClick={handleRejectAll}
               disabled={isSubmitting || fetchingTransporters || transporters.length === 0}
             >
-              <XCircle className="w-4 h-4 mr-2" /> Reject and Arrange Again
+              <Truck className="w-4 h-4 mr-2" /> Reject & Plan Again
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleFullReject}
+              disabled={isSubmitting || fetchingTransporters || transporters.length === 0}
+            >
+              <XCircle className="w-4 h-4 mr-2" /> Fully Reject (Cancel)
             </Button>
           </DialogFooter>
         </DialogContent>

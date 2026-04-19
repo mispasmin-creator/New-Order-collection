@@ -26,6 +26,7 @@ const createSplitRow = (quantity = "") => ({
   rate: "",
   availability: "",
   remarks: "",
+  vehicle_details: "",
   allocated_qty: quantity,
 })
 
@@ -105,7 +106,12 @@ export default function ArrangeLogistics({ user }) {
     const totalQty = order?.Quantity?.toString?.() || ""
     setSelectedOrder(order)
     setArrangementMode("single")
-    setTransporters([createSplitRow(totalQty)])
+    // For single mode (enhanced), we now require 3 transporter options
+    setTransporters([
+      createSplitRow(totalQty),
+      createSplitRow(totalQty),
+      createSplitRow(totalQty)
+    ])
     setIsDialogOpen(true)
   }
 
@@ -141,28 +147,31 @@ export default function ArrangeLogistics({ user }) {
     setArrangementMode(mode)
 
     if (mode === "single") {
-      setTransporters((prev) => {
-        const first = prev[0] || createSplitRow("")
-        return [{ ...first, allocated_qty: totalQty > 0 ? totalQty.toString() : "" }]
-      })
+      // For enhanced single mode, we always want 3 options for the same quantity
+      setTransporters([
+        createSplitRow(totalQty.toString()),
+        createSplitRow(totalQty.toString()),
+        createSplitRow(totalQty.toString())
+      ])
       return
     }
 
-    setTransporters((prev) => {
-      if (prev.length > 1) return prev
-      const first = prev[0] || createSplitRow("")
-      return [
-        { ...first, allocated_qty: totalQty > 0 ? (totalQty / 2).toString() : "" },
-        createSplitRow(""),
-      ]
-    })
+    // Default split mode starts with 2 rows
+    setTransporters([
+      createSplitRow((totalQty / 2).toString()),
+      createSplitRow("")
+    ])
   }
 
   const totalOrderQty = selectedOrder ? parseQuantity(selectedOrder.Quantity) : 0
+  
+  // Validation logic differs by mode
   const allocatedQty = transporters.reduce((sum, row) => sum + parseQuantity(row.allocated_qty), 0)
-  const remainingQty = totalOrderQty - allocatedQty
-  const hasOverAllocation = remainingQty < 0
-  const isExactAllocation = totalOrderQty > 0 && Math.abs(remainingQty) < 0.0001
+  const remainingQty = arrangementMode === "split" ? totalOrderQty - allocatedQty : 0
+  const hasOverAllocation = arrangementMode === "split" && remainingQty < 0
+  const isExactAllocation = arrangementMode === "split" 
+    ? (totalOrderQty > 0 && Math.abs(remainingQty) < 0.0001)
+    : transporters.every(t => Math.abs(parseQuantity(t.allocated_qty) - totalOrderQty) < 0.0001)
 
   const rowErrors = transporters.map((row) => {
     const errors = []
@@ -212,7 +221,7 @@ export default function ArrangeLogistics({ user }) {
 
       const planPayload = {
         po_id: selectedOrder.id,
-        mode: arrangementMode === "split" || validRows.length > 1 ? "split" : "single",
+        mode: arrangementMode, // Preserve the exact mode (single vs split)
         status: "Pending Approval",
         created_by: user?.name || user?.username || user?.email || "Unknown",
       }
@@ -233,6 +242,7 @@ export default function ArrangeLogistics({ user }) {
         rate: parseFloat(row.rate) || 0,
         availability: row.availability,
         remarks: row.remarks,
+        vehicle_details: row.vehicle_details,
         allocated_qty: parseQuantity(row.allocated_qty),
         sort_order: index,
       }))
@@ -405,9 +415,9 @@ export default function ArrangeLogistics({ user }) {
               >
                 <p className="text-sm font-semibold text-gray-900 flex items-center">
                   <Truck className="w-4 h-4 mr-2" />
-                  Single Transporter
+                  Single Mode (3 Options)
                 </p>
-                <p className="mt-1 text-xs text-gray-600">Assign the full quantity to one transporter.</p>
+                <p className="mt-1 text-xs text-gray-600">Enter 3 transporter options for the full quantity.</p>
               </button>
               <button
                 type="button"
@@ -422,11 +432,17 @@ export default function ArrangeLogistics({ user }) {
               </button>
               <div className={`rounded-xl border p-4 ${hasOverAllocation ? "border-red-200 bg-red-50" : isExactAllocation ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
                 <p className="text-xs font-semibold uppercase text-gray-600">Quantity Summary</p>
-                <p className="mt-2 text-sm text-gray-800">Allocated: <span className="font-semibold">{allocatedQty}</span></p>
-                <p className="text-sm text-gray-800">Remaining: <span className="font-semibold">{remainingQty}</span></p>
-                {hasOverAllocation && <p className="mt-2 text-xs text-red-600">Allocated quantity exceeds the item quantity.</p>}
-                {!hasOverAllocation && !isExactAllocation && <p className="mt-2 text-xs text-amber-700">Allocation must match the total quantity before submit.</p>}
-                {isExactAllocation && <p className="mt-2 text-xs text-green-700">Quantity is balanced and ready for approval.</p>}
+                <p className="mt-2 text-sm text-gray-800">Mode: <span className="font-semibold capitalize">{arrangementMode}</span></p>
+                {arrangementMode === "split" ? (
+                  <>
+                    <p className="text-sm text-gray-800">Remaining: <span className="font-semibold">{remainingQty}</span></p>
+                    {hasOverAllocation && <p className="mt-2 text-xs text-red-600">Allocated quantity exceeds the item quantity.</p>}
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-800">Requirement: 3 Transporter Options</p>
+                )}
+                {!isExactAllocation && <p className="mt-2 text-xs text-amber-700">All rows must match total quantity exactly.</p>}
+                {isExactAllocation && <p className="mt-2 text-xs text-green-700">Ready for submission.</p>}
               </div>
             </div>
 
@@ -449,7 +465,7 @@ export default function ArrangeLogistics({ user }) {
                   <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-2 text-sm">
                     {index + 1}
                   </div>
-                  {arrangementMode === "split" ? "Split Allocation" : "Transporter Assignment"}
+                  {arrangementMode === "split" ? "Split Allocation" : `Transporter Option ${index + 1}`}
                 </h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
@@ -510,10 +526,18 @@ export default function ArrangeLogistics({ user }) {
                       onChange={(e) => handleTransporterChange(index, "availability", e.target.value)}
                     />
                   </div>
-                  <div className="lg:col-span-6 space-y-2">
+                  <div className="lg:col-span-3 space-y-2">
+                    <Label>Vehicle Details</Label>
+                    <Input
+                      placeholder="Truck No, Type, Capacity"
+                      value={transporter.vehicle_details}
+                      onChange={(e) => handleTransporterChange(index, "vehicle_details", e.target.value)}
+                    />
+                  </div>
+                  <div className="lg:col-span-3 space-y-2">
                     <Label>Remarks (Optional)</Label>
                     <Input
-                      placeholder="Vehicle type, conditions, etc."
+                      placeholder="Special conditions, etc."
                       value={transporter.remarks}
                       onChange={(e) => handleTransporterChange(index, "remarks", e.target.value)}
                     />
