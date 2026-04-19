@@ -15,6 +15,18 @@ import { supabase } from "@/lib/supabaseClient"
 // Google Apps Script URL for Master Data and File Upload ONLY
 const GOOGLE_SCRIPT_URL = process.env.NEXT_PUBLIC_GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyWoEpCK_J8zDmReLrrTmAG6nyl2iG9k8ZKBZKtRl1P0pi9bGm_RRTDiTd_RKhv-5k/exec";
 const FOLDER_ID = "1Mr68o4MM5zlbRoltdIcpXIBZCh8Ffql-";
+const IS_DEV = process.env.NODE_ENV !== "production"
+
+const pickRandom = (items, fallback = "") => {
+  if (!Array.isArray(items) || items.length === 0) return fallback
+  return items[Math.floor(Math.random() * items.length)] || fallback
+}
+
+const randomNumber = (min, max, precision = 0) => {
+  const factor = 10 ** precision
+  const value = Math.random() * (max - min) + min
+  return (Math.round(value * factor) / factor).toFixed(precision)
+}
 
 export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
   const [formData, setFormData] = useState({
@@ -42,6 +54,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     "Adjusted Amount": "",
     "Reference No.": "",
     "TC Required": "No",
+    "Type of Packaging": "",
 
     // Payment & Terms
     "Total PO Basic Value": "",
@@ -554,6 +567,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
         "Type Of Application": "",
         "Is This Order Through Some Agent": "",
         "Marketing Mangager Name": "",
+        "Type of Packaging": "",
         "Product Name": "",
         "Quantity": "",
         "Rate Of Material": "",
@@ -580,6 +594,119 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  const handleAutoFillTestData = () => {
+    const selectedPartyName = pickRandom(dropdownData.partyNames, "Test Party Pvt Ltd")
+
+    let partyDetails = {}
+    if (masterRecords.length > 0) {
+      const keys = Object.keys(masterRecords[0])
+      const findKey = (search) => keys.find(k => k.toLowerCase().includes(search.toLowerCase()))
+      const partyNameKey = keys.find(k => k.trim() === "Party Name" || k.trim() === "Party Names") || findKey("Party")
+      const addressKey = findKey("Address")
+      const gstNumberKey = findKey("GST")
+      const firmNameKey = keys.find(k => k.trim() === "Firm Name") || findKey("Firm Name")
+
+      const matchedRow = masterRecords.find(row =>
+        partyNameKey && String(row[partyNameKey] || "").trim() === selectedPartyName.trim()
+      )
+
+      if (matchedRow) {
+        partyDetails = {
+          address: addressKey ? String(matchedRow[addressKey] || "").trim() : "",
+          gst: gstNumberKey ? String(matchedRow[gstNumberKey] || "").trim() : "",
+          firm: firmNameKey ? String(matchedRow[firmNameKey] || "").trim() : "",
+        }
+      }
+    }
+
+    const quantity = randomNumber(5, 30, 0)
+    const rate = randomNumber(2500, 9500, 0)
+    const total = (parseFloat(quantity) * parseFloat(rate)).toString()
+    const now = new Date()
+    const poDate = now.toISOString().slice(0, 10)
+    const packagingOptions = ["HDPE Bags", "Jumbo Bag", "Loose", "Boxes"]
+    const mockFile = new File(
+      [`Test SO for ${selectedPartyName} generated at ${generateTimestamp()}`],
+      `test-so-${Date.now()}.txt`,
+      { type: "text/plain" }
+    )
+
+    const mockProduct = {
+      id: Date.now(),
+      "Product Name": pickRandom(dropdownData.productNames, "Test Product"),
+      "Quantity": quantity,
+      "Rate Of Material": rate,
+      "Alumina%": randomNumber(35, 85, 1),
+      "Iron%": randomNumber(0.5, 8, 1),
+      "Type Of Measurement": pickRandom(dropdownData.uoms, "SQN"),
+      "Total PO Basic Value": total,
+      "Advance": randomNumber(0, 25, 0),
+      "Basic": randomNumber(60, 100, 0),
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      "Timestamp": generateTimestamp(),
+      "PARTY PO NO (As Per Po Exact)": `TEST-PO-${Date.now().toString().slice(-6)}`,
+      "Party PO Date": poDate,
+      "Party Name": selectedPartyName,
+      "Gst Number": partyDetails.gst || `29TEST${Date.now().toString().slice(-10)}`,
+      "Address": partyDetails.address || "Sample Industrial Area, Bengaluru",
+      "Firm Name": user.role === "master"
+        ? (partyDetails.firm || pickRandom(dropdownData.firmNames, "Test Firm"))
+        : user.firm,
+      "Type Of Transporting": pickRandom(dropdownData.typeOfTransportings, "FOR"),
+      "Contact Person Name": pickRandom(["Amit Sharma", "Neha Verma", "Rohit Jain", "Priya Singh"], "Test Contact"),
+      "Contact Person WhatsApp No.": `9${Date.now().toString().slice(-9)}`,
+      "Order Received From": pickRandom(dropdownData.orderReceivedFroms, "CRR ENQUIRY"),
+      "Type Of Measurement": mockProduct["Type Of Measurement"],
+      "Type Of PI": pickRandom(dropdownData.typeOfPis, "Standard PI"),
+      "Customer Category": pickRandom(dropdownData.customerCategories, "Regular"),
+      "Free Replacement (FOC)": pickRandom(["No", "Yes", "Yes But Adjusted"], "No"),
+      "Adjusted Amount": randomNumber(0, 5000, 0),
+      "Reference No.": `REF-${Date.now().toString().slice(-5)}`,
+      "TC Required": pickRandom(["Yes", "No"], "No"),
+      "Type of Packaging": pickRandom(packagingOptions, "HDPE Bags"),
+      "Total PO Basic Value": total,
+      "Payment to Be Taken": pickRandom(dropdownData.paymentToBeTakens, "Yes"),
+      "Retention Payment": pickRandom(dropdownData.retentionPayments, "No"),
+      "Retention Percentage": randomNumber(0, 10, 0),
+      "Lead Time for Retention": randomNumber(7, 45, 0),
+      "Specific Concern": "Auto-filled test order for development verification.",
+      "Lead Time For Collection Of Final Payment": randomNumber(7, 30, 0),
+      "Type Of Application": pickRandom(dropdownData.typeOfApplications, "Full application"),
+      "Is This Order Through Some Agent": pickRandom(dropdownData.agents, "No"),
+      "Marketing Mangager Name": pickRandom(dropdownData.marketingMangagerNames, "Test Manager"),
+      "Product Name": mockProduct["Product Name"],
+      "Quantity": mockProduct["Quantity"],
+      "Rate Of Material": mockProduct["Rate Of Material"],
+      "Alumina%": mockProduct["Alumina%"],
+      "Iron%": mockProduct["Iron%"],
+      "Advance": mockProduct["Advance"],
+      "Basic": mockProduct["Basic"],
+      "Upload SO": mockFile,
+      products: [mockProduct],
+    }))
+
+    setCurrentProduct({
+      "Product Name": "",
+      "Quantity": "",
+      "Rate Of Material": "",
+      "Alumina%": "",
+      "Iron%": "",
+      "Type Of Measurement": "",
+      "Total PO Basic Value": "",
+      "Advance": "",
+      "Basic": "",
+    })
+    setShowProductForm(false)
+
+    toast({
+      title: "Test Data Filled",
+      description: "The form has been auto-filled with development test data.",
+    })
   }
 
   if (success) {
@@ -1407,6 +1534,16 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
 
           {/* Form Actions */}
           <div className="flex gap-4 pt-8 border-t border-gray-200">
+            {IS_DEV && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleAutoFillTestData}
+                className="h-12"
+              >
+                Auto Fill (Test)
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"

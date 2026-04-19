@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,7 +17,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Loader2, Truck, Plus, Trash2, CheckCircle, Clock } from "lucide-react"
+import { Loader2, Truck, Plus, Trash2, CheckCircle, Clock, SplitSquareVertical } from "lucide-react"
+
+const createSplitRow = (quantity = "") => ({
+  transporter_name: "",
+  contact_number: "",
+  rate: "",
+  availability: "",
+  remarks: "",
+  allocated_qty: quantity,
+})
+
+const parseQuantity = (value) => {
+  const parsed = parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
 
 export default function ArrangeLogistics({ user }) {
   const [orders, setOrders] = useState([])
@@ -25,13 +39,10 @@ export default function ArrangeLogistics({ user }) {
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const { toast } = useToast()
-
-  // State for transporters
-  const [transporters, setTransporters] = useState([
-    { transporter_name: "", contact_number: "", rate: "", availability: "", remarks: "" }
-  ])
+  const [arrangementMode, setArrangementMode] = useState("single")
+  const [transporters, setTransporters] = useState([createSplitRow("")])
   const [masterTransporters, setMasterTransporters] = useState([])
+  const { toast } = useToast()
 
   useEffect(() => {
     fetchOrders()
@@ -48,7 +59,7 @@ export default function ArrangeLogistics({ user }) {
       if (error) throw error
 
       if (data) {
-        const unique = [...new Set(data.map(d => d["Transporter Name"]).filter(t => t && t.trim() !== ""))]
+        const unique = [...new Set(data.map((d) => d["Transporter Name"]).filter((t) => t && t.trim() !== ""))]
         setMasterTransporters(unique.sort())
       }
     } catch (error) {
@@ -59,8 +70,6 @@ export default function ArrangeLogistics({ user }) {
   const fetchOrders = async () => {
     try {
       setLoading(true)
-      // Fetch orders that have been received in accounts (Actual 2 is not null)
-      // and haven't been submitted for logistics approval yet
       const { data, error } = await supabase
         .from("ORDER RECEIPT")
         .select("*")
@@ -76,7 +85,7 @@ export default function ArrangeLogistics({ user }) {
       toast({
         title: "Error fetching data",
         description: error.message,
-        variant: "destructive"
+        variant: "destructive",
       })
     } finally {
       setLoading(false)
@@ -84,43 +93,107 @@ export default function ArrangeLogistics({ user }) {
   }
 
   const openArrangeDialog = (order) => {
+    const totalQty = order?.Quantity?.toString?.() || ""
     setSelectedOrder(order)
-    setTransporters([{ transporter_name: "", contact_number: "", rate: "", availability: "", remarks: "" }])
+    setArrangementMode("single")
+    setTransporters([createSplitRow(totalQty)])
     setIsDialogOpen(true)
   }
 
+  const closeDialog = () => {
+    setIsDialogOpen(false)
+    setSelectedOrder(null)
+    setArrangementMode("single")
+    setTransporters([createSplitRow("")])
+  }
+
   const handleAddTransporter = () => {
-    if (transporters.length >= 3) {
-      toast({
-        title: "Limit Reached",
-        description: "You can only add up to 3 transporters per PO.",
-        variant: "warning"
-      })
-      return
-    }
-    setTransporters([...transporters, { transporter_name: "", contact_number: "", rate: "", availability: "", remarks: "" }])
+    setTransporters((prev) => [...prev, createSplitRow("")])
   }
 
   const handleRemoveTransporter = (index) => {
-    const newTransporters = [...transporters]
-    newTransporters.splice(index, 1)
-    setTransporters(newTransporters)
+    setTransporters((prev) => {
+      const next = [...prev]
+      next.splice(index, 1)
+      return next.length > 0 ? next : [createSplitRow("")]
+    })
   }
 
   const handleTransporterChange = (index, field, value) => {
-    const newTransporters = [...transporters]
-    newTransporters[index][field] = value
-    setTransporters(newTransporters)
+    setTransporters((prev) => {
+      const next = [...prev]
+      next[index] = { ...next[index], [field]: value }
+      return next
+    })
   }
 
+  const handleModeChange = (mode) => {
+    const totalQty = selectedOrder ? parseQuantity(selectedOrder.Quantity) : 0
+    setArrangementMode(mode)
+
+    if (mode === "single") {
+      setTransporters((prev) => {
+        const first = prev[0] || createSplitRow("")
+        return [{ ...first, allocated_qty: totalQty > 0 ? totalQty.toString() : "" }]
+      })
+      return
+    }
+
+    setTransporters((prev) => {
+      if (prev.length > 1) return prev
+      const first = prev[0] || createSplitRow("")
+      return [
+        { ...first, allocated_qty: totalQty > 0 ? (totalQty / 2).toString() : "" },
+        createSplitRow(""),
+      ]
+    })
+  }
+
+  const totalOrderQty = selectedOrder ? parseQuantity(selectedOrder.Quantity) : 0
+  const allocatedQty = transporters.reduce((sum, row) => sum + parseQuantity(row.allocated_qty), 0)
+  const remainingQty = totalOrderQty - allocatedQty
+  const hasOverAllocation = remainingQty < 0
+  const isExactAllocation = totalOrderQty > 0 && Math.abs(remainingQty) < 0.0001
+
+  const rowErrors = transporters.map((row) => {
+    const errors = []
+    if (!row.transporter_name.trim()) {
+      errors.push("Select a transporter")
+    }
+    if (parseQuantity(row.allocated_qty) <= 0) {
+      errors.push("Enter a valid quantity")
+    }
+    return errors
+  })
+
   const handleSubmit = async () => {
-    // Validate
-    const validTransporters = transporters.filter(t => t.transporter_name.trim() !== "")
-    if (validTransporters.length === 0) {
+    const validRows = transporters.filter(
+      (row) => row.transporter_name.trim() !== "" || parseQuantity(row.allocated_qty) > 0
+    )
+
+    if (validRows.length === 0) {
       toast({
         title: "Validation Error",
-        description: "Please enter at least one valid transporter.",
-        variant: "destructive"
+        description: "Please enter at least one valid logistics row.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (rowErrors.some((errors) => errors.length > 0)) {
+      toast({
+        title: "Validation Error",
+        description: "Complete transporter and quantity details for every row.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!isExactAllocation || hasOverAllocation) {
+      toast({
+        title: "Validation Error",
+        description: "Allocated quantity must match the total item quantity exactly.",
+        variant: "destructive",
       })
       return
     }
@@ -128,46 +201,63 @@ export default function ArrangeLogistics({ user }) {
     try {
       setIsSubmitting(true)
 
-      // 1. Insert transporters
-      const transportersToInsert = validTransporters.map(t => ({
+      const planPayload = {
         po_id: selectedOrder.id,
-        transporter_name: t.transporter_name,
-        contact_number: t.contact_number,
-        rate: parseFloat(t.rate) || 0,
-        availability: t.availability,
-        remarks: t.remarks,
-        status: "Pending"
+        mode: arrangementMode === "split" || validRows.length > 1 ? "split" : "single",
+        status: "Pending Approval",
+        created_by: user?.name || user?.username || user?.email || "Unknown",
+      }
+
+      const { data: insertedPlan, error: planInsertError } = await supabase
+        .from("po_logistics_plans")
+        .insert([planPayload])
+        .select("id")
+        .single()
+
+      if (planInsertError) throw planInsertError
+
+      const splitRows = validRows.map((row, index) => ({
+        plan_id: insertedPlan.id,
+        po_id: selectedOrder.id,
+        transporter_name: row.transporter_name,
+        contact_number: row.contact_number,
+        rate: parseFloat(row.rate) || 0,
+        availability: row.availability,
+        remarks: row.remarks,
+        allocated_qty: parseQuantity(row.allocated_qty),
+        sort_order: index,
       }))
 
-      const { error: insertError } = await supabase
-        .from("po_transporters")
-        .insert(transportersToInsert)
+      const { error: splitInsertError } = await supabase
+        .from("po_logistics_splits")
+        .insert(splitRows)
 
-      if (insertError) throw insertError
+      if (splitInsertError) throw splitInsertError
 
-      // 2. Update order status
       const { error: updateError } = await supabase
         .from("ORDER RECEIPT")
-        .update({ logistics_status: "Pending Approval" })
+        .update({
+          logistics_status: "Pending Approval",
+          approved_logistics_plan_id: null,
+        })
         .eq("id", selectedOrder.id)
 
       if (updateError) throw updateError
 
       toast({
         title: "Success",
-        description: "Logistics details submitted for approval.",
-        className: "bg-green-50 text-green-800 border-green-200"
+        description: "Logistics plan submitted for approval.",
+        className: "bg-green-50 text-green-800 border-green-200",
       })
 
-      setIsDialogOpen(false)
+      closeDialog()
       fetchOrders()
-
     } catch (error) {
-      console.error("Error submitting details:", error)
+      console.error("Error submitting logistics plan:", error)
       toast({
         title: "Submission Error",
         description: error.message,
-        variant: "destructive"
+        variant: "destructive",
       })
     } finally {
       setIsSubmitting(false)
@@ -188,17 +278,17 @@ export default function ArrangeLogistics({ user }) {
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Arrange Logistics</h1>
-          <p className="text-gray-600">Capture transporter details for approved POs</p>
+          <p className="text-gray-600">Capture single or split transporter allocations for approved POs</p>
         </div>
         <Button variant="outline" onClick={fetchOrders}>
-          <Loader2 className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          <Loader2 className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
           Refresh Data
         </Button>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Pending PO Arragement</CardTitle>
+          <CardTitle className="text-lg">Pending PO Arrangement</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -222,7 +312,7 @@ export default function ArrangeLogistics({ user }) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  orders.map(order => (
+                  orders.map((order) => (
                     <TableRow key={order.id}>
                       <TableCell className="font-mono text-xs">{order.id}</TableCell>
                       <TableCell>{order["DO-Delivery Order No."]}</TableCell>
@@ -236,8 +326,8 @@ export default function ArrangeLogistics({ user }) {
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           onClick={() => openArrangeDialog(order)}
                           className="bg-blue-600 hover:bg-blue-700"
                         >
@@ -254,42 +344,75 @@ export default function ArrangeLogistics({ user }) {
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <Dialog open={isDialogOpen} onOpenChange={(open) => !open && closeDialog()}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Arrange Transporters</DialogTitle>
+            <DialogTitle>Arrange Logistics</DialogTitle>
             <DialogDescription>
-              Enter up to 3 transporter alternatives for PO: {selectedOrder?.["DO-Delivery Order No."]}
+              Build a single or split logistics plan for PO: {selectedOrder?.["DO-Delivery Order No."]}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6 py-4">
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 grid grid-cols-2 lg:grid-cols-4 gap-4">
-               <div>
-                  <p className="text-xs text-blue-600 font-semibold uppercase">Product</p>
-                  <p className="text-sm font-medium">{selectedOrder?.["Product Name"]}</p>
-               </div>
-               <div>
-                  <p className="text-xs text-blue-600 font-semibold uppercase">Quantity</p>
-                  <p className="text-sm font-medium">{selectedOrder?.Quantity}</p>
-               </div>
-               <div>
-                  <p className="text-xs text-blue-600 font-semibold uppercase">Party Name</p>
-                  <p className="text-sm font-medium">{selectedOrder?.["Party Names"]}</p>
-               </div>
-               <div>
-                  <p className="text-xs text-blue-600 font-semibold uppercase">Destination</p>
-                  <p className="text-sm font-medium">{selectedOrder?.Address || "Not specified"}</p>
-               </div>
+              <div>
+                <p className="text-xs text-blue-600 font-semibold uppercase">Product</p>
+                <p className="text-sm font-medium">{selectedOrder?.["Product Name"]}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-600 font-semibold uppercase">Quantity</p>
+                <p className="text-sm font-medium">{selectedOrder?.Quantity}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-600 font-semibold uppercase">Party Name</p>
+                <p className="text-sm font-medium">{selectedOrder?.["Party Names"]}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-600 font-semibold uppercase">Destination</p>
+                <p className="text-sm font-medium">{selectedOrder?.Address || "Not specified"}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <button
+                type="button"
+                onClick={() => handleModeChange("single")}
+                className={`rounded-xl border p-4 text-left transition-colors ${arrangementMode === "single" ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}
+              >
+                <p className="text-sm font-semibold text-gray-900 flex items-center">
+                  <Truck className="w-4 h-4 mr-2" />
+                  Single Transporter
+                </p>
+                <p className="mt-1 text-xs text-gray-600">Assign the full quantity to one transporter.</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange("split")}
+                className={`rounded-xl border p-4 text-left transition-colors ${arrangementMode === "split" ? "border-blue-500 bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}
+              >
+                <p className="text-sm font-semibold text-gray-900 flex items-center">
+                  <SplitSquareVertical className="w-4 h-4 mr-2" />
+                  Split Logistics
+                </p>
+                <p className="mt-1 text-xs text-gray-600">Split the quantity across multiple transporter rows.</p>
+              </button>
+              <div className={`rounded-xl border p-4 ${hasOverAllocation ? "border-red-200 bg-red-50" : isExactAllocation ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+                <p className="text-xs font-semibold uppercase text-gray-600">Quantity Summary</p>
+                <p className="mt-2 text-sm text-gray-800">Allocated: <span className="font-semibold">{allocatedQty}</span></p>
+                <p className="text-sm text-gray-800">Remaining: <span className="font-semibold">{remainingQty}</span></p>
+                {hasOverAllocation && <p className="mt-2 text-xs text-red-600">Allocated quantity exceeds the item quantity.</p>}
+                {!hasOverAllocation && !isExactAllocation && <p className="mt-2 text-xs text-amber-700">Allocation must match the total quantity before submit.</p>}
+                {isExactAllocation && <p className="mt-2 text-xs text-green-700">Quantity is balanced and ready for approval.</p>}
+              </div>
             </div>
 
             {transporters.map((transporter, index) => (
               <div key={index} className="relative bg-white border border-gray-200 p-5 rounded-xl shadow-sm">
                 <div className="absolute top-4 right-4">
                   {transporters.length > 1 && (
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => handleRemoveTransporter(index)}
                       className="text-red-500 hover:bg-red-50 hover:text-red-600 h-8"
                     >
@@ -297,15 +420,15 @@ export default function ArrangeLogistics({ user }) {
                     </Button>
                   )}
                 </div>
-                
+
                 <h3 className="text-md font-semibold text-gray-800 mb-4 flex items-center">
                   <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mr-2 text-sm">
                     {index + 1}
                   </div>
-                  Transporter Option
+                  {arrangementMode === "split" ? "Split Allocation" : "Transporter Assignment"}
                 </h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                   <div className="lg:col-span-2 space-y-2">
                     <Label>Name / Agency</Label>
                     <Select
@@ -317,7 +440,7 @@ export default function ArrangeLogistics({ user }) {
                       </SelectTrigger>
                       <SelectContent>
                         {masterTransporters.length === 0 ? (
-                           <SelectItem value="loading" disabled>Loading...</SelectItem>
+                          <SelectItem value="loading" disabled>Loading...</SelectItem>
                         ) : (
                           masterTransporters.map((name) => (
                             <SelectItem key={name} value={name}>{name}</SelectItem>
@@ -327,8 +450,20 @@ export default function ArrangeLogistics({ user }) {
                     </Select>
                   </div>
                   <div className="space-y-2">
+                    <Label>Allocated Qty</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Qty"
+                      value={transporter.allocated_qty}
+                      onChange={(e) => handleTransporterChange(index, "allocated_qty", e.target.value)}
+                      disabled={arrangementMode === "single"}
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label>Contact Info</Label>
-                    <Input 
+                    <Input
                       placeholder="Phone or Name"
                       value={transporter.contact_number}
                       onChange={(e) => handleTransporterChange(index, "contact_number", e.target.value)}
@@ -336,7 +471,7 @@ export default function ArrangeLogistics({ user }) {
                   </div>
                   <div className="space-y-2">
                     <Label>Rate</Label>
-                    <Input 
+                    <Input
                       type="number"
                       placeholder="Amount"
                       value={transporter.rate}
@@ -345,43 +480,49 @@ export default function ArrangeLogistics({ user }) {
                   </div>
                   <div className="space-y-2">
                     <Label>Availability</Label>
-                    <Input 
+                    <Input
                       placeholder="e.g. Tomorrow"
                       value={transporter.availability}
                       onChange={(e) => handleTransporterChange(index, "availability", e.target.value)}
                     />
                   </div>
-                  <div className="lg:col-span-5 space-y-2">
+                  <div className="lg:col-span-6 space-y-2">
                     <Label>Remarks (Optional)</Label>
-                    <Input 
+                    <Input
                       placeholder="Vehicle type, conditions, etc."
                       value={transporter.remarks}
                       onChange={(e) => handleTransporterChange(index, "remarks", e.target.value)}
                     />
                   </div>
                 </div>
+
+                {rowErrors[index].length > 0 && (
+                  <div className="mt-3 rounded-md bg-red-50 border border-red-100 px-3 py-2 text-xs text-red-700">
+                    {rowErrors[index].join(" • ")}
+                  </div>
+                )}
               </div>
             ))}
 
-            {transporters.length < 3 && (
-              <Button 
-                variant="outline" 
+            {arrangementMode === "split" && (
+              <Button
+                variant="outline"
                 onClick={handleAddTransporter}
                 className="w-full border-dashed py-8 text-gray-500 hover:bg-gray-50 hover:text-blue-600"
               >
                 <Plus className="w-5 h-5 mr-2" />
-                Add Another Transporter Option
+                Add Split Row
               </Button>
             )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>
+            <Button variant="outline" onClick={closeDialog} disabled={isSubmitting}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleSubmit} 
-              disabled={isSubmitting || transporters.every(t => t.transporter_name.trim() === "")}
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting || transporters.every((row) => row.transporter_name.trim() === "") || !isExactAllocation || hasOverAllocation || rowErrors.some((errors) => errors.length > 0)}
               className="bg-green-600 hover:bg-green-700"
             >
               {isSubmitting ? (
@@ -390,7 +531,7 @@ export default function ArrangeLogistics({ user }) {
                 </>
               ) : (
                 <>
-                  <CheckCircle className="w-4 h-4 mr-2" /> Submit for Approval
+                  <CheckCircle className="w-4 h-4 mr-2" /> Submit Plan for Approval
                 </>
               )}
             </Button>

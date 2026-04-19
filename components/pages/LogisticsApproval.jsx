@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
@@ -14,13 +15,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Loader2, CheckSquare, XCircle, LayoutList, Truck } from "lucide-react"
+import { Loader2, CheckSquare, XCircle, LayoutList, Truck, SplitSquareVertical } from "lucide-react"
 
-export default function LogisticsApproval({ user }) {
+export default function LogisticsApproval() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [transporters, setTransporters] = useState([])
+  const [selectedPlan, setSelectedPlan] = useState(null)
+  const [isLegacyTransporters, setIsLegacyTransporters] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [fetchingTransporters, setFetchingTransporters] = useState(false)
@@ -33,7 +36,6 @@ export default function LogisticsApproval({ user }) {
   const fetchOrders = async () => {
     try {
       setLoading(true)
-      // Fetch orders pending approval
       const { data, error } = await supabase
         .from("ORDER RECEIPT")
         .select("*")
@@ -48,7 +50,7 @@ export default function LogisticsApproval({ user }) {
       toast({
         title: "Error fetching data",
         description: error.message,
-        variant: "destructive"
+        variant: "destructive",
       })
     } finally {
       setLoading(false)
@@ -59,74 +61,133 @@ export default function LogisticsApproval({ user }) {
     setSelectedOrder(order)
     setIsDialogOpen(true)
     setFetchingTransporters(true)
-    
+    setSelectedPlan(null)
+    setIsLegacyTransporters(false)
+
     try {
+      const { data: plans, error: planError } = await supabase
+        .from("po_logistics_plans")
+        .select("*")
+        .eq("po_id", order.id)
+        .eq("status", "Pending Approval")
+        .order("id", { ascending: false })
+        .limit(1)
+
+      if (planError && planError.code !== "PGRST205") throw planError
+
+      const currentPlan = plans?.[0]
+      if (currentPlan) {
+        const { data: splits, error: splitError } = await supabase
+          .from("po_logistics_splits")
+          .select("*")
+          .eq("plan_id", currentPlan.id)
+          .order("sort_order", { ascending: true })
+
+        if (splitError) throw splitError
+
+        setSelectedPlan(currentPlan)
+        setTransporters(splits || [])
+        setIsLegacyTransporters(false)
+        return
+      }
+
       const { data, error } = await supabase
         .from("po_transporters")
         .select("*")
         .eq("po_id", order.id)
         .order("id", { ascending: true })
-        
+
       if (error) throw error
-      
+
       setTransporters(data || [])
+      setIsLegacyTransporters(true)
     } catch (err) {
-      console.error("Error fetching transporters:", err)
+      console.error("Error fetching logistics plan:", err)
       toast({
-        title: "Failed to load transporters",
+        title: "Failed to load logistics plan",
         description: err.message,
-        variant: "destructive"
+        variant: "destructive",
       })
     } finally {
       setFetchingTransporters(false)
     }
   }
 
-  const handleApprove = async (transporterId) => {
+  const closeDialog = () => {
+    setIsDialogOpen(false)
+    setSelectedOrder(null)
+    setSelectedPlan(null)
+    setTransporters([])
+    setIsLegacyTransporters(false)
+  }
+
+  const handleApprove = async () => {
     try {
       setIsSubmitting(true)
 
-      // 1. Update chosen transporter to 'Approved'
-      const { error: approveError } = await supabase
-        .from("po_transporters")
-        .update({ status: "Approved" })
-        .eq("id", transporterId)
+      if (selectedPlan && !isLegacyTransporters) {
+        const { error: approvePlanError } = await supabase
+          .from("po_logistics_plans")
+          .update({ status: "Approved" })
+          .eq("id", selectedPlan.id)
 
-      if (approveError) throw approveError
+        if (approvePlanError) throw approvePlanError
 
-      // Update other transporters to 'Rejected'
-      await supabase
-        .from("po_transporters")
-        .update({ status: "Rejected" })
-        .eq("po_id", selectedOrder.id)
-        .neq("id", transporterId)
+        const { error: updateOrderError } = await supabase
+          .from("ORDER RECEIPT")
+          .update({
+            logistics_status: "Approved",
+            approved_logistics_plan_id: selectedPlan.id,
+            approved_transporter_id: null,
+          })
+          .eq("id", selectedOrder.id)
 
-      // 2. Update order status and link approved transporter
-      const { error: updateOrderError } = await supabase
-        .from("ORDER RECEIPT")
-        .update({ 
-          logistics_status: "Approved",
-          approved_transporter_id: transporterId
-        })
-        .eq("id", selectedOrder.id)
+        if (updateOrderError) throw updateOrderError
+      } else {
+        const transporterId = transporters[0]?.id
+        if (!transporterId) {
+          throw new Error("No legacy transporter option found to approve.")
+        }
 
-      if (updateOrderError) throw updateOrderError
+        const { error: approveError } = await supabase
+          .from("po_transporters")
+          .update({ status: "Approved" })
+          .eq("id", transporterId)
+
+        if (approveError) throw approveError
+
+        await supabase
+          .from("po_transporters")
+          .update({ status: "Rejected" })
+          .eq("po_id", selectedOrder.id)
+          .neq("id", transporterId)
+
+        const { error: updateOrderError } = await supabase
+          .from("ORDER RECEIPT")
+          .update({
+            logistics_status: "Approved",
+            approved_transporter_id: transporterId,
+            approved_logistics_plan_id: null,
+          })
+          .eq("id", selectedOrder.id)
+
+        if (updateOrderError) throw updateOrderError
+      }
 
       toast({
-        title: "Transporter Approved",
-        description: "The logistics option has been finalized.",
-        className: "bg-green-50 text-green-800 border-green-200"
+        title: "Logistics Plan Approved",
+        description: "The logistics arrangement has been finalized.",
+        className: "bg-green-50 text-green-800 border-green-200",
       })
 
-      setIsDialogOpen(false)
+      closeDialog()
       fetchOrders()
-
     } catch (error) {
       console.error("Approval flow error:", error)
       toast({
-        title: "Error Approvng",
+        title: "Error approving plan",
         description: error.message,
-        variant: "destructive"
+        variant: "destructive",
       })
     } finally {
       setIsSubmitting(false)
@@ -137,43 +198,49 @@ export default function LogisticsApproval({ user }) {
     try {
       setIsSubmitting(true)
 
-      // Reject all transporters
-      await supabase
-        .from("po_transporters")
-        .update({ status: "Rejected" })
-        .eq("po_id", selectedOrder.id)
+      if (selectedPlan && !isLegacyTransporters) {
+        const { error: rejectPlanError } = await supabase
+          .from("po_logistics_plans")
+          .update({ status: "Rejected" })
+          .eq("id", selectedPlan.id)
 
-      // Send the order back to arrangement phase
+        if (rejectPlanError) throw rejectPlanError
+      } else {
+        await supabase
+          .from("po_transporters")
+          .update({ status: "Rejected" })
+          .eq("po_id", selectedOrder.id)
+      }
+
       const { error: updateOrderError } = await supabase
         .from("ORDER RECEIPT")
-        .update({ 
-          logistics_status: "Pending Arrangement"
+        .update({
+          logistics_status: "Pending Arrangement",
+          approved_logistics_plan_id: null,
         })
         .eq("id", selectedOrder.id)
 
       if (updateOrderError) throw updateOrderError
 
       toast({
-        title: "Options Rejected",
-        description: "The PO has been sent back for new logistics arrangement.",
-        className: "bg-red-50 text-red-800 border-red-200"
+        title: "Arrangement Rejected",
+        description: "The PO has been sent back for a new logistics arrangement.",
+        className: "bg-red-50 text-red-800 border-red-200",
       })
 
-      setIsDialogOpen(false)
+      closeDialog()
       fetchOrders()
-
     } catch (error) {
       console.error("Rejection error:", error)
       toast({
-        title: "Error rejecting",
+        title: "Error rejecting plan",
         description: error.message,
-        variant: "destructive"
+        variant: "destructive",
       })
     } finally {
       setIsSubmitting(false)
     }
   }
-
 
   if (loading) {
     return (
@@ -192,7 +259,7 @@ export default function LogisticsApproval({ user }) {
           <p className="text-gray-600">Review and approve transporter arrangements</p>
         </div>
         <Button variant="outline" onClick={fetchOrders}>
-          <Loader2 className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          <Loader2 className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
           Refresh Data
         </Button>
       </div>
@@ -222,7 +289,7 @@ export default function LogisticsApproval({ user }) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  orders.map(order => (
+                  orders.map((order) => (
                     <TableRow key={order.id}>
                       <TableCell className="font-mono text-xs">{order.id}</TableCell>
                       <TableCell>{order["DO-Delivery Order No."]}</TableCell>
@@ -230,13 +297,13 @@ export default function LogisticsApproval({ user }) {
                       <TableCell>{order["Product Name"]}</TableCell>
                       <TableCell>{order.Quantity}</TableCell>
                       <TableCell className="text-right">
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           onClick={() => openReviewDialog(order)}
                           className="bg-purple-600 hover:bg-purple-700"
                         >
                           <LayoutList className="w-4 h-4 mr-2" />
-                          Review Options
+                          Review Plan
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -248,79 +315,104 @@ export default function LogisticsApproval({ user }) {
         </CardContent>
       </Card>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={(open) => !open && closeDialog()}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto bg-gray-50">
           <DialogHeader className="bg-white p-6 -m-6 mb-6 pb-6 border-b">
-            <DialogTitle className="text-xl">Review Logistics Options</DialogTitle>
+            <DialogTitle className="text-xl">Review Logistics Plan</DialogTitle>
             <DialogDescription className="mt-2">
-               PO: <span className="font-semibold">{selectedOrder?.["DO-Delivery Order No."]}</span> | Product: {selectedOrder?.["Product Name"]} ({selectedOrder?.Quantity})
+              PO: <span className="font-semibold">{selectedOrder?.["DO-Delivery Order No."]}</span> | Product: {selectedOrder?.["Product Name"]} ({selectedOrder?.Quantity})
             </DialogDescription>
           </DialogHeader>
 
           {fetchingTransporters ? (
-             <div className="flex justify-center p-8">
-               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-             </div>
+            <div className="flex justify-center p-8">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+            </div>
           ) : transporters.length === 0 ? (
-             <div className="text-center p-8 text-gray-500">
-               No transporters found for this arrangement.
-             </div>
+            <div className="text-center p-8 text-gray-500">
+              No transporters found for this arrangement.
+            </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {transporters.map((t, index) => (
-                <div key={t.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col transition-all hover:shadow-md">
-                  <div className="bg-blue-600 p-4 text-white flex justify-between items-center">
-                    <h3 className="font-semibold flex items-center">
-                      <Truck className="w-4 h-4 mr-2" /> Option {index + 1}
-                    </h3>
-                    <span className="bg-blue-800 px-2 py-1 rounded text-xs font-bold">
-                       ₹ {t.rate}
-                    </span>
-                  </div>
-                  <div className="p-5 flex-1 space-y-4 text-sm">
-                     <div>
-                       <span className="text-gray-500 text-xs uppercase block mb-1">Agency / Name</span>
-                       <span className="font-medium text-base">{t.transporter_name}</span>
-                     </div>
-                     <div>
-                       <span className="text-gray-500 text-xs uppercase block mb-1">Contact Details</span>
-                       <span className="font-medium">{t.contact_number || "N/A"}</span>
-                     </div>
-                     <div>
-                       <span className="text-gray-500 text-xs uppercase block mb-1">Availability</span>
-                       <span className="font-medium">{t.availability || "N/A"}</span>
-                     </div>
-                     {t.remarks && (
-                       <div className="pt-2 border-t border-gray-100">
-                         <span className="text-gray-500 text-xs uppercase block mb-1">Remarks</span>
-                         <span className="text-gray-700 italic">{t.remarks}</span>
-                       </div>
-                     )}
-                  </div>
-                  <div className="p-4 bg-gray-50 border-t border-gray-100">
-                     <Button 
-                       className="w-full bg-green-600 hover:bg-green-700 font-semibold"
-                       onClick={() => handleApprove(t.id)}
-                       disabled={isSubmitting}
-                     >
-                       <CheckSquare className="w-4 h-4 mr-2" /> Select & Approve
-                     </Button>
-                  </div>
+            <div className="space-y-4">
+              <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 flex items-center">
+                    {selectedPlan && !isLegacyTransporters ? (
+                      <>
+                        <SplitSquareVertical className="w-4 h-4 mr-2" />
+                        {selectedPlan.mode === "split" ? "Split Logistics Plan" : "Single Logistics Plan"}
+                      </>
+                    ) : (
+                      <>
+                        <Truck className="w-4 h-4 mr-2" />
+                        Legacy Transporter Options
+                      </>
+                    )}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    {selectedPlan && !isLegacyTransporters
+                      ? "Review the full arrangement and approve or reject it as one plan."
+                      : "Fallback legacy mode. The first option will be treated as the approved transporter."}
+                  </p>
                 </div>
-              ))}
+                <div className="flex gap-2 flex-wrap">
+                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                    Rows: {transporters.length}
+                  </Badge>
+                  {selectedPlan && !isLegacyTransporters && (
+                    <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                      Mode: {selectedPlan.mode}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <Table>
+                  <TableHeader className="bg-gray-50">
+                    <TableRow>
+                      <TableHead>Transporter</TableHead>
+                      <TableHead>Allocated Qty</TableHead>
+                      <TableHead>Rate</TableHead>
+                      <TableHead>Contact</TableHead>
+                      <TableHead>Availability</TableHead>
+                      <TableHead>Remarks</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {transporters.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell className="font-medium">{row.transporter_name}</TableCell>
+                        <TableCell>{row.allocated_qty ?? selectedOrder?.Quantity ?? "N/A"}</TableCell>
+                        <TableCell>{row.rate ?? "N/A"}</TableCell>
+                        <TableCell>{row.contact_number || "N/A"}</TableCell>
+                        <TableCell>{row.availability || "N/A"}</TableCell>
+                        <TableCell>{row.remarks || "N/A"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
 
           <DialogFooter className="mt-6">
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSubmitting}>
+            <Button variant="outline" onClick={closeDialog} disabled={isSubmitting}>
               Close
             </Button>
-            <Button 
-               variant="destructive" 
-               onClick={handleRejectAll}
-               disabled={isSubmitting || fetchingTransporters}
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              onClick={handleApprove}
+              disabled={isSubmitting || fetchingTransporters || transporters.length === 0}
             >
-              <XCircle className="w-4 h-4 mr-2" /> Reject All & Arrange Again
+              <CheckSquare className="w-4 h-4 mr-2" /> Approve Plan
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRejectAll}
+              disabled={isSubmitting || fetchingTransporters || transporters.length === 0}
+            >
+              <XCircle className="w-4 h-4 mr-2" /> Reject and Arrange Again
             </Button>
           </DialogFooter>
         </DialogContent>
