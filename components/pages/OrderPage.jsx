@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import OrderForm from "../forms/OrderForm"
 import { useNotification } from "@/components/providers/NotificationProvider"
-import { Plus, FileText, TrendingUp, CheckCircle, Search, Filter, Eye, RefreshCw, Loader2, X } from "lucide-react"
+import { Plus, FileText, TrendingUp, CheckCircle, Search, Filter, Eye, RefreshCw, Loader2, X, ChevronDown, ChevronRight } from "lucide-react"
 import {
   Table,
   TableBody,
@@ -31,6 +31,19 @@ export default function OrderPage({ user }) {
   const [refreshing, setRefreshing] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
+  const [expandedPOs, setExpandedPOs] = useState(new Set())
+
+  const togglePO = (poNumber) => {
+    const newExpanded = new Set(expandedPOs)
+    if (newExpanded.has(poNumber)) {
+      newExpanded.delete(poNumber)
+    } else {
+      newExpanded.add(poNumber)
+    }
+    setExpandedPOs(newExpanded)
+  }
+
+
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -239,6 +252,28 @@ export default function OrderPage({ user }) {
 
   const filteredOrders = getFilteredOrders()
 
+  const groupedOrders = useMemo(() => {
+    const groups = {}
+    filteredOrders.forEach(order => {
+      const po = order.partyPONumber || "No PO"
+      if (!groups[po]) {
+        groups[po] = {
+          poNumber: po,
+          partyName: order.partyName,
+          firmName: order.firmName,
+          items: [],
+          totalQuantity: 0,
+          totalValue: 0,
+          date: order.partyPODate
+        }
+      }
+      groups[po].items.push(order)
+      groups[po].totalQuantity += (order.quantity || 0)
+      groups[po].totalValue += (order.totalValue || 0)
+    })
+    return Object.values(groups)
+  }, [filteredOrders])
+
   // Calculate stats based on current firm filter (ignoring status/search)
   const statsOrders = orders.filter(order => {
     if (firmFilter !== "all" && user.role === "master") {
@@ -446,50 +481,85 @@ export default function OrderPage({ user }) {
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
-                  <TableHead className="font-semibold text-gray-900">DO No.</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Party PO</TableHead>
+                  <TableHead className="w-[40px]"></TableHead>
+                  <TableHead className="font-semibold text-gray-900">Party PO / DO No.</TableHead>
                   <TableHead className="font-semibold text-gray-900">Party Name</TableHead>
                   <TableHead className="font-semibold text-gray-900">Product</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Qty</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Rate</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Total Value</TableHead>
+                  <TableHead className="font-semibold text-gray-900 text-right">Qty</TableHead>
+                  <TableHead className="font-semibold text-gray-900 text-right">Rate</TableHead>
+                  <TableHead className="font-semibold text-gray-900 text-right">Total Value</TableHead>
                   <TableHead className="font-semibold text-gray-900">Firm</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredOrders.map((order) => (
-                  <TableRow key={order.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => viewOrderDetails(order)}>
-                    <TableCell className="font-medium">
-                      {order.doNumber}
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">{order.partyPONumber}</div>
-                      <div className="text-xs text-gray-500">{order.partyPODate}</div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="font-medium">{order.partyName}</div>
-                      {order.contactPerson && (
-                        <div className="text-xs text-gray-500">{order.contactPerson}</div>
-                      )}
-                    </TableCell>
-                    <TableCell>{order.productName}</TableCell>
-                    <TableCell>
-                      <div>{order.quantity || "0"}</div>
-                      {order.typeOfMeasurement && (
-                        <div className="text-xs text-gray-500">{order.typeOfMeasurement}</div>
-                      )}
-                    </TableCell>
-                    <TableCell>₹{(order.rate || 0).toLocaleString("en-IN")}</TableCell>
-                    <TableCell className="font-semibold">
-                      ₹{(order.totalValue || 0).toLocaleString("en-IN")}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                        {order.firmName}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {groupedOrders.map((group) => {
+                  const isExpanded = expandedPOs.has(group.poNumber)
+                  return (
+                    <React.Fragment key={group.poNumber}>
+                      <TableRow 
+                        className="bg-blue-50/20 hover:bg-blue-100/30 cursor-pointer font-medium border-l-4 border-l-blue-600 transition-colors"
+                        onClick={() => togglePO(group.poNumber)}
+                      >
+                        <TableCell>
+                          {isExpanded ? <ChevronDown className="h-4 w-4 text-blue-600" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-bold text-blue-700">{group.poNumber}</div>
+                          <div className="text-xs text-gray-500">{group.date}</div>
+                        </TableCell>
+                        <TableCell>{group.partyName}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="font-normal text-xs bg-gray-100">
+                            {group.items.length} {group.items.length === 1 ? 'item' : 'items'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">{group.totalQuantity.toLocaleString()}</TableCell>
+                        <TableCell className="text-right text-gray-400 text-sm">-</TableCell>
+                        <TableCell className="text-right font-bold text-blue-900">
+                          ₹{group.totalValue.toLocaleString("en-IN")}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                            {group.firmName}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                      
+                      {isExpanded && group.items.map((order) => (
+                        <TableRow 
+                          key={order.id} 
+                          className="hover:bg-gray-50 cursor-pointer border-l-4 border-l-gray-200 transition-colors group" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            viewOrderDetails(order);
+                          }}
+                        >
+                          <TableCell></TableCell>
+                          <TableCell className="pl-6 italic text-gray-600 font-medium group-hover:text-blue-600">
+                            {order.doNumber}
+                          </TableCell>
+                          <TableCell className="text-gray-500">
+                            {order.partyName}
+                          </TableCell>
+                          <TableCell>{order.productName}</TableCell>
+                          <TableCell className="text-right">
+                            <div>{order.quantity || "0"}</div>
+                            {order.typeOfMeasurement && (
+                              <div className="text-xs text-gray-400">{order.typeOfMeasurement}</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right text-gray-600">₹{(order.rate || 0).toLocaleString("en-IN")}</TableCell>
+                          <TableCell className="text-right font-semibold text-gray-700">
+                            ₹{(order.totalValue || 0).toLocaleString("en-IN")}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs text-gray-400">{order.firmName}</div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </React.Fragment>
+                  )
+                })}
               </TableBody>
             </Table>
           </div>
