@@ -119,15 +119,27 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
     try {
       setIsLoading(true)
       const counts = {}
+      let accessibleOrderIds = []
 
       // Fetch real-time count for "Order" from Supabase
-      const { count: orderCount, error: orderError } = await supabase
+      let orderCountQuery = supabase
         .from('ORDER RECEIPT')
-        .select('*', { count: 'exact', head: true })
+        .select('id, "Firm Name"', { count: 'exact' })
+
+      if (user.role !== "master") {
+        const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
+        if (!userFirms.includes('all')) {
+          orderCountQuery = orderCountQuery.in('Firm Name', userFirms)
+        }
+      }
+
+      const { data: orderRows, count: orderCount, error: orderError } = await orderCountQuery
 
       if (!orderError && orderCount !== null) {
         counts["Order"] = orderCount
       }
+
+      accessibleOrderIds = (orderRows || []).map((row) => row.id)
 
       // Fetch real-time count for "Check PO" from Supabase
       let checkPOQuery = supabase
@@ -178,66 +190,57 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         counts["Received Accounts"] = count
       }
 
-      // Fetch real-time count for "Check for Delivery" from Supabase
-      let checkDeliveryQuery = supabase
-        .from('ORDER RECEIPT')
-        .select('"Planned 3", "Actual 3", "Firm Name"')
-        .not('Planned 3', 'is', null)
+      if (accessibleOrderIds.length > 0) {
+        const { data: checkDeliveryData, error: checkDeliveryError } = await supabase
+          .from('po_logistics_splits')
+          .select('po_id, status')
+          .eq('status', 'Approved')
+          .in('po_id', accessibleOrderIds)
 
-      if (user.role !== "master") {
-        const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
-        if (!userFirms.includes('all')) {
-          checkDeliveryQuery = checkDeliveryQuery.in('Firm Name', userFirms)
+        if (!checkDeliveryError && checkDeliveryData) {
+          counts["Check for Delivery"] = checkDeliveryData.length
         }
+      } else {
+        counts["Check for Delivery"] = 0
       }
 
-      const { data: checkDeliveryData, error: checkDeliveryError } = await checkDeliveryQuery
+      if (accessibleOrderIds.length > 0) {
+        const { data: dispatchStartData, error: dispatchStartError } = await supabase
+          .from('po_logistics_splits')
+          .select('po_id, status, dispatch_record_id')
+          .eq('status', 'Checked')
+          .is('dispatch_record_id', null)
+          .in('po_id', accessibleOrderIds)
 
-      if (!checkDeliveryError && checkDeliveryData) {
-        const count = checkDeliveryData.filter(row =>
-          row["Planned 3"] &&
-          String(row["Planned 3"]).trim() !== "" &&
-          (!row["Actual 3"] || String(row["Actual 3"]).trim() === "")
-        ).length
-        counts["Check for Delivery"] = count
-      }
-
-      // Fetch real-time count for "Dispatch Planning" from Supabase
-      let dispatchStartQuery = supabase
-        .from('ORDER RECEIPT')
-        .select('"Planned 4", "Actual 4", "Firm Name"')
-        .not('Planned 4', 'is', null)
-
-      if (user.role !== "master") {
-        const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
-        if (!userFirms.includes('all')) {
-          dispatchStartQuery = dispatchStartQuery.in('Firm Name', userFirms)
+        if (!dispatchStartError && dispatchStartData) {
+          counts["Dispatch Planning"] = dispatchStartData.length
         }
-      }
-
-      const { data: dispatchStartData, error: dispatchStartError } = await dispatchStartQuery
-
-      if (!dispatchStartError && dispatchStartData) {
-        const count = dispatchStartData.filter(row =>
-          row["Planned 4"] &&
-          String(row["Planned 4"]).trim() !== "" &&
-          (!row["Actual 4"] || String(row["Actual 4"]).trim() === "")
-        ).length
-        counts["Dispatch Planning"] = count
+      } else {
+        counts["Dispatch Planning"] = 0
       }
 
       // Fetch real-time count for "Logistic" from Supabase
-      const { data: logisticData, error: logisticError } = await supabase
-        .from('DISPATCH')
-        .select('Planned1, Actual1')
-        .not('Planned1', 'is', null)
+      if (user.role !== "master" && accessibleOrderIds.length === 0) {
+        counts["Logistic"] = 0
+      } else {
+        let logisticQuery = supabase
+          .from('DISPATCH')
+          .select('Planned1, Actual1, po_id')
+          .not('Planned1', 'is', null)
 
-      if (!logisticError && logisticData) {
-        const count = logisticData.filter(row =>
-          row["Planned1"] &&
-          (!row["Actual1"] || String(row["Actual1"]).trim() === "")
-        ).length
-        counts["Logistic"] = count
+        if (accessibleOrderIds.length > 0) {
+          logisticQuery = logisticQuery.in('po_id', accessibleOrderIds)
+        }
+
+        const { data: logisticData, error: logisticError } = await logisticQuery
+
+        if (!logisticError && logisticData) {
+          const count = logisticData.filter(row =>
+            row["Planned1"] &&
+            (!row["Actual1"] || String(row["Actual1"]).trim() === "")
+          ).length
+          counts["Logistic"] = count
+        }
       }
 
       // Fetch real-time count for "Load Material" from Supabase

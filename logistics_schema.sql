@@ -59,11 +59,60 @@ CREATE TABLE IF NOT EXISTS public.po_logistics_splits (
   availability text,
   remarks text,
   allocated_qty numeric NOT NULL CHECK (allocated_qty > 0),
+  status text DEFAULT 'Pending Approval',
+  check_delivery_actual timestamp without time zone,
+  check_delivery_in_stock_or_not text,
+  production_order_no text,
+  qty_transferred numeric,
+  batch_number_remarks text,
+  indent_self_batch_number text,
+  gp_percent numeric,
+  dispatch_record_id bigint,
+  lgst_sr_number text,
   sort_order integer DEFAULT 0,
   created_at timestamp without time zone DEFAULT now(),
   updated_at timestamp without time zone DEFAULT now(),
   CONSTRAINT po_logistics_splits_pkey PRIMARY KEY (id)
 );
 
+ALTER TABLE public.po_logistics_splits
+ADD COLUMN IF NOT EXISTS status text DEFAULT 'Pending Approval';
+
+ALTER TABLE public.po_logistics_splits
+ADD COLUMN IF NOT EXISTS check_delivery_actual timestamp without time zone;
+
+ALTER TABLE public.po_logistics_splits
+ADD COLUMN IF NOT EXISTS check_delivery_in_stock_or_not text;
+
+ALTER TABLE public.po_logistics_splits
+ADD COLUMN IF NOT EXISTS production_order_no text;
+
+ALTER TABLE public.po_logistics_splits
+ADD COLUMN IF NOT EXISTS qty_transferred numeric;
+
+ALTER TABLE public.po_logistics_splits
+ADD COLUMN IF NOT EXISTS batch_number_remarks text;
+
+ALTER TABLE public.po_logistics_splits
+ADD COLUMN IF NOT EXISTS indent_self_batch_number text;
+
+ALTER TABLE public.po_logistics_splits
+ADD COLUMN IF NOT EXISTS gp_percent numeric;
+
+ALTER TABLE public.po_logistics_splits
+ADD COLUMN IF NOT EXISTS dispatch_record_id bigint;
+
+ALTER TABLE public.po_logistics_splits
+ADD COLUMN IF NOT EXISTS lgst_sr_number text;
+
 ALTER TABLE public."ORDER RECEIPT"
 ADD COLUMN IF NOT EXISTS approved_logistics_plan_id bigint REFERENCES public.po_logistics_plans(id) ON DELETE SET NULL;
+
+ALTER TABLE public."DISPATCH"
+ADD COLUMN IF NOT EXISTS po_id bigint;
+
+ALTER TABLE public."DISPATCH"
+ADD COLUMN IF NOT EXISTS logistics_plan_id bigint;
+
+ALTER TABLE public."DISPATCH"
+ADD COLUMN IF NOT EXISTS logistics_split_id bigint;

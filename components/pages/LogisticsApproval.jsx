@@ -133,6 +133,13 @@ export default function LogisticsApproval() {
 
         if (approvePlanError) throw approvePlanError
 
+        const { error: splitApproveError } = await supabase
+          .from("po_logistics_splits")
+          .update({ status: "Approved" })
+          .eq("plan_id", selectedPlan.id)
+
+        if (splitApproveError) throw splitApproveError
+
         const { error: updateOrderError } = await supabase
           .from("ORDER RECEIPT")
           .update({
@@ -205,6 +212,11 @@ export default function LogisticsApproval() {
           .eq("id", selectedPlan.id)
 
         if (rejectPlanError) throw rejectPlanError
+
+        await supabase
+          .from("po_logistics_splits")
+          .update({ status: "Rejected" })
+          .eq("plan_id", selectedPlan.id)
       } else {
         await supabase
           .from("po_transporters")
