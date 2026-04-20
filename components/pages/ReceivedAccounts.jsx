@@ -55,8 +55,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedOrderForAction, setSelectedOrderForAction] = useState(null)
-  const [selectedDate, setSelectedDate] = useState("")
+  const [selectedGroupForAction, setSelectedGroupForAction] = useState(null)
   const [isActionDialogOpen, setIsActionDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [statusFilter, setStatusFilter] = useState("all")
@@ -292,51 +291,34 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
   const groupedDisplayOrders = useMemo(() => groupRowsByPo(displayOrders), [displayOrders])
 
 
-  const openActionDialog = (order) => {
-    setSelectedOrderForAction(order)
-    setSelectedDate("")
+  const openActionDialog = (group) => {
+    setSelectedGroupForAction(group)
     setIsActionDialogOpen(true)
   }
 
   const handleActionSubmit = async () => {
-    if (!selectedOrderForAction) {
-      toast({
-        title: "No order selected",
-        description: "Please select an order to update",
-        variant: "destructive",
-      })
-      return
-    }
+    if (!selectedGroupForAction) return
 
     setIsSubmitting(true)
-
     try {
       const timestamp = getISTTimestamp()
+      const updates = selectedGroupForAction.rows.map(order =>
+        supabase.from('ORDER RECEIPT').update({ "Actual 2": timestamp, "Planned 3": timestamp }).eq('id', order.id)
+      )
+      const results = await Promise.all(updates)
+      const failed = results.find(r => r.error)
+      if (failed) throw failed.error
 
-      const { error } = await supabase
-        .from('ORDER RECEIPT')
-        .update({
-          "Actual 2": timestamp
-        })
-        .eq('id', selectedOrderForAction.id)
-
-      if (error) throw error
-
-      // Close dialog
       setIsActionDialogOpen(false)
-      setSelectedOrderForAction(null)
-      setSelectedDate("")
+      setSelectedGroupForAction(null)
 
-      // Show success toast
       toast({
-        title: "Order marked as received",
-        description: `Order has been marked as received in accounts`,
+        title: "Marked as received",
+        description: `${selectedGroupForAction.rows.length} order(s) under PO ${selectedGroupForAction.poNumber} marked as received`,
         className: "bg-green-50 border-green-200 text-green-800",
       })
 
-      // Refresh data
       fetchData(true)
-
     } catch (error) {
       console.error("Error updating data:", error)
       toast({
@@ -561,12 +543,23 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
                   <Fragment key={group.key}>
                     <TableRow className="bg-slate-50">
                       <TableCell colSpan={19} className="px-4 py-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <div className="flex items-center gap-3">
+                          {activeTab === "pending" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openActionDialog(group)}
+                              className="h-7 text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200 shrink-0"
+                            >
+                              <CheckCircle2 className="w-3 h-3 mr-1" />
+                              Mark All Received
+                            </Button>
+                          )}
                           <div className="flex flex-col">
                             <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
                             <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
                           </div>
-                          <Badge variant="outline" className="w-fit bg-white">
+                          <Badge variant="outline" className="w-fit bg-white ml-auto">
                             {group.rows.length} item{group.rows.length > 1 ? "s" : ""}
                           </Badge>
                         </div>
@@ -576,20 +569,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
                       return (
                     <TableRow key={order.id} className="hover:bg-gray-50">
                       <TableCell>
-                        {activeTab === "pending" ? (
-                          <Dialog open={isActionDialogOpen} onOpenChange={setIsActionDialogOpen}>
-                            <DialogTrigger asChild>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => openActionDialog(order)}
-                                className="h-8 text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
-                              >
-                                Mark Received
-                              </Button>
-                            </DialogTrigger>
-                          </Dialog>
-                        ) : (
+                        {activeTab === "history" && (
                           <div className="flex items-center text-green-600 gap-1 text-sm">
                             <CheckCircle className="w-4 h-4" />
                             <span>Received</span>
@@ -637,9 +617,22 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
         <div className="lg:hidden divide-y">
           {groupedDisplayOrders.map((group) => (
             <div key={group.key}>
-              <div className="px-4 py-3 bg-slate-50 border-b">
-                <p className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</p>
-                <p className="text-xs text-slate-600">Party Name: {group.partyName}</p>
+              <div className="px-4 py-3 bg-slate-50 border-b flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</p>
+                  <p className="text-xs text-slate-600">Party Name: {group.partyName}</p>
+                </div>
+                {activeTab === "pending" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openActionDialog(group)}
+                    className="h-7 text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
+                  >
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    Mark All
+                  </Button>
+                )}
               </div>
               {group.rows.map((order) => (
             <div key={order.id} className="p-4 space-y-2">
@@ -653,16 +646,6 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
                 <div>Transport: {order.transport}</div>
                 <div>Agent: {order.agent}</div>
               </div>
-              {activeTab === "pending" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => openActionDialog(order)}
-                  className="w-full mt-2"
-                >
-                  Mark Received
-                </Button>
-              )}
             </div>
               ))}
             </div>
@@ -678,45 +661,28 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
       <Dialog open={isActionDialogOpen} onOpenChange={setIsActionDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {activeTab === "pending" ? "Confirm Receipt" : "Order Details"}
-            </DialogTitle>
+            <DialogTitle>Confirm Receipt</DialogTitle>
             <DialogDescription>
-              {activeTab === "pending"
-                ? "Mark this order as received in accounts department"
-                : "View order receipt details"}
+              Mark all orders under this PO as received in accounts
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            {selectedOrderForAction && (
-              <>
-                <Alert>
-                  <AlertTitle>Order Information</AlertTitle>
-                  <AlertDescription className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="font-medium text-sm">Product:</p>
-                        <p className="text-sm">{selectedOrderForAction.productName}</p>
+            {selectedGroupForAction && (
+              <Alert>
+                <AlertTitle>PO: {selectedGroupForAction.poNumber}</AlertTitle>
+                <AlertDescription className="space-y-2 mt-2">
+                  <p className="text-sm text-gray-600">Party: <span className="font-medium">{selectedGroupForAction.partyName}</span></p>
+                  <div className="space-y-1 mt-2">
+                    {selectedGroupForAction.rows.map(order => (
+                      <div key={order.id} className="flex justify-between text-sm border-b pb-1 last:border-0">
+                        <span>{order.productName}</span>
+                        <span className="text-gray-500">DO: {order.doNumber} · Qty: {order.quantity}</span>
                       </div>
-                      <div>
-                        <p className="font-medium text-sm">Quantity:</p>
-                        <p className="text-sm">{selectedOrderForAction.quantity}</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <p className="font-medium text-sm">Rate:</p>
-                        <p className="text-sm">{selectedOrderForAction.rate}</p>
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm">DO Number:</p>
-                        <p className="text-sm">{selectedOrderForAction.doNumber}</p>
-                      </div>
-                    </div>
-                  </AlertDescription>
-                </Alert>
-              </>
+                    ))}
+                  </div>
+                </AlertDescription>
+              </Alert>
             )}
           </div>
 

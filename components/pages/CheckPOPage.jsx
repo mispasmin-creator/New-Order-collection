@@ -258,6 +258,20 @@ export default function CheckPOPage({ user, onNavigate }) {
     }
   }, [filteredOrders, selectedOrders.length])
 
+  const handleSelectGroup = useCallback((groupRows, checked) => {
+    const groupIds = groupRows.map(o => o.id)
+    if (checked) {
+      setSelectedOrders(prev => [...new Set([...prev, ...groupIds])])
+    } else {
+      setSelectedOrders(prev => prev.filter(id => !groupIds.includes(id)))
+      setDeliveryDates(prev => {
+        const newDates = { ...prev }
+        groupIds.forEach(id => delete newDates[id])
+        return newDates
+      })
+    }
+  }, [])
+
   const handleSubmit = async () => {
     if (selectedOrders.length === 0) return
 
@@ -283,6 +297,7 @@ export default function CheckPOPage({ user, onNavigate }) {
           .from('ORDER RECEIPT')
           .update({
             "Actual 1": now,
+            "Planned 2": now,
             "Expected Delivery Date": selectedDate ? new Date(selectedDate).toISOString() : null
           })
           .eq('id', orderId)
@@ -624,15 +639,7 @@ export default function CheckPOPage({ user, onNavigate }) {
               <TableHeader>
                 <TableRow className="bg-gray-50 border-b border-gray-200">
                   {activeTab === "pending" && (
-                    <TableHead className="w-12 px-4">
-                      <Checkbox
-                        checked={selectedOrders.length > 0 && selectedOrders.length === filteredOrders.length}
-                        onCheckedChange={handleSelectAll}
-                      />
-                    </TableHead>
-                  )}
-                  {activeTab === "pending" && (
-                    <TableHead className="px-4 min-w-[180px] font-semibold text-gray-900">Expected Delivery <span className="text-red-500">*</span></TableHead>
+                    <TableHead className="px-4 min-w-[180px] font-semibold text-gray-900" colSpan={2}>Expected Delivery <span className="text-red-500">*</span></TableHead>
                   )}
                   <TableHead className="px-4 min-w-[120px] font-semibold text-gray-900">DO Number</TableHead>
                   <TableHead className="px-4 min-w-[100px] font-semibold text-gray-900">Firm</TableHead>
@@ -669,9 +676,17 @@ export default function CheckPOPage({ user, onNavigate }) {
                       <TableRow className="bg-slate-50">
                         <TableCell colSpan={11} className="px-4 py-3">
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <div className="flex flex-col">
-                              <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
-                              <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
+                            <div className="flex items-center gap-3">
+                              {activeTab === "pending" && (
+                                <Checkbox
+                                  checked={group.rows.every(o => selectedOrders.includes(o.id))}
+                                  onCheckedChange={(checked) => handleSelectGroup(group.rows, checked)}
+                                />
+                              )}
+                              <div className="flex flex-col">
+                                <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
+                                <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
+                              </div>
                             </div>
                             <Badge variant="outline" className="w-fit bg-white">
                               {group.rows.length} item{group.rows.length > 1 ? "s" : ""}
@@ -686,15 +701,7 @@ export default function CheckPOPage({ user, onNavigate }) {
                           }`}
                       >
                         {activeTab === "pending" && (
-                          <TableCell className="px-4">
-                            <Checkbox
-                              checked={selectedOrders.includes(order.id)}
-                              onCheckedChange={(checked) => handleOrderSelection(order.id, checked)}
-                            />
-                          </TableCell>
-                        )}
-                        {activeTab === "pending" && (
-                          <TableCell className="px-4 min-w-[180px]">
+                          <TableCell className="px-4 min-w-[180px]" colSpan={2}>
                             <Input
                               type="date"
                               disabled={!selectedOrders.includes(order.id)}

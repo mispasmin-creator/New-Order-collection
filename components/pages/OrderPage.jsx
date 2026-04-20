@@ -254,6 +254,7 @@ export default function OrderPage({ user }) {
 
   const groupedOrders = useMemo(() => {
     const groups = {}
+    const order_of_first_seen = []
     filteredOrders.forEach(order => {
       const po = order.partyPONumber || "No PO"
       if (!groups[po]) {
@@ -264,14 +265,19 @@ export default function OrderPage({ user }) {
           items: [],
           totalQuantity: 0,
           totalValue: 0,
-          date: order.partyPODate
+          date: order.partyPODate,
+          maxId: order.id
         }
+        order_of_first_seen.push(po)
       }
       groups[po].items.push(order)
       groups[po].totalQuantity += (order.quantity || 0)
       groups[po].totalValue += (order.totalValue || 0)
+      if (order.id > groups[po].maxId) groups[po].maxId = order.id
     })
-    return Object.values(groups)
+    return order_of_first_seen
+      .map(po => groups[po])
+      .sort((a, b) => b.maxId - a.maxId)
   }, [filteredOrders])
 
   // Calculate stats based on current firm filter (ignoring status/search)
@@ -569,83 +575,126 @@ export default function OrderPage({ user }) {
       {/* Order Details Modal */}
       {showDetailModal && selectedOrder && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
-              <CardTitle className="text-lg lg:text-xl">Order Details</CardTitle>
+          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b z-10">
+              <div>
+                <CardTitle className="text-lg lg:text-xl">Order Details</CardTitle>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  DO: <span className="font-medium text-gray-700">{selectedOrder.doNumber}</span>
+                  {selectedOrder.partyPONumber && <> &middot; PO: <span className="font-medium text-gray-700">{selectedOrder.partyPONumber}</span></>}
+                </p>
+              </div>
               <Button variant="ghost" size="sm" onClick={() => setShowDetailModal(false)}>
                 <X className="h-5 w-5" />
               </Button>
             </CardHeader>
-            <CardContent className="p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">DO Number</Label>
-                    <p className="text-lg font-semibold">{selectedOrder.doNumber}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Firm Name</Label>
-                    <p className="text-lg">{selectedOrder.firmName}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Party Name</Label>
-                    <p className="text-lg">{selectedOrder.partyName}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Contact Person</Label>
-                    <p className="text-lg">{selectedOrder.contactPerson || "N/A"}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Product Name</Label>
-                    <p className="text-lg">{selectedOrder.productName}</p>
+            <CardContent className="p-6 space-y-8">
+
+              {/* Basic Information */}
+              <section>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b">Basic Information</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <DetailField label="DO Number" value={selectedOrder.doNumber} />
+                  <DetailField label="Party PO Number" value={selectedOrder.partyPONumber} />
+                  <DetailField label="Party PO Date" value={selectedOrder.partyPODate} />
+                  <DetailField label="Firm Name" value={selectedOrder.firmName} />
+                  <DetailField label="Party Name" value={selectedOrder.partyName} />
+                  <DetailField label="GST Number" value={selectedOrder.gstNumber} />
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <DetailField label="Address" value={selectedOrder.address} />
                   </div>
                 </div>
+              </section>
 
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Party PO Number</Label>
-                    <p className="text-lg">{selectedOrder.partyPONumber}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Party PO Date</Label>
-                    <p className="text-lg">{selectedOrder.partyPODate}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Quantity</Label>
-                    <p className="text-lg">{selectedOrder.quantity} {selectedOrder.typeOfMeasurement}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Rate</Label>
-                    <p className="text-lg">₹{(selectedOrder.rate || 0).toLocaleString("en-IN")}</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-500">Total Value</Label>
-                    <p className="text-lg font-semibold">₹{(selectedOrder.totalValue || 0).toLocaleString("en-IN")}</p>
-                  </div>
-
+              {/* Contact & Order Details */}
+              <section>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b">Contact & Order Details</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <DetailField label="Contact Person" value={selectedOrder.contactPerson} />
+                  <DetailField label="WhatsApp No." value={selectedOrder.contactWhatsapp} />
+                  <DetailField label="Order Received From" value={selectedOrder.orderReceivedFrom} />
+                  <DetailField label="Type of PI" value={selectedOrder.typeOfPI} />
+                  <DetailField label="Customer Category" value={selectedOrder.customerCategory} />
+                  <DetailField label="Marketing Manager" value={selectedOrder.marketingManager} />
+                  <DetailField label="Agent Order" value={selectedOrder.isAgent} />
+                  <DetailField label="Type of Application" value={selectedOrder.typeOfApplication} />
                 </div>
-              </div>
+              </section>
 
-              {/* Timeline Section */}
-              <div className="mt-8 pt-6 border-t border-gray-200">
-                <h3 className="text-lg font-semibold mb-4">Order Timeline</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">Planned 1</Label>
-                    <p className="text-sm">{selectedOrder.planned1 || "Not set"}</p>
+              {/* Product */}
+              <section>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b">Product</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <DetailField label="Product Name" value={selectedOrder.productName} />
+                  <DetailField
+                    label="Quantity"
+                    value={selectedOrder.quantity != null ? `${selectedOrder.quantity}${selectedOrder.typeOfMeasurement ? ` ${selectedOrder.typeOfMeasurement}` : ""}` : null}
+                  />
+                  <DetailField label="Rate" value={selectedOrder.rate ? `₹${Number(selectedOrder.rate).toLocaleString("en-IN")}` : null} />
+                  <DetailField label="Total Value" value={selectedOrder.totalValue ? `₹${Number(selectedOrder.totalValue).toLocaleString("en-IN")}` : null} />
+                  <DetailField label="Alumina %" value={selectedOrder.alumina != null && selectedOrder.alumina !== 0 ? `${selectedOrder.alumina}%` : null} />
+                  <DetailField label="Iron %" value={selectedOrder.iron != null && selectedOrder.iron !== 0 ? `${selectedOrder.iron}%` : null} />
+                  <DetailField label="Advance %" value={selectedOrder.advance != null && selectedOrder.advance !== 0 ? `${selectedOrder.advance}%` : null} />
+                  <DetailField label="Basic %" value={selectedOrder.basic != null && selectedOrder.basic !== 0 ? `${selectedOrder.basic}%` : null} />
+                </div>
+              </section>
+
+              {/* Logistics */}
+              <section>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b">Logistics</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <DetailField label="Type of Transporting" value={selectedOrder.typeOfTransporting} />
+                  <DetailField label="Type of Packaging" value={selectedOrder.rawData?.["Type of Packaging"]} />
+                  {selectedOrder.uploadSO && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-gray-500">PO Copy</p>
+                      <button
+                        onClick={() => window.open(selectedOrder.uploadSO, "_blank")}
+                        className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2"
+                      >
+                        <Eye className="w-4 h-4" />
+                        View PO
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* Payment & Terms */}
+              <section>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b">Payment & Terms</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <DetailField label="Total PO Value (with Tax)" value={selectedOrder.adjustedAmount ? `₹${Number(selectedOrder.adjustedAmount).toLocaleString("en-IN")}` : null} />
+                  <DetailField label="Payment to Be Taken" value={selectedOrder.paymentToBeTaken} />
+                  <DetailField label="Retention Payment" value={selectedOrder.retentionPayment} />
+                  <DetailField label="Retention %" value={selectedOrder.retentionPercentage != null && selectedOrder.retentionPercentage !== 0 ? `${selectedOrder.retentionPercentage}%` : null} />
+                  <DetailField label="Lead Time (Retention)" value={selectedOrder.leadTimeRetention} />
+                  <DetailField label="Lead Time (Final Payment)" value={selectedOrder.leadTimeFinalPayment} />
+                  <DetailField label="TC Required" value={selectedOrder.rawData?.["TC Required"]} />
+                  <DetailField label="Free Replacement (FOC)" value={selectedOrder.foc} />
+                  <DetailField label="Reference No." value={selectedOrder.referenceNo} />
+                  <div className="sm:col-span-2">
+                    <DetailField label="Specific Concern" value={selectedOrder.specificConcern} />
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">Actual 1</Label>
-                    <p className="text-sm">{selectedOrder.actual1 || "Not set"}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">Status</Label>
-                    <Badge variant={selectedOrder.actual1 ? "outline" : "secondary"}>
-                      {selectedOrder.actual1 ? "Completed" : "Pending"}
+                </div>
+              </section>
+
+              {/* Status & Timeline */}
+              <section>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b">Status & Timeline</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-gray-500">Status</p>
+                    <Badge variant={selectedOrder.status === "New Order" ? "secondary" : "outline"}>
+                      {selectedOrder.status || "New Order"}
                     </Badge>
                   </div>
+                  <DetailField label="Planned 1" value={selectedOrder.planned1 || "Not set"} />
+                  <DetailField label="Actual 1" value={selectedOrder.actual1 || "Not set"} />
+                  <DetailField label="Expected Delivery" value={selectedOrder.expectedDelivery || "Not set"} />
                 </div>
-              </div>
+              </section>
+
             </CardContent>
           </Card>
         </div>
@@ -654,7 +703,16 @@ export default function OrderPage({ user }) {
   )
 }
 
-// Add Label component if not already imported
 const Label = ({ children, className }) => (
   <label className={`block text-sm font-medium ${className}`}>{children}</label>
 )
+
+const DetailField = ({ label, value }) => {
+  if (value === null || value === undefined || value === "" || value === 0) return null
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-gray-500">{label}</p>
+      <p className="text-sm font-medium text-gray-900 break-words">{value}</p>
+    </div>
+  )
+}

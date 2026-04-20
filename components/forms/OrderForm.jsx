@@ -412,7 +412,8 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "TC Required": formData["TC Required"],
       "Adjusted Amount": parseFloat(formData["Adjusted Amount"]) || 0,
       "Marketing Mangager Name": formData["Marketing Mangager Name"],
-      "Status": "New Order"
+      "Status": "New Order",
+      "Planned 1": timestamp
     };
   };
 
