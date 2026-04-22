@@ -25,6 +25,7 @@ import {
   RotateCcw,
   PackageCheck,
   BadgeCheck,
+  ShieldCheck,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -45,6 +46,7 @@ const pageIcons = {
   "TC": FileCheck,
   "Wetman Entry": Scale,
   "Material Return": RotateCcw,
+  "Management Approval": ShieldCheck,
   "Debit Note": FileText,
   "Logistics Fulfillment": PackageCheck,
 }
@@ -69,6 +71,7 @@ const pageRoutes = {
   "Bilty Entry": "/bilty-entry",
   "MATERIAL RECEIPT": "/material-receipt",
   "Material Return": "/material-return",
+  "Management Approval": "/management-approval",
   "Debit Note": "/debit-note",
   "Logistics Fulfillment": "/logistics-fulfillment",
 }
@@ -90,6 +93,7 @@ const defaultPageOrder = [
   "TC",
   "Logistics Fulfillment",
   "Material Return",
+  "Management Approval",
   "Debit Note",
   "Make PI",
   "Received PI Payment"
@@ -370,7 +374,29 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
       }
 
       counts["Logistics Fulfillment"] = (counts["Bilty Entry"] || 0) + (counts["MATERIAL RECEIPT"] || 0)
-      
+
+      // Fetch real-time count for "Debit Note" — management-approved returns pending note issuance
+      const { data: debitNoteData, error: debitNoteError } = await supabase
+        .from("Material Return")
+        .select('"Actual5", "Debit Note Issued At"')
+        .not("Actual5", "is", null)
+      if (!debitNoteError && debitNoteData) {
+        counts["Debit Note"] = debitNoteData.filter(
+          (r) => !r["Debit Note Issued At"] || String(r["Debit Note Issued At"]).trim() === ""
+        ).length
+      }
+
+      // Fetch real-time count for "Management Approval" — Material Return entries pending Actual5
+      const { data: mgmtData, error: mgmtError } = await supabase
+        .from("Material Return")
+        .select('"Time Stamp", "Actual5"')
+        .not("Time Stamp", "is", null)
+      if (!mgmtError && mgmtData) {
+        counts["Management Approval"] = mgmtData.filter(
+          (r) => !r["Actual5"] || String(r["Actual5"]).trim() === ""
+        ).length
+      }
+
       updateCounts(counts)
       console.log("Notification counts fetched:", counts)
     } catch (error) {
@@ -557,13 +583,13 @@ function SidebarContent({ user, pathname, onLogout, userPages, getNotificationCo
                   <Link href={route} onClick={() => isMobile && setSidebarOpen(false)}>
                     <Button
                       variant={isActive ? "default" : "ghost"}
-                      className={`w-full justify-start text-left h-10 relative ${isActive
+                      className={`w-full justify-start text-left h-auto min-h-[40px] py-2 relative whitespace-normal ${isActive
                         ? "bg-blue-600 text-white hover:bg-blue-700"
                         : "text-gray-700 hover:bg-gray-100"
                         }`}
                     >
-                      <Icon className="mr-3 h-4 w-4 flex-shrink-0" />
-                      <span className="truncate flex-1">{pageName === "Wetman Entry" ? "Weighment Entry" : pageName}</span>
+                      <Icon className="mr-3 h-4 w-4 flex-shrink-0 self-start mt-0.5" />
+                      <span className="flex-1 leading-tight text-left">{pageName === "Wetman Entry" ? "Weighment Entry" : pageName === "Debit Note" ? "Credit Note" : pageName}</span>
 
                       {notificationCount > 0 ? (
                         <span className="ml-2 bg-red-500 text-white text-xs rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 flex-shrink-0">

@@ -154,6 +154,7 @@ export default function MaterialReturnPage({ user }) {
           doNumber: row["Delivery Order No."] || "",
           removed: false,
           reason: "",
+          remarks: "",
         }))
       )
     } catch (err) {
@@ -250,6 +251,7 @@ export default function MaterialReturnPage({ user }) {
         "Product Name": line.productName,
         "Qty": line.qty,
         "Reason Of Material Return": line.reason,
+        "Remarks": line.remarks || "",
         "Return No.": (baseNo + idx).toString().padStart(4, "0"),
       }))
 
@@ -697,6 +699,7 @@ export default function MaterialReturnPage({ user }) {
                       <th className="text-right px-3 py-2 font-semibold text-gray-600">Qty</th>
                       <th className="text-left px-3 py-2 font-semibold text-gray-600">D.O Number</th>
                       <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[200px]">Reason</th>
+                      <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[180px]">Remarks</th>
                       <th className="px-3 py-2 w-10"></th>
                     </tr>
                   </thead>
@@ -726,11 +729,29 @@ export default function MaterialReturnPage({ user }) {
                                 <SelectItem value="Quality Issue">Quality Issue</SelectItem>
                                 <SelectItem value="Material Shortage">Material Shortage</SelectItem>
                                 <SelectItem value="Wrong Product">Wrong Product</SelectItem>
+                                <SelectItem value="Material Return">Material Return</SelectItem>
                                 <SelectItem value="Other">Other</SelectItem>
                               </SelectContent>
                             </Select>
                           ) : (
                             <span className="text-xs text-gray-400 italic">Good — removed</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {!line.removed && (
+                            <Input
+                              type="text"
+                              placeholder="Optional remarks..."
+                              value={line.remarks}
+                              onChange={(e) =>
+                                setReturnProductLines((prev) => {
+                                  const next = [...prev]
+                                  next[i] = { ...next[i], remarks: e.target.value }
+                                  return next
+                                })
+                              }
+                              className="h-8 text-xs"
+                            />
                           )}
                         </td>
                         <td className="px-3 py-2 text-center">
