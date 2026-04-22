@@ -296,7 +296,7 @@ export default function DispatchPlanningPage({ user }) {
   const updateLineQty = (idx, value) =>
     setDispatchLines((prev) => {
       const n = [...prev]
-      const maxQty = Math.max(0, (n[idx].quantity || 0) - (n[idx].quantityDelivered || 0))
+      const maxQty = Math.max(0, n[idx].allocatedQty || 0)
       const clamped = value === "" ? "" : String(Math.min(parseFloat(value) || 0, maxQty))
       n[idx] = { ...n[idx], dispatchQty: clamped }
       return n
@@ -326,7 +326,7 @@ export default function DispatchPlanningPage({ user }) {
       if (qty <= 0) {
         toast({ variant: "destructive", title: "Validation", description: `Dispatch qty must be > 0 for "${line.productName}".` }); return
       }
-      const maxDispatchable = line.quantity - line.quantityDelivered
+      const maxDispatchable = line.allocatedQty
       if (qty > maxDispatchable + 0.0001) {
         toast({ variant: "destructive", title: "Validation", description: `Dispatch qty for "${line.productName}" cannot exceed pending qty (${maxDispatchable}).` }); return
       }
@@ -872,8 +872,7 @@ export default function DispatchPlanningPage({ user }) {
                       <tr>
                         <th className="text-left px-4 py-2.5 font-semibold">DO Number</th>
                         <th className="text-left px-4 py-2.5 font-semibold">Product</th>
-                        <th className="text-right px-4 py-2.5 font-semibold">Product Order Qty</th>
-                        <th className="text-right px-4 py-2.5 font-semibold">Dispatched Quantity</th>
+                        <th className="text-right px-4 py-2.5 font-semibold">Split Quantity</th>
                         <th className="text-right px-4 py-2.5 font-semibold">Pending</th>
                         <th className="text-right px-4 py-2.5 font-semibold min-w-[120px]">Dispatch *</th>
                         <th className="px-4 py-2.5" />
@@ -887,11 +886,10 @@ export default function DispatchPlanningPage({ user }) {
                             {!line.included && <span className="inline-block mr-2 text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-normal">Excluded</span>}
                             {line.productName}
                           </td>
-                          <td className="px-4 py-3 text-right text-gray-700">{line.quantity}</td>
-                          <td className="px-4 py-3 text-right text-gray-700">{line.quantityDelivered}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{line.allocatedQty}</td>
                           <td className="px-4 py-3 text-right font-medium">
                             {(() => {
-                              const pending = Math.max(0, line.quantity - line.quantityDelivered - (parseFloat(line.dispatchQty) || 0))
+                              const pending = Math.max(0, line.allocatedQty - (parseFloat(line.dispatchQty) || 0))
                               return <span className={pending > 0 ? "text-amber-600" : "text-green-600"}>{pending}</span>
                             })()}
                           </td>
@@ -900,7 +898,7 @@ export default function DispatchPlanningPage({ user }) {
                               type="number"
                               step="0.01"
                               min="0"
-                              max={line.quantity - line.quantityDelivered}
+                              max={line.allocatedQty}
                               value={line.dispatchQty}
                               onChange={(e) => updateLineQty(idx, e.target.value)}
                               className="h-8 w-28 text-right ml-auto"
