@@ -93,7 +93,6 @@ export default function DispatchPlanningPage({ user }) {
     typeOfTransporting: "",
     dateOfDispatch: "",
     testCertificateMade: "No",
-    testCertificateFile: null,
   })
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
@@ -321,9 +320,6 @@ export default function DispatchPlanningPage({ user }) {
     if (!commonForm.dateOfDispatch) {
       toast({ variant: "destructive", title: "Validation", description: "Dispatch Date is required." }); return
     }
-    if (commonForm.testCertificateMade === "Yes" && !commonForm.testCertificateFile) {
-      toast({ variant: "destructive", title: "Validation", description: "Please upload the test certificate." }); return
-    }
     // Validate per-row quantities (only included rows)
     for (const line of activeLines) {
       const qty = parseFloat(line.dispatchQty) || 0
@@ -343,17 +339,8 @@ export default function DispatchPlanningPage({ user }) {
       // Generate sequential D-Sr numbers upfront (only for active lines)
       const dSrNumbers = await generateDSrNumbers(activeLines.length)
 
-      // Upload test cert once (shared for all rows)
+      // Removed test cert upload logic as it's now handled in the TC module
       let testCertUrl = null
-      if (commonForm.testCertificateMade === "Yes" && commonForm.testCertificateFile) {
-        const file = commonForm.testCertificateFile
-        const fileExt = file.name.split(".").pop()
-        const fileName = `dispatch/test-certificates/${dSrNumbers[0]}_${Date.now()}.${fileExt}`
-        const { error: uploadError } = await supabase.storage.from("images").upload(fileName, file, { cacheControl: "3600", upsert: false })
-        if (uploadError) throw uploadError
-        const { data: { publicUrl } } = supabase.storage.from("images").getPublicUrl(fileName)
-        testCertUrl = publicUrl
-      }
 
       // Each split has its own ORDER RECEIPT row (different products), safe to run in parallel
       await Promise.all(
@@ -977,7 +964,7 @@ export default function DispatchPlanningPage({ user }) {
 
                   <div className="space-y-2">
                     <Label className="text-sm">Test Certificate Made <span className="text-red-500">*</span></Label>
-                    <Select value={commonForm.testCertificateMade} onValueChange={(v) => setCommonForm((p) => ({ ...p, testCertificateMade: v, testCertificateFile: v === "No" ? null : p.testCertificateFile }))} disabled={submitting}>
+                    <Select value={commonForm.testCertificateMade} onValueChange={(v) => setCommonForm((p) => ({ ...p, testCertificateMade: v }))} disabled={submitting}>
                       <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="Yes">Yes</SelectItem>
@@ -985,17 +972,6 @@ export default function DispatchPlanningPage({ user }) {
                       </SelectContent>
                     </Select>
                   </div>
-
-                  {commonForm.testCertificateMade === "Yes" && (
-                    <div className="space-y-2">
-                      <Label className="text-sm">Upload Test Certificate <span className="text-red-500">*</span></Label>
-                      <Input type="file" accept="image/*,.pdf" className="h-10"
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) setCommonForm((p) => ({ ...p, testCertificateFile: f })) }}
-                        disabled={submitting}
-                      />
-                      {commonForm.testCertificateFile && <p className="text-xs text-green-600">✓ {commonForm.testCertificateFile.name}</p>}
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -1020,8 +996,7 @@ export default function DispatchPlanningPage({ user }) {
                   dispatchLines.every((l) => !l.included) ||
                   dispatchLines.some((l) => l.included && (!l.dispatchQty || parseFloat(l.dispatchQty) <= 0)) ||
                   !commonForm.typeOfTransporting ||
-                  !commonForm.dateOfDispatch ||
-                  (commonForm.testCertificateMade === "Yes" && !commonForm.testCertificateFile)
+                  !commonForm.dateOfDispatch
                 }>
                 {submitting
                   ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting...</>

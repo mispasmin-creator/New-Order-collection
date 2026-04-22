@@ -25,7 +25,7 @@ export default function WeighmentEntryPage({ user }) {
   const [submitting, setSubmitting] = useState(false)
   const { toast } = useToast()
   const { updateCount } = useNotification()
-  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [selectedGroup, setSelectedGroup] = useState(null)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
   const [formData, setFormData] = useState({
@@ -172,23 +172,25 @@ export default function WeighmentEntryPage({ user }) {
   const [collapsedGroups, setCollapsedGroups] = useState({})
   const toggleGroup = (key) => setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }))
 
-  const handleWeighment = (order) => {
-
-    setSelectedOrder(order)
+  const handleWeighment = (group) => {
+    setSelectedGroup(group)
+    // Use the first row as a reference for initial form data if needed,
+    // but usually these will be empty for new entries.
+    const firstRow = group.rows[0]
     setFormData({
       imageOfSlip: null,
       imageOfSlip2: null,
       imageOfSlip3: null,
       remarks: "",
-      actualQtyLoadedInTruck: order.actualQtyLoadedInTruck || "",
-      actualQtyAsPerWeighmentSlip: order.actualQtyAsPerWeighmentSlip || "",
+      actualQtyLoadedInTruck: "",
+      actualQtyAsPerWeighmentSlip: "",
     })
   }
 
 
 
   const handleSubmit = async () => {
-    if (!selectedOrder) return
+    if (!selectedGroup || selectedGroup.rows.length === 0) return
 
     try {
       setSubmitting(true)
@@ -229,10 +231,10 @@ export default function WeighmentEntryPage({ user }) {
       for (const fileField of fileFields) {
         if (fileField.field && fileField.field instanceof File) {
           try {
-            // Create a unique file path
-            const dateStr = new Date().toISOString().split('T')[0]; 
+            // Create a unique file path using the first order ID as a reference
+            const dateStr = new Date().toISOString().split('T')[0];
             const safeFileName = fileField.field.name.replace(/[^a-zA-Z0-9.]/g, '_')
-            const filePath = `weighment/${selectedOrder.id}_${fileField.name}_${dateStr}_${safeFileName}`
+            const filePath = `weighment/group_${selectedGroup.key.replace(/[^a-zA-Z0-9]/g, '_')}_${fileField.name}_${dateStr}_${safeFileName}`
 
             const publicUrl = await uploadFileToSupabase(fileField.field, filePath)
 
@@ -248,33 +250,42 @@ export default function WeighmentEntryPage({ user }) {
         }
       }
 
-      // Update DISPATCH table in Supabase
-      const updatePayload = {
+      // Prepare common update payload
+      const commonPayload = {
         "Actual3": actual3Date,
         "Remarks": formData.remarks || "",
-        "Actual Truck Qty": formData.actualQtyLoadedInTruck ? parseFloat(formData.actualQtyLoadedInTruck) : selectedOrder.actualTruckQty,
-        "Actual Qty As Per Weighment Slip": formData.actualQtyAsPerWeighmentSlip ? parseFloat(formData.actualQtyAsPerWeighmentSlip) : null,
       }
 
       // Add uploaded file URLs if they exist
       const slip1Url = uploadedFiles.find(f => f.type === "Image Of Slip")?.url
-      if (slip1Url) updatePayload["Image Of Slip"] = slip1Url
+      if (slip1Url) commonPayload["Image Of Slip"] = slip1Url
 
       const slip2Url = uploadedFiles.find(f => f.type === "Image Of Slip2")?.url
-      if (slip2Url) updatePayload["Image Of Slip2"] = slip2Url
+      if (slip2Url) commonPayload["Image Of Slip2"] = slip2Url
 
       const slip3Url = uploadedFiles.find(f => f.type === "Image Of Slip3")?.url
-      if (slip3Url) updatePayload["Image Of Slip3"] = slip3Url
+      if (slip3Url) commonPayload["Image Of Slip3"] = slip3Url
 
-      const { error: updateError } = await supabase
-        .from('DISPATCH')
-        .update(updatePayload)
-        .eq('id', selectedOrder.id)
+      // Update all rows in the group
+      const updatePromises = selectedGroup.rows.map(order => {
+        const rowPayload = {
+          ...commonPayload,
+          "Actual Truck Qty": formData.actualQtyLoadedInTruck ? parseFloat(formData.actualQtyLoadedInTruck) : order.actualTruckQty,
+          "Actual Qty As Per Weighment Slip": formData.actualQtyAsPerWeighmentSlip ? parseFloat(formData.actualQtyAsPerWeighmentSlip) : null,
+        }
+        return supabase
+          .from('DISPATCH')
+          .update(rowPayload)
+          .eq('id', order.id)
+      })
 
-      if (updateError) throw updateError
+      const results = await Promise.all(updatePromises)
+      const errors = results.filter(r => r.error).map(r => r.error)
+
+      if (errors.length > 0) throw errors[0]
 
       await fetchData()
-      setSelectedOrder(null)
+      setSelectedGroup(null)
       setFormData({
         imageOfSlip: null,
         imageOfSlip2: null,
@@ -286,7 +297,7 @@ export default function WeighmentEntryPage({ user }) {
 
       toast({
         title: "Success",
-        description: `Weighment entry submitted successfully!`,
+        description: `Weighment entry submitted for all products in PO: ${selectedGroup.poNumber}`,
       })
 
     } catch (error) {
@@ -302,7 +313,7 @@ export default function WeighmentEntryPage({ user }) {
   }
 
   const handleCancel = () => {
-    setSelectedOrder(null)
+    setSelectedGroup(null)
     setFormData({
       imageOfSlip: null,
       imageOfSlip2: null,
@@ -444,7 +455,22 @@ export default function WeighmentEntryPage({ user }) {
                     <p className="text-sm font-semibold text-slate-800">PO: {group.poNumber}</p>
                     <p className="text-xs text-slate-500">{group.partyName}</p>
                   </div>
-                  <span className="text-xs text-slate-400">{group.rows.length} product{group.rows.length > 1 ? "s" : ""}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">{group.rows.length} product{group.rows.length > 1 ? "s" : ""}</span>
+                    {activeTab === "pending" && (
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className="h-7 text-[10px] bg-blue-600 hover:bg-blue-700 py-0"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleWeighment(group)
+                        }}
+                      >
+                        Entry
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 {!collapsedGroups[group.key] && group.rows.map((order) => (
                   <div key={order.id} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-3 ml-2">
@@ -482,15 +508,7 @@ export default function WeighmentEntryPage({ user }) {
                       </div>
                     )}
 
-                    {activeTab === "pending" && (
-                      <Button
-                        className="w-full bg-blue-600 hover:bg-blue-700 h-9 mt-1"
-                        onClick={() => handleWeighment(order)}
-                        disabled={submitting}
-                      >
-                        Entry
-                      </Button>
-                    )}
+                    {/* Removed individual entry button from mobile card */}
                   </div>
                 ))}
               </div>
@@ -503,9 +521,7 @@ export default function WeighmentEntryPage({ user }) {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50 border-b border-gray-200">
-                {activeTab === "pending" && (
-                  <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Action</TableHead>
-                )}
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Action</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Delivery Order No.</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">D-Sr Number</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Bill Date</TableHead>
@@ -523,7 +539,7 @@ export default function WeighmentEntryPage({ user }) {
                 )}
                 {activeTab === "history" && (
                   <>
-                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Actual1</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Actual3</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Truck Qty</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Weighment Qty</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Slips</TableHead>
@@ -536,7 +552,7 @@ export default function WeighmentEntryPage({ user }) {
               {displayOrders.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeTab === "pending" ? 12 : 13}
+                    colSpan={activeTab === "pending" ? 12 : 14}
                     className="text-center py-8 text-gray-500"
                   >
                     <div className="flex flex-col items-center gap-2">
@@ -552,7 +568,22 @@ export default function WeighmentEntryPage({ user }) {
                       className="bg-slate-50 cursor-pointer hover:bg-slate-100 select-none"
                       onClick={() => toggleGroup(group.key)}
                     >
-                      <TableCell colSpan={activeTab === "pending" ? 12 : 13} className="px-4 py-2">
+                      <TableCell className="px-4 py-2">
+                        {activeTab === "pending" && (
+                          <Button
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleWeighment(group)
+                            }}
+                            className="bg-blue-600 hover:bg-blue-700 h-8 text-xs px-4 w-full"
+                            disabled={submitting}
+                          >
+                            Entry
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell colSpan={activeTab === "pending" ? 11 : 13} className="px-4 py-2">
                         <div className="flex items-center gap-2">
                           {collapsedGroups[group.key]
                             ? <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
@@ -563,9 +594,11 @@ export default function WeighmentEntryPage({ user }) {
                             </span>
                             <span className="text-xs text-slate-600">Party: {group.partyName}</span>
                           </div>
-                          <span className="text-xs text-slate-400 ml-auto">
-                            {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
-                          </span>
+                          <div className="ml-auto flex items-center gap-4">
+                            <span className="text-xs text-slate-400">
+                              {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
+                            </span>
+                          </div>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -573,18 +606,7 @@ export default function WeighmentEntryPage({ user }) {
                     {/* Product rows — hidden when collapsed */}
                     {!collapsedGroups[group.key] && group.rows.map((order) => (
                       <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
-                        {activeTab === "pending" && (
-                          <TableCell className="py-2 px-4 min-w-[120px]">
-                            <Button
-                              size="sm"
-                              onClick={() => handleWeighment(order)}
-                              className="bg-blue-600 hover:bg-blue-700 h-8 text-xs"
-                              disabled={submitting}
-                            >
-                              Entry
-                            </Button>
-                          </TableCell>
-                        )}
+                        <TableCell />
                         <TableCell className="py-2 px-4 min-w-[150px] font-medium text-sm">
                           {order.deliveryOrderNo}
                         </TableCell>
@@ -668,7 +690,7 @@ export default function WeighmentEntryPage({ user }) {
       </div>
 
       {/* Weighment Entry Form Modal */}
-      {selectedOrder && (
+      {selectedGroup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
@@ -679,18 +701,23 @@ export default function WeighmentEntryPage({ user }) {
             </CardHeader>
             <CardContent className="p-4">
               <div className="space-y-4">
-                {/* Order Info */}
+                {/* Group Info */}
                 <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                  <p className="font-medium text-gray-900">DO: {selectedOrder.deliveryOrderNo}</p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Bill: {selectedOrder.billNo} | Party: {selectedOrder.partyName}
-                  </p>
-                  <p className="text-sm text-gray-600">Product: {selectedOrder.productName}</p>
-                  <p className="text-sm text-gray-600">
-                    Quantity: {selectedOrder.qtyToBeDispatched} | Planned: {selectedOrder.planned3}
-                  </p>
-                  <p className="text-sm text-green-600 font-medium mt-1">
-                    Actual3 will be set to: {getISTFullDisplayDateTime(new Date())}
+                  <p className="font-bold text-gray-900 text-sm">PO: {selectedGroup.poNumber}</p>
+                  <p className="text-xs text-gray-600 mt-1">Party: {selectedGroup.partyName}</p>
+                  <div className="mt-3 space-y-2 max-h-[120px] overflow-y-auto pr-1">
+                    {selectedGroup.rows.map((order, idx) => (
+                      <div key={idx} className="bg-white p-2 rounded border border-gray-100 text-[11px] flex justify-between items-center">
+                        <div>
+                          <span className="font-semibold text-blue-700">{order.productName}</span>
+                          <span className="text-gray-500 ml-2">(DO: {order.deliveryOrderNo})</span>
+                        </div>
+                        <span className="font-bold text-gray-700">{order.qtyToBeDispatched}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-green-600 font-medium mt-2">
+                    Actual3 will be set for all products to: {getISTFullDisplayDateTime(new Date())}
                   </p>
                 </div>
 

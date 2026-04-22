@@ -119,11 +119,11 @@ export default function TCPage() {
       setHistoryOrders(completedOrders.sort((a, b) => b.id - a.id))
       updateCount?.("TC", pendingOrders.length)
     } catch (error) {
-      console.error("Error fetching TC data:", error)
+      console.error("Error fetching Test Certificate data:", error)
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to fetch TC data",
+        description: "Failed to fetch Test Certificate data",
       })
     } finally {
       setLoading(false)
@@ -235,7 +235,7 @@ export default function TCPage() {
       toast({
         variant: "destructive",
         title: "Upload required",
-        description: "Please upload a TC file before submitting",
+        description: "Please upload a Test Certificate file before submitting",
       })
       return
     }
@@ -287,14 +287,14 @@ export default function TCPage() {
       handleCancel()
       toast({
         title: "Success",
-        description: "TC uploaded and order moved to the next stage successfully",
+        description: "Test Certificate uploaded and order moved to the next stage successfully",
       })
     } catch (error) {
-      console.error("Error submitting TC:", error)
+      console.error("Error submitting Test Certificate:", error)
       toast({
         variant: "destructive",
         title: "Error",
-        description: `Failed to submit TC: ${error.message}`,
+        description: `Failed to submit Test Certificate: ${error.message}`,
       })
     } finally {
       setSubmitting(false)
@@ -305,7 +305,7 @@ export default function TCPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
         <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
-        <span className="text-gray-600">Loading TC entries...</span>
+        <span className="text-gray-600">Loading Test Certificate entries...</span>
       </div>
     )
   }
@@ -314,7 +314,7 @@ export default function TCPage() {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">TC</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Test Certificate</h1>
           <p className="text-gray-600">Upload test certificates and move completed invoices to delivery</p>
         </div>
       </div>
@@ -335,7 +335,7 @@ export default function TCPage() {
         <Card className="bg-amber-50 border-amber-100 shadow-sm">
           <CardContent className="p-6 flex justify-between items-center">
             <div>
-              <p className="text-sm font-medium text-amber-600">Pending TC</p>
+              <p className="text-sm font-medium text-amber-600">Pending Test Certificate</p>
               <div className="text-2xl font-bold text-amber-900">{orders.length}</div>
             </div>
             <div className="h-10 w-10 bg-amber-500 rounded-full flex items-center justify-center text-white">
@@ -411,7 +411,7 @@ export default function TCPage() {
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Product Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Qty</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Invoice Done</TableHead>
-                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">TC Status</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Test Certificate Status</TableHead>
                 {activeTab === "history" && (
                   <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[160px]">Moved To Delivery</TableHead>
                 )}
@@ -424,7 +424,7 @@ export default function TCPage() {
                     colSpan={activeTab === "pending" ? 8 : 8}
                     className="text-center py-8 text-gray-500"
                   >
-                    No {activeTab} TC entries found
+                    No {activeTab} Test Certificate entries found
                   </TableCell>
                 </TableRow>
               ) : (
@@ -438,7 +438,7 @@ export default function TCPage() {
                           className="bg-blue-600 hover:bg-blue-700 h-8 text-xs"
                           disabled={submitting}
                         >
-                          Upload TC
+                          Upload Test Certificate
                         </Button>
                       </TableCell>
                     )}
@@ -481,7 +481,7 @@ export default function TCPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
-              <CardTitle className="text-lg">Upload TC</CardTitle>
+              <CardTitle className="text-lg">Upload Test Certificate</CardTitle>
               <Button variant="ghost" size="sm" onClick={handleCancel} disabled={submitting}>
                 <X className="h-5 w-5" />
               </Button>
@@ -497,7 +497,7 @@ export default function TCPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm">TC File *</Label>
+                  <Label className="text-sm">Test Certificate File *</Label>
                   <Input
                     type="file"
                     accept=".pdf,image/*"
