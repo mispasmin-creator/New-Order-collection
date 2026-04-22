@@ -46,9 +46,10 @@ const pageIcons = {
   "TC": FileCheck,
   "Wetman Entry": Scale,
   "Material Return": RotateCcw,
+  "Return of Material": RotateCcw,
   "Management Approval": ShieldCheck,
   "Debit Note": FileText,
-  "Logistics Fulfillment": PackageCheck,
+  "Bilty Update": PackageCheck,
 }
 
 const pageRoutes = {
@@ -71,9 +72,10 @@ const pageRoutes = {
   "Bilty Entry": "/bilty-entry",
   "MATERIAL RECEIPT": "/material-receipt",
   "Material Return": "/material-return",
+  "Return of Material": "/return-of-material",
   "Management Approval": "/management-approval",
   "Debit Note": "/debit-note",
-  "Logistics Fulfillment": "/logistics-fulfillment",
+  "Bilty Update": "/logistics-fulfillment",
 }
 
 const defaultPageOrder = [
@@ -81,9 +83,9 @@ const defaultPageOrder = [
   "Order",
   "Check PO",
   "Received Accounts",
+  "Check for Delivery",
   "Arrange Logistics",
   "Logistics Approval",
-  "Check for Delivery",
   "Dispatch Planning",
   "Accounts Approval",
   "Logistic",
@@ -91,10 +93,11 @@ const defaultPageOrder = [
   "Wetman Entry",
   "Invoice",
   "TC",
-  "Logistics Fulfillment",
+  "Bilty Update",
   "Material Return",
   "Management Approval",
   "Debit Note",
+  "Return of Material",
   "Make PI",
   "Received PI Payment"
 ]
@@ -230,10 +233,11 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
 
       if (accessibleOrderIds.length > 0) {
         const { data: checkDeliveryData, error: checkDeliveryError } = await supabase
-          .from('po_logistics_splits')
-          .select('po_id, status')
-          .eq('status', 'Approved')
-          .in('po_id', accessibleOrderIds)
+          .from('ORDER RECEIPT')
+          .select('id')
+          .not('Actual 2', 'is', null)
+          .is('check_delivery_actual', null)
+          .in('id', accessibleOrderIds)
 
         if (!checkDeliveryError && checkDeliveryData) {
           counts["Check for Delivery"] = checkDeliveryData.length
@@ -373,16 +377,30 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         counts["MATERIAL RECEIPT"] = count
       }
 
-      counts["Logistics Fulfillment"] = (counts["Bilty Entry"] || 0) + (counts["MATERIAL RECEIPT"] || 0)
+      counts["Bilty Update"] = (counts["Bilty Entry"] || 0) + (counts["MATERIAL RECEIPT"] || 0)
 
       // Fetch real-time count for "Debit Note" — management-approved returns pending note issuance
       const { data: debitNoteData, error: debitNoteError } = await supabase
         .from("Material Return")
-        .select('"Actual5", "Debit Note Issued At"')
+        .select('"Actual5", "Debit Note Issued At", "Reason Of Material Return"')
         .not("Actual5", "is", null)
       if (!debitNoteError && debitNoteData) {
         counts["Debit Note"] = debitNoteData.filter(
-          (r) => !r["Debit Note Issued At"] || String(r["Debit Note Issued At"]).trim() === ""
+          (r) =>
+            r["Reason Of Material Return"] !== "Material Return" &&
+            (!r["Debit Note Issued At"] || String(r["Debit Note Issued At"]).trim() === "")
+        ).length
+      }
+
+      // Fetch real-time count for "Return of Material" — Material Return reason, approved, not yet dispatched
+      const { data: romData, error: romError } = await supabase
+        .from("Material Return")
+        .select('"Actual5", "Return Dispatched At", "Reason Of Material Return"')
+        .not("Actual5", "is", null)
+        .eq("Reason Of Material Return", "Material Return")
+      if (!romError && romData) {
+        counts["Return of Material"] = romData.filter(
+          (r) => !r["Return Dispatched At"] || String(r["Return Dispatched At"]).trim() === ""
         ).length
       }
 

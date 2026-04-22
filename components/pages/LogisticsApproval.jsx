@@ -212,6 +212,7 @@ export default function LogisticsApproval() {
           status: "Approved",
           allocated_qty: qty,
           sort_order: subIdx,
+          status: "Checked",
         })
         subIdx++
       })

@@ -1954,45 +1954,11 @@ export default function MaterialReturnPage({ user }) {
         >
           Material Return From Party
         </button>
-        <button
-          onClick={() => setActiveTab("management_approval")}
-          className={`pb-3 px-4 text-sm font-medium transition-all relative ${activeTab === "management_approval" ? "text-blue-600 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-        >
-          Management Approval
-        </button>
-        <button
-          onClick={() => setActiveTab("arrange_logistic")}
-          className={`pb-3 px-4 text-sm font-medium transition-all relative ${activeTab === "arrange_logistic" ? "text-blue-600 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-        >
-          Arrange Logistic For Lift Return Material
-        </button>
-        <button
-          onClick={() => setActiveTab("received_return")}
-          className={`pb-3 px-4 text-sm font-medium transition-all relative ${activeTab === "received_return" ? "text-blue-600 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-        >
-          Received Return Material From Party
-        </button>
-        <button
-          onClick={() => setActiveTab("issue_note")}
-          className={`pb-3 px-4 text-sm font-medium transition-all relative ${activeTab === "issue_note" ? "text-blue-600 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-        >
-          Issue Note
-        </button>
-        <button
-          onClick={() => setActiveTab("crm")}
-          className={`pb-3 px-4 text-sm font-medium transition-all relative ${activeTab === "crm" ? "text-blue-600 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-        >
-          CRM
-        </button>
+
       </div>
 
       <div className="mt-6">
-        {activeTab === "return_from_party" && renderReturnFromPartyTab()}
-        {activeTab === "arrange_logistic" && renderArrangeLogisticTab()}
-        {activeTab === "received_return" && renderReceivedReturnTab()}
-        {activeTab === "management_approval" && renderManagementApprovalTab()}
-        {activeTab === "issue_note" && renderIssueNoteTab()}
-        {activeTab === "crm" && renderCrmTab()}
+        {renderReturnFromPartyTab()}
       </div>
 
       {/* Logistic Modal */}

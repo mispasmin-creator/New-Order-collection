@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -16,7 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import {
   Loader2, Search, CheckCircle2, PackageCheck, Truck, ChevronDown, ChevronRight,
-  RefreshCw, FileText, Phone,
+  RefreshCw, Phone,
 } from "lucide-react"
 
 const fmt = (n) =>
@@ -47,8 +48,7 @@ const EMPTY_FORM = {
   transporterName: "",
   transporterMobile: "",
   vehicleNo: "",
-  driverName: "",
-  driverMobile: "",
+  receivedDate: "",
   remarks: "",
 }
 
@@ -62,18 +62,37 @@ export default function ReturnOfMaterialPage({ user }) {
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState("pending")
   const [expandedRows, setExpandedRows] = useState({})
+  const [masterTransporters, setMasterTransporters] = useState([])
 
   // Modal state
   const [selectedEntry, setSelectedEntry] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
 
+  const fetchMasterTransporters = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("MASTER")
+        .select('"Transporter Name"')
+        .not("Transporter Name", "is", null)
+      if (error) throw error
+      if (data) {
+        const unique = [...new Set(data.map((d) => d["Transporter Name"]).filter((t) => t && t.trim() !== ""))]
+        setMasterTransporters(unique.sort())
+      }
+    } catch (err) {
+      console.error("Error fetching transporters:", err)
+    }
+  }, [])
+
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
+      // Only "Material Return" reason rows — management approved, no credit note needed
       const { data, error } = await supabase
         .from("Material Return")
         .select("*")
-        .not("Debit Note Issued At", "is", null)  // only Credit Note issued rows
+        .not("Actual5", "is", null)
+        .eq("Reason Of Material Return", "Material Return")
         .order("id", { ascending: false })
       if (error) throw error
 
@@ -95,7 +114,7 @@ export default function ReturnOfMaterialPage({ user }) {
     }
   }, [toast])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => { fetchData(); fetchMasterTransporters() }, [fetchData, fetchMasterTransporters])
 
   const filtered = (list) => {
     if (!searchTerm.trim()) return list
@@ -112,8 +131,7 @@ export default function ReturnOfMaterialPage({ user }) {
       transporterName: entry["Return Transporter Name"] || "",
       transporterMobile: entry["Return Transporter Mobile"] || "",
       vehicleNo: entry["Return Vehicle No"] || "",
-      driverName: entry["Return Driver Name"] || "",
-      driverMobile: entry["Return Driver Mobile"] || "",
+      receivedDate: entry["Return Received At"] ? new Date(entry["Return Received At"]).toISOString().split("T")[0] : "",
       remarks: "",
     })
   }
@@ -143,9 +161,8 @@ export default function ReturnOfMaterialPage({ user }) {
         "Return Transporter Name": form.transporterName.trim(),
         "Return Transporter Mobile": form.transporterMobile.trim(),
         "Return Vehicle No": form.vehicleNo.trim(),
-        "Return Driver Name": form.driverName.trim(),
-        "Return Driver Mobile": form.driverMobile.trim(),
         "Return Dispatched At": getISTTimestamp(),
+        ...(form.receivedDate ? { "Return Received At": form.receivedDate } : {}),
       }
       if (form.remarks.trim()) {
         payload["Remarks"] = (selectedEntry["Remarks"]
@@ -374,6 +391,9 @@ export default function ReturnOfMaterialPage({ user }) {
                             {entry["Return Dispatched At"] && (
                               <div><p className="text-gray-500 text-xs mb-0.5">Dispatched At</p><p className="font-medium text-teal-700">{formatDate(entry["Return Dispatched At"])}</p></div>
                             )}
+                            {entry["Return Received At"] && (
+                              <div><p className="text-gray-500 text-xs mb-0.5">Received Date</p><p className="font-medium text-green-700">{formatDate(entry["Return Received At"])}</p></div>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -404,15 +424,24 @@ export default function ReturnOfMaterialPage({ user }) {
 
               {/* Product summary card */}
               <div className="rounded-lg border bg-teal-50 border-teal-200 p-4 space-y-3">
-                <p className="text-xs font-semibold text-teal-700 uppercase tracking-wide">Product Details</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-teal-700 uppercase tracking-wide">Product Details</p>
+                  {selectedEntry["Reason Of Material Return"] === "Material Return" && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+                      Direct Return — No Credit Note
+                    </span>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-xs text-gray-500">Product</p>
-                    <p className="font-semibold">{selectedEntry["Product Name"]}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Return Qty</p>
-                    <p className="font-semibold">{selectedEntry["Qty Of Return Material"] || selectedEntry["Qty"]}</p>
+                  <div className="col-span-2 bg-white rounded-lg border border-teal-100 px-3 py-2 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-gray-500">Product Being Returned</p>
+                      <p className="font-bold text-gray-900 text-base">{selectedEntry["Product Name"]}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">Return Qty</p>
+                      <p className="font-bold text-teal-700 text-xl">{selectedEntry["Qty Of Return Material"] || selectedEntry["Qty"]}</p>
+                    </div>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500">Reason</p>
@@ -420,10 +449,12 @@ export default function ReturnOfMaterialPage({ user }) {
                       {selectedEntry["Reason Of Material Return"] || "—"}
                     </Badge>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Credit Note No.</p>
-                    <p className="font-mono font-semibold text-purple-700">{selectedEntry["Debit Note Number"] || "—"}</p>
-                  </div>
+                  {selectedEntry["Reason Of Material Return"] !== "Material Return" && (
+                    <div>
+                      <p className="text-xs text-gray-500">Credit Note No.</p>
+                      <p className="font-mono font-semibold text-purple-700">{selectedEntry["Debit Note Number"] || "—"}</p>
+                    </div>
+                  )}
                   {selectedEntry["Debit Note Amount"] && (
                     <div>
                       <p className="text-xs text-gray-500">Credit Note Amount</p>
@@ -436,6 +467,12 @@ export default function ReturnOfMaterialPage({ user }) {
                       <Badge variant="outline" className={selectedEntry["Condition of Material"] === "Good" ? "text-green-600 border-green-200 bg-green-50 text-xs" : "text-red-600 border-red-200 bg-red-50 text-xs"}>
                         {selectedEntry["Condition of Material"]}
                       </Badge>
+                    </div>
+                  )}
+                  {selectedEntry["Invoice Number"] && (
+                    <div>
+                      <p className="text-xs text-gray-500">Invoice No.</p>
+                      <p className="font-mono font-semibold text-blue-700">{selectedEntry["Invoice Number"]}</p>
                     </div>
                   )}
                 </div>
@@ -453,14 +490,24 @@ export default function ReturnOfMaterialPage({ user }) {
                   <Label className="text-sm font-medium">
                     Transporter Name <span className="text-red-500">*</span>
                   </Label>
-                  <Input
-                    name="transporterName"
-                    placeholder="e.g. Fast Carriers"
+                  <Select
                     value={form.transporterName}
-                    onChange={handleChange}
+                    onValueChange={(v) => setForm((prev) => ({ ...prev, transporterName: v }))}
                     disabled={submitting}
-                    className="h-10"
-                  />
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue placeholder="Select Transporter" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60 overflow-y-auto">
+                      {masterTransporters.length === 0 ? (
+                        <SelectItem value="loading" disabled>Loading...</SelectItem>
+                      ) : (
+                        masterTransporters.map((name) => (
+                          <SelectItem key={name} value={name}>{name}</SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2 col-span-2 md:col-span-1">
                   <Label className="text-sm font-medium">
@@ -490,43 +537,20 @@ export default function ReturnOfMaterialPage({ user }) {
                     className="h-10 uppercase"
                   />
                 </div>
-              </div>
-
-              {/* Driver fields */}
-              <div className="space-y-1 pt-1 border-t">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-3 flex items-center gap-1">
-                  <FileText className="w-3.5 h-3.5" /> Driver Info (Optional)
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2 col-span-2 md:col-span-1">
-                  <Label className="text-sm font-medium">Driver Name</Label>
+                  <Label className="text-sm font-medium">Received Delivery Date</Label>
                   <Input
-                    name="driverName"
-                    placeholder="Driver full name"
-                    value={form.driverName}
+                    name="receivedDate"
+                    type="date"
+                    value={form.receivedDate}
                     onChange={handleChange}
                     disabled={submitting}
                     className="h-10"
                   />
                 </div>
-                <div className="space-y-2 col-span-2 md:col-span-1">
-                  <Label className="text-sm font-medium">Driver Mobile</Label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input
-                      name="driverMobile"
-                      placeholder="Driver number"
-                      value={form.driverMobile}
-                      onChange={handleChange}
-                      disabled={submitting}
-                      className="h-10 pl-9"
-                      maxLength={15}
-                    />
-                  </div>
-                </div>
               </div>
+
+
 
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Remarks</Label>

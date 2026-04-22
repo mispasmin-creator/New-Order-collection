@@ -243,7 +243,7 @@ export default function UnifiedLogistics({ user }) {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Unified Logistics fulfillment</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Bilty Update</h1>
           <p className="text-gray-600">Monitor and manage shipments from dispatch to receipt</p>
         </div>
       </div>

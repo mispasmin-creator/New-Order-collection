@@ -14,6 +14,8 @@ import TCPage from "./pages/TCPage"
 import WetmanEntryPage from "./pages/WetmanEntryPage"
 import ReceivedAccounts from "./pages/ReceivedAccounts"
 import MaterialReceiptPage from "./pages/MaterialReceiptPage"
+import MaterialReturnPage from "./pages/MaterialReturnPage"
+import ReturnOfMaterialPage from "./pages/ReturnOfMaterialPage"
 import Crm from "./pages/Crm"
 import UnifiedLogistics from "./pages/UnifiedLogistics"
 
@@ -83,8 +85,12 @@ export default function MainLayout({ user, onLogout, orders, updateOrders }) {
         return <Crm {...pageProps} />
       case "MATERIAL RECEIPT":
         return <UnifiedLogistics {...pageProps} />
-      case "Logistics Fulfillment":
+      case "Bilty Update":
         return <UnifiedLogistics {...pageProps} />
+      case "Material Return":
+        return <MaterialReturnPage {...pageProps} />
+      case "Return of Material":
+        return <ReturnOfMaterialPage {...pageProps} />
       default:
         return <Dashboard {...pageProps} />
     }

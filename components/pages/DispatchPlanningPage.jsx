@@ -17,9 +17,9 @@ import { groupRowsByPo } from "@/lib/workflowGrouping"
 // ── Workflow stage definitions ────────────────────────────────────────────────
 const STAGES = [
   { key: "order_received",     label: "Order Received",     bg: "bg-gray-100",   text: "text-gray-700",   dot: "bg-gray-400"   },
+  { key: "check_delivery",     label: "Check Delivery",     bg: "bg-orange-100", text: "text-orange-700", dot: "bg-orange-500" },
   { key: "arrange_logistics",  label: "Arrange Logistics",  bg: "bg-blue-100",   text: "text-blue-700",   dot: "bg-blue-500"   },
   { key: "logistics_approval", label: "Logistics Approval", bg: "bg-purple-100", text: "text-purple-700", dot: "bg-purple-500" },
-  { key: "check_delivery",     label: "Check Delivery",     bg: "bg-orange-100", text: "text-orange-700", dot: "bg-orange-500" },
   { key: "dispatch_planning",  label: "Dispatch Planning",  bg: "bg-amber-100",  text: "text-amber-700",  dot: "bg-amber-500"  },
   { key: "accounts_approval",  label: "Accounts Approval",  bg: "bg-indigo-100", text: "text-indigo-700", dot: "bg-indigo-500" },
   { key: "logistic",           label: "Logistic",           bg: "bg-cyan-100",   text: "text-cyan-700",   dot: "bg-cyan-500"   },
@@ -38,6 +38,7 @@ const getOrderRowStage = (order, splits, dispatches) => {
   if (dArr.some((d) => d.Actual3)) return "invoice"
   if (dArr.some((d) => d.Actual2)) return "wetman_entry"
   if (dArr.some((d) => d.Actual1)) return "load_material"
+  // "Approved" here covers old-flow splits; "Checked" covers new-flow splits
   const splitStatusRank = ["Approved", "Checked", "Dispatched", "Accounts Approved", "Logistic Completed"]
   let bestRank = -1
   for (const s of sArr) {
@@ -47,15 +48,12 @@ const getOrderRowStage = (order, splits, dispatches) => {
   if (bestRank >= 4) return "logistic"
   if (bestRank >= 3) return "logistic"
   if (bestRank >= 2) return "accounts_approval"
-  if (bestRank >= 1) return "dispatch_planning"
-  if (bestRank >= 0) return "check_delivery"
+  if (bestRank >= 0) return "dispatch_planning"  // Approved or Checked → ready for dispatch
   const ls = order.logistics_status
   if (ls === "Pending Approval") return "logistics_approval"
-  
-  // Since POs in Dispatch Planning dashboard already strictly enforce 
-  // having 'Actual 2' (Received Accounts) completed, the earliest active 
-  // stage a PO can ever be in this context is Arrange Logistics.
-  return "arrange_logistics"
+  // New flow: check_delivery happens before arrange_logistics
+  if (order.check_delivery_actual) return "arrange_logistics"
+  return "check_delivery"
 }
 
 // ── Misc ──────────────────────────────────────────────────────────────────────
@@ -276,9 +274,9 @@ export default function DispatchPlanningPage({ user }) {
         productName: row.productName,
         transporterName: row.transporterName,
         allocatedQty: row.allocatedQty,
-        pendingQty: row.pendingQty,
+        quantityDelivered: row.quantityDelivered || 0,
         quantity: row.quantity,
-        dispatchQty: row.allocatedQty.toString(),
+        dispatchQty: "",
         included: true, // can be toggled off to skip this row
       }))
     )
@@ -297,7 +295,13 @@ export default function DispatchPlanningPage({ user }) {
   }
 
   const updateLineQty = (idx, value) =>
-    setDispatchLines((prev) => { const n = [...prev]; n[idx] = { ...n[idx], dispatchQty: value }; return n })
+    setDispatchLines((prev) => {
+      const n = [...prev]
+      const maxQty = Math.max(0, (n[idx].quantity || 0) - (n[idx].quantityDelivered || 0))
+      const clamped = value === "" ? "" : String(Math.min(parseFloat(value) || 0, maxQty))
+      n[idx] = { ...n[idx], dispatchQty: clamped }
+      return n
+    })
 
   const toggleLine = (idx) =>
     setDispatchLines((prev) => { const n = [...prev]; n[idx] = { ...n[idx], included: !n[idx].included }; return n })
@@ -326,8 +330,9 @@ export default function DispatchPlanningPage({ user }) {
       if (qty <= 0) {
         toast({ variant: "destructive", title: "Validation", description: `Dispatch qty must be > 0 for "${line.productName}".` }); return
       }
-      if (qty > line.allocatedQty + 0.0001) {
-        toast({ variant: "destructive", title: "Validation", description: `Dispatch qty for "${line.productName}" cannot exceed allocated qty (${line.allocatedQty}).` }); return
+      const maxDispatchable = line.quantity - line.quantityDelivered
+      if (qty > maxDispatchable + 0.0001) {
+        toast({ variant: "destructive", title: "Validation", description: `Dispatch qty for "${line.productName}" cannot exceed pending qty (${maxDispatchable}).` }); return
       }
     }
 
@@ -393,9 +398,24 @@ export default function DispatchPlanningPage({ user }) {
           // Update split → Dispatched
           const { error: splitErr } = await supabase
             .from("po_logistics_splits")
-            .update({ status: STATUS_DISPATCHED, dispatch_record_id: inserted.id })
+            .update({ status: STATUS_DISPATCHED, dispatch_record_id: inserted.id, allocated_qty: dispatchQty })
             .eq("id", line.splitId)
           if (splitErr) throw splitErr
+
+          // If partial dispatch, create a new Checked split for the remaining qty
+          const remainingQty = line.allocatedQty - dispatchQty
+          if (remainingQty > 0.001) {
+            const { error: remainErr } = await supabase
+              .from("po_logistics_splits")
+              .insert([{
+                plan_id: line.planId,
+                po_id: line.poId,
+                transporter_name: line.transporterName,
+                allocated_qty: remainingQty,
+                status: STATUS_CHECKED,
+              }])
+            if (remainErr) throw remainErr
+          }
 
           // Update ORDER RECEIPT delivered + pending
           const newDelivered = latestDelivered + dispatchQty
@@ -863,32 +883,37 @@ export default function DispatchPlanningPage({ user }) {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 text-xs text-gray-600">
                       <tr>
-                        <th className="text-left px-4 py-2.5 font-semibold">Product</th>
                         <th className="text-left px-4 py-2.5 font-semibold">DO Number</th>
-                        <th className="text-left px-4 py-2.5 font-semibold">Transporter</th>
-                        <th className="text-right px-4 py-2.5 font-semibold">Allocated Qty</th>
-                        <th className="text-right px-4 py-2.5 font-semibold">Pending Qty</th>
-                        <th className="text-right px-4 py-2.5 font-semibold min-w-[120px]">Dispatch Qty *</th>
+                        <th className="text-left px-4 py-2.5 font-semibold">Product</th>
+                        <th className="text-right px-4 py-2.5 font-semibold">Product Order Qty</th>
+                        <th className="text-right px-4 py-2.5 font-semibold">Dispatched Quantity</th>
+                        <th className="text-right px-4 py-2.5 font-semibold">Pending</th>
+                        <th className="text-right px-4 py-2.5 font-semibold min-w-[120px]">Dispatch *</th>
                         <th className="px-4 py-2.5" />
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {dispatchLines.map((line, idx) => (
                         <tr key={line.splitId} className={`transition-colors ${line.included ? "bg-white" : "bg-gray-50 opacity-60"}`}>
+                          <td className="px-4 py-3 font-mono text-xs text-gray-500">{line.doNumber || "—"}</td>
                           <td className="px-4 py-3 font-medium text-gray-800">
                             {!line.included && <span className="inline-block mr-2 text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-normal">Excluded</span>}
                             {line.productName}
                           </td>
-                          <td className="px-4 py-3 font-mono text-xs text-gray-500">{line.doNumber || "—"}</td>
-                          <td className="px-4 py-3 text-gray-700">{line.transporterName || "—"}</td>
-                          <td className="px-4 py-3 text-right text-gray-700">{line.allocatedQty}</td>
-                          <td className="px-4 py-3 text-right text-amber-600 font-medium">{line.pendingQty}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{line.quantity}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{line.quantityDelivered}</td>
+                          <td className="px-4 py-3 text-right font-medium">
+                            {(() => {
+                              const pending = Math.max(0, line.quantity - line.quantityDelivered - (parseFloat(line.dispatchQty) || 0))
+                              return <span className={pending > 0 ? "text-amber-600" : "text-green-600"}>{pending}</span>
+                            })()}
+                          </td>
                           <td className="px-4 py-3 text-right">
                             <Input
                               type="number"
                               step="0.01"
                               min="0"
-                              max={line.allocatedQty}
+                              max={line.quantity - line.quantityDelivered}
                               value={line.dispatchQty}
                               onChange={(e) => updateLineQty(idx, e.target.value)}
                               className="h-8 w-28 text-right ml-auto"

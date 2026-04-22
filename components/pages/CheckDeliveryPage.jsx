@@ -18,12 +18,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Loader2, Search, CheckCircle2, X, ChevronDown, ChevronRight } from "lucide-react"
+import { Loader2, Search, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react"
 import { useNotification } from "@/components/providers/NotificationProvider"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
-
-const STATUS_APPROVED = "Approved"
-const STATUS_CHECKED = "Checked"
 
 const formatDate = (value) => {
   if (!value) return ""
@@ -40,10 +37,9 @@ const formatDate = (value) => {
 }
 
 const emptyForm = (row) => ({
-  splitId: row.id,
+  orderId: row.id,
   productName: row.productName,
-  transporterName: row.transporterName,
-  allocatedQty: row.allocatedQty,
+  quantity: row.quantity,
   inStockOrNot: "",
   orderNumberProduction: "",
   qtyTransferred: "",
@@ -61,82 +57,53 @@ export default function CheckDeliveryPage({ user }) {
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState("pending")
   const [selectedGroup, setSelectedGroup] = useState(null)
-  const [splitForms, setSplitForms] = useState([])
+  const [orderForms, setOrderForms] = useState([])
   const [expandedPO, setExpandedPO] = useState(null)
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
 
-      let orderQuery = supabase
+      let query = supabase
         .from("ORDER RECEIPT")
         .select("*")
+        .not("Actual 2", "is", null)
         .order("id", { ascending: false })
 
       if (user.role !== "master") {
         const userFirms = user.firm ? user.firm.split(",").map((f) => f.trim()) : []
         if (!userFirms.includes("all")) {
-          orderQuery = orderQuery.in("Firm Name", userFirms)
+          query = query.in("Firm Name", userFirms)
         }
       }
 
-      const { data: orderData, error: orderError } = await orderQuery
-      if (orderError) throw orderError
+      const { data, error } = await query
+      if (error) throw error
 
-      const orderMap = new Map()
-      ;(orderData || []).forEach((row) => orderMap.set(row.id, row))
+      const mapped = (data || []).map((order) => ({
+        id: order.id,
+        partyPONumber: order["PARTY PO NO (As Per Po Exact)"] || "",
+        partyName: order["Party Names"] || "",
+        firmName: order["Firm Name"] || "",
+        productName: order["Product Name"] || "",
+        quantity: parseFloat(order["Quantity"]) || 0,
+        doNumber: order["DO-Delivery Order No."] || "",
+        partyPODate: formatDate(order["Party PO Date"]),
+        rateOfMaterial: order["Rate Of Material"] || "",
+        totalPOValue: order["Total PO Basic Value"] || "",
+        transportType: order["Type Of Transporting"] || "",
+        paymentTerms: order["Payment to Be Taken"] || "",
+        gstNumber: order["Gst Number"] || "",
+        contactPersonName: order["Contact Person Name"] || "",
+        address: order["Address"] || "",
+        specificConcern: order["Specific Concern"] || "",
+        checkDeliveryActual: order["check_delivery_actual"] || "",
+        inStockOrNot: order["check_delivery_in_stock_or_not"] || "",
+      }))
 
-      const { data: splitData, error: splitError } = await supabase
-        .from("po_logistics_splits")
-        .select("*")
-        .in("status", [STATUS_APPROVED, STATUS_CHECKED, "Dispatched", "Logistic Completed"])
-        .order("id", { ascending: false })
-
-      if (splitError) throw splitError
-
-      const mergedRows = (splitData || [])
-        .map((split) => {
-          const order = orderMap.get(split.po_id)
-          if (!order) return null
-          return {
-            id: split.id,
-            poId: split.po_id,
-            planId: split.plan_id,
-            splitStatus: split.status || "",
-            allocatedQty: parseFloat(split.allocated_qty) || 0,
-            transporterName: split.transporter_name || "",
-            contactNumber: split.contact_number || "",
-            rate: split.rate || "",
-            availability: split.availability || "",
-            remarks: split.remarks || "",
-            checkDeliveryActual: split.check_delivery_actual || "",
-            inStockOrNot: split.check_delivery_in_stock_or_not || "",
-            orderNumberProduction: split.production_order_no || "",
-            qtyTransferred: split.qty_transferred || "",
-            batchNumberRemarks: split.batch_number_remarks || "",
-            indentSelfBatchNumber: split.indent_self_batch_number || "",
-            gpPercent: split.gp_percent || "",
-            doNumber: order["DO-Delivery Order No."] || "",
-            partyPONumber: order["PARTY PO NO (As Per Po Exact)"] || "",
-            partyPODate: formatDate(order["Party PO Date"]),
-            partyName: order["Party Names"] || "",
-            productName: order["Product Name"] || "",
-            firmName: order["Firm Name"] || "",
-            contactPersonName: order["Contact Person Name"] || "",
-            transportType: order["Type Of Transporting"] || "",
-            address: order["Address"] || "",
-            gstNumber: order["Gst Number"] || "",
-            rateOfMaterial: order["Rate Of Material"] || "",
-            totalPOValue: order["Total PO Basic Value"] || "",
-            paymentTerms: order["Payment to Be Taken"] || "",
-            specificConcern: order["Specific Concern"] || "",
-          }
-        })
-        .filter(Boolean)
-
-      setRows(mergedRows)
+      setRows(mapped)
     } catch (error) {
-      console.error("Error fetching split delivery rows:", error)
+      console.error("Error fetching orders:", error)
       toast({ title: "Error loading data", description: error.message, variant: "destructive" })
     } finally {
       setLoading(false)
@@ -148,12 +115,12 @@ export default function CheckDeliveryPage({ user }) {
   }, [fetchData])
 
   const pendingRows = useMemo(
-    () => rows.filter((row) => row.splitStatus === STATUS_APPROVED),
+    () => rows.filter((row) => !row.checkDeliveryActual),
     [rows]
   )
 
   const historyRows = useMemo(
-    () => rows.filter((row) => row.splitStatus !== STATUS_APPROVED),
+    () => rows.filter((row) => !!row.checkDeliveryActual),
     [rows]
   )
 
@@ -174,16 +141,16 @@ export default function CheckDeliveryPage({ user }) {
 
   const handleOpen = (group) => {
     setSelectedGroup(group)
-    setSplitForms(group.rows.map((row) => emptyForm(row)))
+    setOrderForms(group.rows.map((row) => emptyForm(row)))
   }
 
   const handleClose = () => {
     setSelectedGroup(null)
-    setSplitForms([])
+    setOrderForms([])
   }
 
   const updateForm = (index, field, value) => {
-    setSplitForms((prev) => {
+    setOrderForms((prev) => {
       const next = [...prev]
       next[index] = { ...next[index], [field]: value }
       return next
@@ -191,12 +158,11 @@ export default function CheckDeliveryPage({ user }) {
   }
 
   const handleSubmit = async () => {
-    // Validate all rows have inStockOrNot selected
-    for (const form of splitForms) {
+    for (const form of orderForms) {
       if (!form.inStockOrNot) {
         toast({
           title: "Validation Error",
-          description: `Please select "In Stock Or Not" for ${form.productName} (${form.transporterName}).`,
+          description: `Please select "In Stock Or Not" for ${form.productName}.`,
           variant: "destructive",
         })
         return
@@ -216,26 +182,25 @@ export default function CheckDeliveryPage({ user }) {
       const timestamp = getISTTimestamp()
 
       await Promise.all(
-        splitForms.map((form) => {
+        orderForms.map((form) => {
           const payload = {
-            status: STATUS_CHECKED,
             check_delivery_actual: timestamp,
             check_delivery_in_stock_or_not: form.inStockOrNot,
-            production_order_no: form.orderNumberProduction || null,
-            qty_transferred: form.qtyTransferred ? parseFloat(form.qtyTransferred) : null,
-            batch_number_remarks: form.batchNumberRemarks || null,
-            indent_self_batch_number: form.indentSelfBatchNumber || null,
-            gp_percent: form.gpPercent ? parseFloat(form.gpPercent) : null,
+            check_delivery_production_order_no: form.orderNumberProduction || null,
+            check_delivery_qty_transferred: form.qtyTransferred ? parseFloat(form.qtyTransferred) : null,
+            check_delivery_batch_number_remarks: form.batchNumberRemarks || null,
+            check_delivery_indent_self_batch_number: form.indentSelfBatchNumber || null,
+            check_delivery_gp_percent: form.gpPercent ? parseFloat(form.gpPercent) : null,
           }
-          return supabase.from("po_logistics_splits").update(payload).eq("id", form.splitId)
+          return supabase.from("ORDER RECEIPT").update(payload).eq("id", form.orderId)
         })
       )
 
-      toast({ title: "Success", description: "All splits marked as checked." })
+      toast({ title: "Success", description: "All products marked as checked." })
       handleClose()
       await fetchData()
     } catch (error) {
-      console.error("Error updating split rows:", error)
+      console.error("Error updating orders:", error)
       toast({ title: "Error", description: error.message, variant: "destructive" })
     } finally {
       setSubmitting(false)
@@ -256,7 +221,7 @@ export default function CheckDeliveryPage({ user }) {
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Check for Delivery</h1>
-          <p className="text-gray-600">Verify approved logistics splits before dispatch</p>
+          <p className="text-gray-600">Verify stock availability for POs before arranging logistics</p>
         </div>
       </div>
 
@@ -265,7 +230,7 @@ export default function CheckDeliveryPage({ user }) {
         <Card className="bg-blue-50 border-blue-100 shadow-sm">
           <CardContent className="p-6 flex justify-between items-center">
             <div>
-              <p className="text-sm font-medium text-blue-600">Total Splits</p>
+              <p className="text-sm font-medium text-blue-600">Total Products</p>
               <div className="text-2xl font-bold text-blue-900">{rows.length}</div>
             </div>
             <div className="h-10 w-10 bg-blue-500 rounded-full flex items-center justify-center text-white">
@@ -339,13 +304,13 @@ export default function CheckDeliveryPage({ user }) {
                 <TableHead>PO Number</TableHead>
                 <TableHead>Party</TableHead>
                 <TableHead>Firm</TableHead>
-                <TableHead>Splits</TableHead>
+                <TableHead>Products</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {groupedDisplayRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={activeTab === "pending" ? 5 : 4} className="text-center py-8 text-gray-500">
                     No rows found
                   </TableCell>
                 </TableRow>
@@ -353,108 +318,112 @@ export default function CheckDeliveryPage({ user }) {
                 groupedDisplayRows.map((group) => {
                   const isExpanded = expandedPO === group.key
                   return (
-                  <Fragment key={group.key}>
-                    {/* PO header — Check button + expandable */}
-                    <TableRow
-                      className="bg-slate-50 cursor-pointer hover:bg-slate-100"
-                      onClick={() => setExpandedPO(isExpanded ? null : group.key)}
-                    >
-                      {activeTab === "pending" && (
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            size="sm"
-                            onClick={() => handleOpen(group)}
-                            className="bg-blue-600 hover:bg-blue-700"
-                          >
-                            Check
-                          </Button>
-                        </TableCell>
-                      )}
-                      <TableCell className="font-semibold text-slate-900">
-                        <div className="flex items-center gap-2">
-                          {isExpanded
-                            ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-                            : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-                          }
-                          {group.poNumber}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-slate-700">{group.partyName}</TableCell>
-                      <TableCell className="text-slate-600">{group.rows[0]?.firmName}</TableCell>
-                      <TableCell>
-                        <span className="text-xs text-slate-500">
-                          {group.rows.length} split{group.rows.length > 1 ? "s" : ""}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-
-                    {/* Expanded order details */}
-                    {isExpanded && (
-                      <TableRow>
-                        <TableCell colSpan={activeTab === "pending" ? 5 : 4} className="p-0 border-b border-slate-200">
-                          <div className="bg-slate-50/80 px-6 py-4 space-y-3">
-                            {group.rows.map((row) => (
-                              <div key={row.id} className="bg-white border border-gray-200 rounded-lg p-4">
-                                <div className="flex items-center justify-between mb-3">
-                                  <span className="text-sm font-semibold text-gray-800">{row.productName}</span>
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                    Qty: {row.allocatedQty} · {row.transporterName}
-                                  </span>
-                                </div>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
-                                  <div>
-                                    <span className="text-gray-500">DO Number</span>
-                                    <p className="font-mono font-medium text-gray-800">{row.doNumber || "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Party PO Date</span>
-                                    <p className="font-medium text-gray-800">{row.partyPODate || "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Rate</span>
-                                    <p className="font-medium text-gray-800">{row.rateOfMaterial ? `₹${row.rateOfMaterial}` : "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Total PO Value</span>
-                                    <p className="font-medium text-green-700">{row.totalPOValue ? `₹${Number(row.totalPOValue).toLocaleString()}` : "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Transport Type</span>
-                                    <p className="font-medium text-gray-800">{row.transportType || "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Payment</span>
-                                    <p className="font-medium text-gray-800">{row.paymentTerms || "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">GST Number</span>
-                                    <p className="font-medium text-gray-800">{row.gstNumber || "—"}</p>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Contact Person</span>
-                                    <p className="font-medium text-gray-800">{row.contactPersonName || "—"}</p>
-                                  </div>
-                                  {row.address && (
-                                    <div className="col-span-2">
-                                      <span className="text-gray-500">Address</span>
-                                      <p className="font-medium text-gray-800">{row.address}</p>
-                                    </div>
-                                  )}
-                                  {row.specificConcern && (
-                                    <div className="col-span-2">
-                                      <span className="text-gray-500">Specific Concern</span>
-                                      <p className="font-medium text-orange-700">{row.specificConcern}</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
+                    <Fragment key={group.key}>
+                      <TableRow
+                        className="bg-slate-50 cursor-pointer hover:bg-slate-100"
+                        onClick={() => setExpandedPO(isExpanded ? null : group.key)}
+                      >
+                        {activeTab === "pending" && (
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              size="sm"
+                              onClick={() => handleOpen(group)}
+                              className="bg-blue-600 hover:bg-blue-700"
+                            >
+                              Check
+                            </Button>
+                          </TableCell>
+                        )}
+                        <TableCell className="font-semibold text-slate-900">
+                          <div className="flex items-center gap-2">
+                            {isExpanded
+                              ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                              : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                            }
+                            {group.poNumber}
                           </div>
                         </TableCell>
+                        <TableCell className="text-slate-700">{group.partyName}</TableCell>
+                        <TableCell className="text-slate-600">{group.rows[0]?.firmName}</TableCell>
+                        <TableCell>
+                          <span className="text-xs text-slate-500">
+                            {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
+                          </span>
+                        </TableCell>
                       </TableRow>
-                    )}
 
-                  </Fragment>
+                      {isExpanded && (
+                        <TableRow>
+                          <TableCell colSpan={activeTab === "pending" ? 5 : 4} className="p-0 border-b border-slate-200">
+                            <div className="bg-slate-50/80 px-6 py-4 space-y-3">
+                              {group.rows.map((row) => (
+                                <div key={row.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <span className="text-sm font-semibold text-gray-800">{row.productName}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                        Qty: {row.quantity}
+                                      </span>
+                                      {row.inStockOrNot && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                          {row.inStockOrNot}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
+                                    <div>
+                                      <span className="text-gray-500">DO Number</span>
+                                      <p className="font-mono font-medium text-gray-800">{row.doNumber || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Party PO Date</span>
+                                      <p className="font-medium text-gray-800">{row.partyPODate || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Rate</span>
+                                      <p className="font-medium text-gray-800">{row.rateOfMaterial ? `₹${row.rateOfMaterial}` : "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Total PO Value</span>
+                                      <p className="font-medium text-green-700">{row.totalPOValue ? `₹${Number(row.totalPOValue).toLocaleString()}` : "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Transport Type</span>
+                                      <p className="font-medium text-gray-800">{row.transportType || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Payment</span>
+                                      <p className="font-medium text-gray-800">{row.paymentTerms || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">GST Number</span>
+                                      <p className="font-medium text-gray-800">{row.gstNumber || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Contact Person</span>
+                                      <p className="font-medium text-gray-800">{row.contactPersonName || "—"}</p>
+                                    </div>
+                                    {row.address && (
+                                      <div className="col-span-2">
+                                        <span className="text-gray-500">Address</span>
+                                        <p className="font-medium text-gray-800">{row.address}</p>
+                                      </div>
+                                    )}
+                                    {row.specificConcern && (
+                                      <div className="col-span-2">
+                                        <span className="text-gray-500">Specific Concern</span>
+                                        <p className="font-medium text-orange-700">{row.specificConcern}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
                   )
                 })
               )}
@@ -474,17 +443,13 @@ export default function CheckDeliveryPage({ user }) {
           </DialogHeader>
 
           <div className="space-y-5 py-2">
-            {splitForms.map((form, index) => (
-              <div key={form.splitId} className="border border-gray-200 rounded-xl overflow-hidden">
-                {/* Split header */}
+            {orderForms.map((form, index) => (
+              <div key={form.orderId} className="border border-gray-200 rounded-xl overflow-hidden">
                 <div className="bg-slate-50 px-4 py-3">
                   <p className="text-sm font-semibold text-slate-900">{form.productName}</p>
-                  <p className="text-xs text-slate-500">
-                    {form.transporterName} · Qty: {form.allocatedQty}
-                  </p>
+                  <p className="text-xs text-slate-500">Qty: {form.quantity}</p>
                 </div>
 
-                {/* Form fields */}
                 <div className="p-4 space-y-4">
                   <div className="space-y-1">
                     <Label className="text-xs">In Stock Or Not *</Label>
@@ -573,7 +538,7 @@ export default function CheckDeliveryPage({ user }) {
             <Button
               onClick={handleSubmit}
               className="bg-blue-600 hover:bg-blue-700"
-              disabled={submitting || splitForms.some((f) => !f.inStockOrNot)}
+              disabled={submitting || orderForms.some((f) => !f.inStockOrNot)}
             >
               {submitting ? (
                 <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting...</>

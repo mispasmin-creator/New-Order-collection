@@ -117,6 +117,8 @@ export default function DebitNotePage({ user }) {
       const pending = []
       const history = []
       ;(data || []).forEach((row) => {
+        // "Material Return" reason skips credit note — handled directly in Return of Material page
+        if (row["Reason Of Material Return"] === "Material Return") return
         if (row["Debit Note Issued At"] && String(row["Debit Note Issued At"]).trim() !== "") {
           history.push(row)
         } else {

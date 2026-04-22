@@ -67,6 +67,7 @@ export default function ArrangeLogistics({ user }) {
         .from("ORDER RECEIPT")
         .select("*")
         .not("Actual 2", "is", null)
+        .not("check_delivery_actual", "is", null)
         .or("logistics_status.eq.Pending Arrangement,logistics_status.is.null")
         .order("id", { ascending: false })
       if (error) throw error
