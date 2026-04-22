@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, Fragment } from "react"
 import { getISTDisplayDate, getISTTimestamp, getISTFullDisplayDateTime, getISTDate } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
@@ -10,12 +10,13 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { X, Search, CheckCircle2, Loader2, Upload, Eye } from "lucide-react"
+import { X, Search, CheckCircle2, Loader2, Upload, Eye, ChevronDown, ChevronRight } from "lucide-react"
 
 import { supabase } from "@/lib/supabaseClient"
 import { useNotification } from "@/components/providers/NotificationProvider"
 import { Package, Truck, Scale } from "lucide-react"
 import { getSignedUrl } from "@/lib/storageUtils"
+import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 export default function WeighmentEntryPage({ user }) {
   const [orders, setOrders] = useState([])
@@ -44,34 +45,42 @@ export default function WeighmentEntryPage({ user }) {
     try {
       setLoading(true)
 
-      // Fetch from DISPATCH table where Planned3 is not null (set after Stage 2: Load Material)
-      const { data, error } = await supabase
-        .from('DISPATCH')
-        .select('*')
-        .not('Planned3', 'is', null)
+      const [
+        { data, error },
+        { data: orData, error: orError },
+      ] = await Promise.all([
+        supabase.from('DISPATCH').select('*').not('Planned3', 'is', null),
+        supabase.from('ORDER RECEIPT').select('id, "PARTY PO NO (As Per Po Exact)", "Party Names"'),
+      ])
 
       if (error) throw error
+      if (orError) console.error("ORDER RECEIPT fetch error:", orError)
+
+      const orMap = new Map()
+      ;(orData || []).forEach((row) => orMap.set(row.id, row))
 
       if (data) {
         const pendingOrders = []
         const historyOrdersData = []
 
         data.forEach(row => {
-          // Map row to order object
+          const or = row.po_id ? (orMap.get(row.po_id) || {}) : {}
+
           const order = {
             id: row.id,
-            rowIndex: row.id, 
+            rowIndex: row.id,
             timestamp: row["Timestamp"],
+            partyPONumber: or["PARTY PO NO (As Per Po Exact)"] || "",
             deliveryOrderNo: row["Delivery Order No."],
             dSrNumber: row["D-Sr Number"],
-            partyName: row["Party Name"],
+            partyName: row["Party Name"] || or["Party Names"] || "",
             productName: row["Product Name"],
             qtyToBeDispatched: row["Qty To Be Dispatched"] || "",
             typeOfTransporting: row["Type Of Transporting"],
             transporterName: row["Transporter Name"],
             vehicleNumber: row["Truck No."] || "",
             actualTruckQty: row["Actual Truck Qty"],
-            
+
             // Stage 3 Specific columns
             planned3: formatDate(row["Planned3"]),
             actual3: row["Actual3"] ? formatDate(row["Actual3"]) : "",
@@ -83,13 +92,11 @@ export default function WeighmentEntryPage({ user }) {
             remarks: row["Remarks"],
             actualQtyAsPerWeighmentSlip: row["Actual Qty As Per Weighment Slip"],
 
-            // History helper for Load Material (Stage 2)
             loadingImage1: row["Loading Image 1"],
             loadingImage2: row["Loading Image 2"],
             loadingImage3: row["Loading Image 3"],
           }
 
-          // Logic: Pending if Planned3 exists (query ensures this) AND Actual3 is null.
           if (!order.rawActual3) {
             pendingOrders.push(order)
           } else {
@@ -97,14 +104,9 @@ export default function WeighmentEntryPage({ user }) {
           }
         })
 
-        // Sort by ID descending
         setOrders(pendingOrders.sort((a, b) => b.id - a.id))
         setHistoryOrders(historyOrdersData.sort((a, b) => b.id - a.id))
-
-        // Update notification count for sidebar
         updateCount?.("Weighment Entry", pendingOrders.length)
-
-        console.log("Supabase DISPATCH Data - Pending:", pendingOrders.length, "History:", historyOrdersData.length)
       }
 
     } catch (error) {
@@ -164,6 +166,11 @@ export default function WeighmentEntryPage({ user }) {
   const displayOrders = activeTab === "pending"
     ? searchFilteredOrders(orders)
     : searchFilteredOrders(historyOrders)
+
+  const groupedDisplayOrders = useMemo(() => groupRowsByPo(displayOrders), [displayOrders])
+
+  const [collapsedGroups, setCollapsedGroups] = useState({})
+  const toggleGroup = (key) => setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }))
 
   const handleWeighment = (order) => {
 
@@ -423,55 +430,69 @@ export default function WeighmentEntryPage({ user }) {
               </div>
             </div>
           ) : (
-            displayOrders.map((order) => (
-              <div key={order.id} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{order.partyName}</h3>
-                    <p className="text-xs text-gray-500">DO: {order.deliveryOrderNo} | DS: {order.dSrNumber || "N/A"}</p>
+            groupedDisplayOrders.map((group) => (
+              <div key={group.key} className="space-y-2">
+                {/* PO group header */}
+                <div
+                  className="bg-slate-100 border border-slate-200 rounded-lg px-4 py-2 flex items-center gap-2 cursor-pointer select-none"
+                  onClick={() => toggleGroup(group.key)}
+                >
+                  {collapsedGroups[group.key]
+                    ? <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
+                    : <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />}
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-slate-800">PO: {group.poNumber}</p>
+                    <p className="text-xs text-slate-500">{group.partyName}</p>
                   </div>
-                  <Badge className="bg-green-500 text-white rounded-sm text-xs h-6">
-                    {order.billNo}
-                  </Badge>
+                  <span className="text-xs text-slate-400">{group.rows.length} product{group.rows.length > 1 ? "s" : ""}</span>
                 </div>
-
-                <div className="grid grid-cols-2 gap-3 text-sm border-t border-b border-gray-100 py-3">
-                  <div>
-                    <p className="text-xs text-gray-500">Product</p>
-                    <p className="font-medium text-gray-900 truncate">{order.productName}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Qty</p>
-                    <p className="font-medium text-gray-900">{order.qtyToBeDispatched}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Planned3</p>
-                    <p className="font-medium text-gray-900 text-orange-600">{order.planned3}</p>
-                  </div>
-                </div>
-
-                {activeTab === "pending" && (
-                  <div className="grid grid-cols-2 gap-3 text-sm pb-2">
-                    <div>
-                      <p className="text-xs text-gray-500">Transporter</p>
-                      <p className="font-medium text-gray-900 truncate">{order.transporterName || "N/A"}</p>
+                {!collapsedGroups[group.key] && group.rows.map((order) => (
+                  <div key={order.id} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-3 ml-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-xs text-gray-500">DO: {order.deliveryOrderNo} | DS: {order.dSrNumber || "N/A"}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Vehicle</p>
-                      <p className="font-medium text-gray-900 truncate">{order.vehicleNumber || "N/A"}</p>
-                    </div>
-                  </div>
-                )}
 
-                {activeTab === "pending" && (
-                  <Button
-                    className="w-full bg-blue-600 hover:bg-blue-700 h-9 mt-1"
-                    onClick={() => handleWeighment(order)}
-                    disabled={submitting}
-                  >
-                    Entry
-                  </Button>
-                )}
+                    <div className="grid grid-cols-2 gap-3 text-sm border-t border-b border-gray-100 py-3">
+                      <div>
+                        <p className="text-xs text-gray-500">Product</p>
+                        <p className="font-medium text-gray-900 truncate">{order.productName}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Qty</p>
+                        <p className="font-medium text-gray-900">{order.qtyToBeDispatched}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Planned3</p>
+                        <p className="font-medium text-orange-600">{order.planned3}</p>
+                      </div>
+                    </div>
+
+                    {activeTab === "pending" && (
+                      <div className="grid grid-cols-2 gap-3 text-sm pb-2">
+                        <div>
+                          <p className="text-xs text-gray-500">Transporter</p>
+                          <p className="font-medium text-gray-900 truncate">{order.transporterName || "N/A"}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">Vehicle</p>
+                          <p className="font-medium text-gray-900 truncate">{order.vehicleNumber || "N/A"}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {activeTab === "pending" && (
+                      <Button
+                        className="w-full bg-blue-600 hover:bg-blue-700 h-9 mt-1"
+                        onClick={() => handleWeighment(order)}
+                        disabled={submitting}
+                      >
+                        Entry
+                      </Button>
+                    )}
+                  </div>
+                ))}
               </div>
             ))
           )}
@@ -524,96 +545,121 @@ export default function WeighmentEntryPage({ user }) {
                   </TableCell>
                 </TableRow>
               ) : (
-                displayOrders.map((order) => (
-                  <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
-                    {activeTab === "pending" && (
-                      <TableCell className="py-2 px-4 min-w-[120px]">
-                        <Button
-                          size="sm"
-                          onClick={() => handleWeighment(order)}
-                          className="bg-blue-600 hover:bg-blue-700 h-8 text-xs"
-                          disabled={submitting}
-                        >
-                          Entry
-                        </Button>
+                groupedDisplayOrders.map((group) => (
+                  <Fragment key={group.key}>
+                    {/* PO group header row */}
+                    <TableRow
+                      className="bg-slate-50 cursor-pointer hover:bg-slate-100 select-none"
+                      onClick={() => toggleGroup(group.key)}
+                    >
+                      <TableCell colSpan={activeTab === "pending" ? 12 : 13} className="px-4 py-2">
+                        <div className="flex items-center gap-2">
+                          {collapsedGroups[group.key]
+                            ? <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
+                            : <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" />}
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-slate-900">
+                              PO Number: {group.poNumber}
+                            </span>
+                            <span className="text-xs text-slate-600">Party: {group.partyName}</span>
+                          </div>
+                          <span className="text-xs text-slate-400 ml-auto">
+                            {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
+                          </span>
+                        </div>
                       </TableCell>
-                    )}
-                    <TableCell className="py-2 px-4 min-w-[150px] font-medium text-sm">
-                      {order.deliveryOrderNo}
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[120px] text-sm">
-                      <Badge variant="outline" className="font-mono bg-purple-50 text-purple-700 border-purple-200">
-                        {order.dSrNumber || "N/A"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[120px] text-sm">
-                      {order.billDate}
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[100px]">
-                      <Badge className="bg-green-500 text-white rounded-sm text-xs">
-                        {order.billNo}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.partyName}</TableCell>
-                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">
-                      <div className="max-w-[200px]">
-                        <span className="break-words">{order.productName}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[100px] font-medium text-sm">{order.qtyToBeDispatched}</TableCell>
-                    <TableCell className="py-2 px-4 min-w-[120px] text-sm text-orange-600 font-medium">{order.planned3 || "N/A"}</TableCell>
-                    {activeTab === "pending" && (
-                      <>
-                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.logisticNo || "N/A"}</TableCell>
-                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.transporterName || "N/A"}</TableCell>
-                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.vehicleNumber || "N/A"}</TableCell>
-                      </>
-                    )}
-                     {activeTab === "history" && (
-                      <>
-                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.actual3}</TableCell>
-                        <TableCell className="py-2 px-4 min-w-[100px] text-sm">{order.actualTruckQty || "N/A"}</TableCell>
-                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.actualQtyAsPerWeighmentSlip || "N/A"}</TableCell>
-                        <TableCell className="py-2 px-4 min-w-[150px]">
-                          <div className="flex gap-1 flex-wrap">
-                            {order.imageOfSlip && (
-                              <Badge
-                                className="bg-blue-500 text-white text-[10px] cursor-pointer hover:bg-blue-600 rounded-sm px-1 py-0.5"
-                                onClick={() => openImageLink(order.imageOfSlip)}
-                              >
-                                <Eye className="w-3 h-3 mr-1" />
-                                Slip1
-                              </Badge>
-                            )}
-                            {order.imageOfSlip2 && (
-                              <Badge
-                                className="bg-blue-500 text-white text-[10px] cursor-pointer hover:bg-blue-600 rounded-sm px-1 py-0.5"
-                                onClick={() => openImageLink(order.imageOfSlip2)}
-                              >
-                                <Eye className="w-3 h-3 mr-1" />
-                                Slip2
-                              </Badge>
-                            )}
-                            {order.imageOfSlip3 && (
-                              <Badge
-                                className="bg-blue-500 text-white text-[10px] cursor-pointer hover:bg-blue-600 rounded-sm px-1 py-0.5"
-                                onClick={() => openImageLink(order.imageOfSlip3)}
-                              >
-                                <Eye className="w-3 h-3 mr-1" />
-                                Slip3
-                              </Badge>
-                            )}
-                            {!order.imageOfSlip && !order.imageOfSlip2 && !order.imageOfSlip3 && (
-                              <span className="text-gray-400 text-xs">No slips</span>
-                            )}
+                    </TableRow>
+
+                    {/* Product rows — hidden when collapsed */}
+                    {!collapsedGroups[group.key] && group.rows.map((order) => (
+                      <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
+                        {activeTab === "pending" && (
+                          <TableCell className="py-2 px-4 min-w-[120px]">
+                            <Button
+                              size="sm"
+                              onClick={() => handleWeighment(order)}
+                              className="bg-blue-600 hover:bg-blue-700 h-8 text-xs"
+                              disabled={submitting}
+                            >
+                              Entry
+                            </Button>
+                          </TableCell>
+                        )}
+                        <TableCell className="py-2 px-4 min-w-[150px] font-medium text-sm">
+                          {order.deliveryOrderNo}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">
+                          <Badge variant="outline" className="font-mono bg-purple-50 text-purple-700 border-purple-200">
+                            {order.dSrNumber || "N/A"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm">
+                          {order.billDate}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[100px]">
+                          <Badge className="bg-green-500 text-white rounded-sm text-xs">
+                            {order.billNo}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.partyName}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">
+                          <div className="max-w-[200px]">
+                            <span className="break-words">{order.productName}</span>
                           </div>
                         </TableCell>
-                        <TableCell className="py-2 px-4 max-w-[150px] text-sm">
-                          <span className="truncate block">{order.remarks || "N/A"}</span>
-                        </TableCell>
-                      </>
-                    )}
-                  </TableRow>
+                        <TableCell className="py-2 px-4 min-w-[100px] font-medium text-sm">{order.qtyToBeDispatched}</TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] text-sm text-orange-600 font-medium">{order.planned3 || "N/A"}</TableCell>
+                        {activeTab === "pending" && (
+                          <>
+                            <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.logisticNo || "N/A"}</TableCell>
+                            <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.transporterName || "N/A"}</TableCell>
+                            <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.vehicleNumber || "N/A"}</TableCell>
+                          </>
+                        )}
+                        {activeTab === "history" && (
+                          <>
+                            <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.actual3}</TableCell>
+                            <TableCell className="py-2 px-4 min-w-[100px] text-sm">{order.actualTruckQty || "N/A"}</TableCell>
+                            <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.actualQtyAsPerWeighmentSlip || "N/A"}</TableCell>
+                            <TableCell className="py-2 px-4 min-w-[150px]">
+                              <div className="flex gap-1 flex-wrap">
+                                {order.imageOfSlip && (
+                                  <Badge
+                                    className="bg-blue-500 text-white text-[10px] cursor-pointer hover:bg-blue-600 rounded-sm px-1 py-0.5"
+                                    onClick={() => openImageLink(order.imageOfSlip)}
+                                  >
+                                    <Eye className="w-3 h-3 mr-1" />Slip1
+                                  </Badge>
+                                )}
+                                {order.imageOfSlip2 && (
+                                  <Badge
+                                    className="bg-blue-500 text-white text-[10px] cursor-pointer hover:bg-blue-600 rounded-sm px-1 py-0.5"
+                                    onClick={() => openImageLink(order.imageOfSlip2)}
+                                  >
+                                    <Eye className="w-3 h-3 mr-1" />Slip2
+                                  </Badge>
+                                )}
+                                {order.imageOfSlip3 && (
+                                  <Badge
+                                    className="bg-blue-500 text-white text-[10px] cursor-pointer hover:bg-blue-600 rounded-sm px-1 py-0.5"
+                                    onClick={() => openImageLink(order.imageOfSlip3)}
+                                  >
+                                    <Eye className="w-3 h-3 mr-1" />Slip3
+                                  </Badge>
+                                )}
+                                {!order.imageOfSlip && !order.imageOfSlip2 && !order.imageOfSlip3 && (
+                                  <span className="text-gray-400 text-xs">No slips</span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2 px-4 max-w-[150px] text-sm">
+                              <span className="truncate block">{order.remarks || "N/A"}</span>
+                            </TableCell>
+                          </>
+                        )}
+                      </TableRow>
+                    ))}
+                  </Fragment>
                 ))
               )}
             </TableBody>

@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { X, Search, CheckCircle2, Loader2, FileText, Clock, RotateCcw, Truck, ClipboardList, Send, Camera, Eye, ChevronRight, ChevronDown, Filter } from "lucide-react"
+import { X, Search, CheckCircle2, Loader2, FileText, Clock, RotateCcw, Truck, ClipboardList, Send, Camera, Eye, ChevronRight, ChevronDown, Filter, Trash2, AlertTriangle } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
 import { supabase } from "@/lib/supabaseClient"
 import { getSignedUrl } from "@/lib/storageUtils"
 import { Label } from "@/components/ui/label"
@@ -59,6 +60,16 @@ export default function MaterialReturnPage({ user }) {
     emailScreenshot: null,
   })
 
+  const [managementRemarks, setManagementRemarks] = useState("")
+
+  // Invoice lookup state
+  const [invoiceLookupNo, setInvoiceLookupNo] = useState("")
+  const [invoiceLookupLoading, setInvoiceLookupLoading] = useState(false)
+  const [invoiceProducts, setInvoiceProducts] = useState([]) // rows from DISPATCH
+  const [invoicePartyName, setInvoicePartyName] = useState("")
+  // Per-product: { dispatchId, productName, qty, doNumber, removed: bool, reason: string }
+  const [returnProductLines, setReturnProductLines] = useState([])
+
   const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState("")
 
@@ -101,6 +112,63 @@ export default function MaterialReturnPage({ user }) {
     } catch (error) {
       console.error("Error fetching master data:", error)
     }
+  }
+
+  const handleInvoiceLookup = async () => {
+    if (!invoiceLookupNo.trim()) {
+      toast({ variant: "destructive", title: "Required", description: "Enter an invoice/bill number." })
+      return
+    }
+    try {
+      setInvoiceLookupLoading(true)
+      const { data, error } = await supabase
+        .from("DISPATCH")
+        .select("id, \"Product Name\", \"Actual Truck Qty\", \"Qty To Be Dispatched\", \"Delivery Order No.\", \"Party Name\", po_id")
+        .eq("Bill Number", invoiceLookupNo.trim())
+
+      if (error) throw error
+      if (!data || data.length === 0) {
+        toast({ variant: "destructive", title: "Not Found", description: `No invoice found with number "${invoiceLookupNo.trim()}".` })
+        return
+      }
+
+      // Fetch party name from ORDER RECEIPT if available
+      const firstRow = data[0]
+      let partyName = firstRow["Party Name"] || ""
+      if (!partyName && firstRow.po_id) {
+        const { data: orData } = await supabase
+          .from("ORDER RECEIPT")
+          .select("\"Party Names\"")
+          .eq("id", firstRow.po_id)
+          .single()
+        if (orData) partyName = orData["Party Names"] || ""
+      }
+
+      setInvoicePartyName(partyName)
+      setInvoiceProducts(data)
+      setReturnProductLines(
+        data.map((row) => ({
+          dispatchId: row.id,
+          productName: row["Product Name"] || "",
+          qty: Number(row["Actual Truck Qty"]) || Number(row["Qty To Be Dispatched"]) || 0,
+          doNumber: row["Delivery Order No."] || "",
+          removed: false,
+          reason: "",
+        }))
+      )
+    } catch (err) {
+      console.error("Invoice lookup error:", err)
+      toast({ variant: "destructive", title: "Error", description: err.message })
+    } finally {
+      setInvoiceLookupLoading(false)
+    }
+  }
+
+  const resetInvoiceForm = () => {
+    setInvoiceLookupNo("")
+    setInvoiceProducts([])
+    setInvoicePartyName("")
+    setReturnProductLines([])
   }
 
   const generateNextReturnNo = (entries) => {
@@ -157,66 +225,43 @@ export default function MaterialReturnPage({ user }) {
 
   const handleSubmitReturnForm = async (e) => {
     e.preventDefault()
+    const toReturn = returnProductLines.filter((l) => !l.removed)
+    if (toReturn.length === 0) {
+      toast({ variant: "destructive", title: "No Products", description: "All products were marked as good. Nothing to return." })
+      return
+    }
+    const missing = toReturn.filter((l) => !l.reason)
+    if (missing.length > 0) {
+      toast({ variant: "destructive", title: "Reason Required", description: "Please select a reason for each product being returned." })
+      return
+    }
+
     try {
       setSubmitting(true)
       const timestamp = getISTTimestamp()
 
-      const payload = {
+      // Build base return number and increment per row
+      const baseNo = parseInt(formData.returnNo) || 1
+      const inserts = toReturn.map((line, idx) => ({
         "Time Stamp": timestamp,
-        "D.O Number": formData.doNumber,
-        "Party Name": formData.partyName,
-        "Product Name": formData.productName,
-        "Qty": formData.qty,
-        "Tranport Payment": formData.transportPayment,
-        "Reason Of Material Return": formData.reasonOfMaterialReturn,
-        "Return No.": formData.returnNo,
-        "Bilty No.": formData.biltyNo,
-        "Debit Note": formData.debitNote,
-      }
+        "Invoice Number": invoiceLookupNo.trim(),
+        "D.O Number": line.doNumber,
+        "Party Name": invoicePartyName,
+        "Product Name": line.productName,
+        "Qty": line.qty,
+        "Reason Of Material Return": line.reason,
+        "Return No.": (baseNo + idx).toString().padStart(4, "0"),
+      }))
 
-      // Handle File Uploads
-      if (formData.debitNoteCopy) {
-        const path = `material_return/debit_${formData.returnNo}_${Date.now()}`
-        payload["Debit Note Copy"] = await uploadFile(formData.debitNoteCopy, path)
-      }
-      if (formData.billCopy) {
-        const path = `material_return/bill_${formData.returnNo}_${Date.now()}`
-        payload["Bill Copy"] = await uploadFile(formData.billCopy, path)
-      }
-
-      const { error } = await supabase
-        .from('Material Return')
-        .insert([payload])
-
+      const { error } = await supabase.from("Material Return").insert(inserts)
       if (error) throw error
 
-      toast({
-        title: "Success",
-        description: "Material return form submitted successfully!",
-      })
-
-      setFormData({
-        doNumber: "",
-        partyName: "",
-        productName: "",
-        qty: "",
-        transportPayment: "",
-        reasonOfMaterialReturn: "",
-        returnNo: generateNextReturnNo(returnEntries), // Will be updated by useEffect anyway but good for safety
-        biltyNo: "",
-        debitNoteCopy: null,
-        billCopy: null,
-        debitNote: "",
-      })
-
+      toast({ title: "Success", description: `${inserts.length} return entr${inserts.length > 1 ? "ies" : "y"} submitted for management approval.` })
+      resetInvoiceForm()
       fetchData()
     } catch (error) {
       console.error("Error submitting material return form:", error)
-      toast({
-        title: "Error",
-        description: `Failed to submit. ${error.message}`,
-        variant: "destructive"
-      })
+      toast({ title: "Error", description: `Failed to submit. ${error.message}`, variant: "destructive" })
     } finally {
       setSubmitting(false)
     }
@@ -487,21 +532,20 @@ export default function MaterialReturnPage({ user }) {
   }
 
   // Filter logic for Management Approval tab
-  // Pending: Planned5 set, Actual5 null
-  // History: both Planned5 and Actual5 set
+  // Pending: submitted (Time Stamp set), not yet approved (Actual5 null)
+  // History: approved (Actual5 set)
   const getManagementPending = () => {
     return returnEntries.filter(entry => {
-      const planned5 = entry["Planned5"]
+      const ts = entry["Time Stamp"]
       const actual5 = entry["Actual5"]
-      return (planned5 && planned5 !== "" && (!actual5 || actual5 === ""))
+      return (ts && ts !== "" && (!actual5 || actual5 === ""))
     })
   }
 
   const getManagementHistory = () => {
     return returnEntries.filter(entry => {
-      const planned5 = entry["Planned5"]
       const actual5 = entry["Actual5"]
-      return (planned5 && planned5 !== "" && actual5 && actual5 !== "")
+      return (actual5 && actual5 !== "")
     })
   }
 
@@ -548,6 +592,7 @@ export default function MaterialReturnPage({ user }) {
 
   const handleManagementAction = (entry) => {
     setSelectedManagementEntry(entry)
+    setManagementRemarks(entry["Management Remarks"] || "")
   }
 
   const handleManagementSubmit = async (e) => {
@@ -558,6 +603,7 @@ export default function MaterialReturnPage({ user }) {
 
       const payload = {
         "Actual5": actual5Time,
+        "Management Remarks": managementRemarks.trim(),
       }
 
       const { error } = await supabase
@@ -569,6 +615,7 @@ export default function MaterialReturnPage({ user }) {
 
       toast({ title: "Success", description: "Management Approved successfully!" })
       setSelectedManagementEntry(null)
+      setManagementRemarks("")
       fetchData()
     } catch (error) {
       console.error("Management approval error:", error)
@@ -595,155 +642,147 @@ export default function MaterialReturnPage({ user }) {
           Material Return From Party Form
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-6">
-        <form onSubmit={handleSubmitReturnForm} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>D.O Number</Label>
-              <Input
-                name="doNumber"
-                value={formData.doNumber}
-                onChange={handleInputChange}
-                placeholder="Enter D.O Number"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Party Name</Label>
-              <Select
-                value={formData.partyName}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, partyName: value }))}
-                required
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select Party Name" />
-                </SelectTrigger>
-                <SelectContent>
-                  {partyList.map((party, idx) => (
-                    <SelectItem key={idx} value={party}>{party}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Product Name</Label>
-              <Select
-                value={formData.productName}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, productName: value }))}
-                required
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select Product Name" />
-                </SelectTrigger>
-                <SelectContent>
-                  {productList.map((product, idx) => (
-                    <SelectItem key={idx} value={product}>{product}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Qty</Label>
-              <Input
-                name="qty"
-                type="number"
-                step="0.01"
-                value={formData.qty}
-                onChange={handleInputChange}
-                placeholder="Enter Qty"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Transport Payment</Label>
-              <Input
-                name="transportPayment"
-                type="number"
-                step="0.01"
-                value={formData.transportPayment}
-                onChange={handleInputChange}
-                placeholder="Enter Transport Payment"
-                required
-              />
-            </div>
-            <div className="space-y-2" >
-              <Label>Return No.</Label>
-              <Input
-                name="returnNo"
-                value={formData.returnNo}
-                onChange={handleInputChange}
-                placeholder="Auto-generated"
-                required
-                disabled
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Bilty No.</Label>
-              <Input
-                name="biltyNo"
-                value={formData.biltyNo}
-                onChange={handleInputChange}
-                placeholder="Enter Bilty No."
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Debit Note</Label>
-              <Select
-                value={formData.debitNote}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, debitNote: value }))}
-                required
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select Debit Note Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Material Return">Material Return</SelectItem>
-                  <SelectItem value="Rate Material">Rate Material</SelectItem>
-                  <SelectItem value="Material Shortage">Material Shortage</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Debit Note Copy</Label>
-              <Input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => setFormData(prev => ({ ...prev, debitNoteCopy: e.target.files[0] }))}
-                className="text-xs"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Bill Copy</Label>
-              <Input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => setFormData(prev => ({ ...prev, billCopy: e.target.files[0] }))}
-                className="text-xs"
-              />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Reason Of Material Return</Label>
-              <Input
-                name="reasonOfMaterialReturn"
-                value={formData.reasonOfMaterialReturn}
-                onChange={handleInputChange}
-                placeholder="Enter Reason"
-                required
-              />
-            </div>
-          </div>
-          <div className="pt-4">
+      <CardContent className="p-6 space-y-6">
+
+        {/* Step 1 — Invoice Lookup */}
+        <div className="space-y-3">
+          <Label className="text-sm font-semibold text-gray-700">
+            Invoice / Bill Number <span className="text-red-500">*</span>
+          </Label>
+          <p className="text-xs text-gray-500">Enter the invoice number from Invoice → Make Invoice to auto-populate party and product details.</p>
+          <div className="flex gap-2">
+            <Input
+              value={invoiceLookupNo}
+              onChange={(e) => setInvoiceLookupNo(e.target.value)}
+              placeholder="e.g. INV-2024-001"
+              className="h-10 flex-1"
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleInvoiceLookup())}
+            />
             <Button
-              type="submit"
-              disabled={submitting}
-              className="w-full bg-blue-600 hover:bg-blue-700 h-10"
+              type="button"
+              onClick={handleInvoiceLookup}
+              disabled={invoiceLookupLoading || !invoiceLookupNo.trim()}
+              className="bg-blue-600 hover:bg-blue-700 h-10 px-5 shrink-0"
             >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-              Submit Return Form
+              {invoiceLookupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              <span className="ml-1">Lookup</span>
             </Button>
+            {invoiceProducts.length > 0 && (
+              <Button type="button" variant="outline" onClick={resetInvoiceForm} className="h-10 shrink-0">
+                <X className="w-4 h-4" />
+              </Button>
+            )}
           </div>
-        </form>
+        </div>
+
+        {/* Step 2 — Products table */}
+        {invoiceProducts.length > 0 && (
+          <form onSubmit={handleSubmitReturnForm} className="space-y-5">
+            <div className="p-3 bg-blue-50 border border-blue-100 rounded-md text-sm">
+              <p className="font-semibold text-blue-800">Invoice: {invoiceLookupNo}</p>
+              <p className="text-blue-600 text-xs mt-0.5">Party: {invoicePartyName || "—"} &nbsp;·&nbsp; {invoiceProducts.length} product{invoiceProducts.length > 1 ? "s" : ""} found</p>
+            </div>
+
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">
+                Select products to return &amp; assign reason
+                <span className="ml-2 text-xs font-normal text-gray-500">(remove products that are in good condition using the trash icon)</span>
+              </p>
+
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100 text-xs">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-semibold text-gray-600">Product</th>
+                      <th className="text-right px-3 py-2 font-semibold text-gray-600">Qty</th>
+                      <th className="text-left px-3 py-2 font-semibold text-gray-600">D.O Number</th>
+                      <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[200px]">Reason</th>
+                      <th className="px-3 py-2 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {returnProductLines.map((line, i) => (
+                      <tr key={line.dispatchId} className={line.removed ? "opacity-40 bg-gray-50" : "bg-white"}>
+                        <td className="px-3 py-2 font-medium text-gray-800">{line.productName || "—"}</td>
+                        <td className="px-3 py-2 text-right text-gray-700">{line.qty}</td>
+                        <td className="px-3 py-2 text-gray-600 text-xs">{line.doNumber || "—"}</td>
+                        <td className="px-3 py-2">
+                          {!line.removed ? (
+                            <Select
+                              value={line.reason}
+                              onValueChange={(val) =>
+                                setReturnProductLines((prev) => {
+                                  const next = [...prev]
+                                  next[i] = { ...next[i], reason: val }
+                                  return next
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Select reason" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Damage Done">Damage Done</SelectItem>
+                                <SelectItem value="Quality Issue">Quality Issue</SelectItem>
+                                <SelectItem value="Material Shortage">Material Shortage</SelectItem>
+                                <SelectItem value="Wrong Product">Wrong Product</SelectItem>
+                                <SelectItem value="Other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span className="text-xs text-gray-400 italic">Good — removed</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className={`h-7 w-7 ${line.removed ? "text-green-600 hover:text-green-700" : "text-red-500 hover:text-red-600"}`}
+                            title={line.removed ? "Undo remove" : "Remove (good quality)"}
+                            onClick={() =>
+                              setReturnProductLines((prev) => {
+                                const next = [...prev]
+                                next[i] = { ...next[i], removed: !next[i].removed, reason: next[i].removed ? next[i].reason : "" }
+                                return next
+                              })
+                            }
+                          >
+                            {line.removed ? <RotateCcw className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {returnProductLines.every((l) => l.removed) && (
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-100 rounded-md text-xs text-amber-700 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  All products removed — nothing will be submitted.
+                </div>
+              )}
+
+              {returnProductLines.filter((l) => !l.removed).length > 0 && (
+                <div className="mt-2 text-xs text-gray-500">
+                  {returnProductLines.filter((l) => !l.removed).length} product(s) will be submitted for management approval.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t">
+              <Button
+                type="submit"
+                disabled={submitting || returnProductLines.every((l) => l.removed)}
+                className="w-full bg-blue-600 hover:bg-blue-700 h-10"
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                Submit Return for Management Approval
+              </Button>
+            </div>
+          </form>
+        )}
       </CardContent>
     </Card>
   )
@@ -1651,15 +1690,16 @@ export default function MaterialReturnPage({ user }) {
                         <TableCell colSpan={activeManagementSubTab === "pending" ? 6 : 5} className="p-0 bg-gray-50/40">
                           <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm border-t">
                             {/* Step 1 — Basic Return */}
+                            {entry["Invoice Number"] && <div className="col-span-2"><p className="text-gray-500 text-xs mb-0.5">Invoice Number</p><p className="font-semibold text-blue-700">{entry["Invoice Number"]}</p></div>}
                             <div><p className="text-gray-500 text-xs mb-0.5">Return No.</p><p className="font-semibold text-blue-600">{entry["Return No."]}</p></div>
                             <div><p className="text-gray-500 text-xs mb-0.5">D.O Number</p><p className="font-medium">{entry["D.O Number"] || "—"}</p></div>
                             <div><p className="text-gray-500 text-xs mb-0.5">Party Name</p><p className="font-medium">{entry["Party Name"]}</p></div>
                             <div><p className="text-gray-500 text-xs mb-0.5">Product</p><p className="font-medium">{entry["Product Name"]}</p></div>
                             <div><p className="text-gray-500 text-xs mb-0.5">Qty</p><p className="font-medium">{entry["Qty"]}</p></div>
-                            <div><p className="text-gray-500 text-xs mb-0.5">Transport Payment</p><p className="font-medium">{entry["Tranport Payment"] || "—"}</p></div>
-                            <div><p className="text-gray-500 text-xs mb-0.5">Bilty No.</p><p className="font-medium">{entry["Bilty No."] || "—"}</p></div>
-                            <div><p className="text-gray-500 text-xs mb-0.5">Reason Of Return</p><p className="font-medium">{entry["Reason Of Material Return"] || "—"}</p></div>
-                            <div><p className="text-gray-500 text-xs mb-0.5">Debit Note Type</p><p className="font-medium text-orange-600 font-semibold">{entry["Debit Note"] || "—"}</p></div>
+                            <div><p className="text-gray-500 text-xs mb-0.5">Reason Of Return</p><p className="font-medium text-orange-600">{entry["Reason Of Material Return"] || "—"}</p></div>
+                            {entry["Tranport Payment"] && <div><p className="text-gray-500 text-xs mb-0.5">Transport Payment</p><p className="font-medium">{entry["Tranport Payment"]}</p></div>}
+                            {entry["Bilty No."] && <div><p className="text-gray-500 text-xs mb-0.5">Bilty No.</p><p className="font-medium">{entry["Bilty No."]}</p></div>}
+                            {entry["Debit Note"] && <div><p className="text-gray-500 text-xs mb-0.5">Debit Note Type</p><p className="font-medium text-orange-600 font-semibold">{entry["Debit Note"]}</p></div>}
                             {/* Step 2 — Arrange Logistic */}
                             {entry["Transporter Name"] && <div><p className="text-gray-500 text-xs mb-0.5">Transporter Name</p><p className="font-medium">{entry["Transporter Name"]}</p></div>}
                             {entry["Vehicle No."] && <div><p className="text-gray-500 text-xs mb-0.5">Vehicle No.</p><p className="font-medium">{entry["Vehicle No."]}</p></div>}
@@ -1678,8 +1718,9 @@ export default function MaterialReturnPage({ user }) {
                             {entry["Credit Note Copy"] && <div><p className="text-gray-500 text-xs mb-0.5">Credit Note Copy</p><Button variant="link" size="sm" className="h-auto p-0 text-blue-600 font-semibold" onClick={() => handleViewPhoto(entry["Credit Note Copy"])}>View Copy <Eye className="w-3 h-3 ml-1" /></Button></div>}
                             {/* Step 5 — CRM */}
                             {entry["Photo Of Email Sent"] && <div><p className="text-gray-500 text-xs mb-0.5">Email Sent Screenshot</p><Button variant="link" size="sm" className="h-auto p-0 text-blue-600 font-semibold" onClick={() => handleViewPhoto(entry["Photo Of Email Sent"])}>View Screenshot <Eye className="w-3 h-3 ml-1" /></Button></div>}
-                            {/* Step 6 — Management Approval */}
+                            {/* Management Approval */}
                             {entry["Actual5"] && <div><p className="text-gray-500 text-xs mb-0.5">Management Approval</p><Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">Approved</Badge></div>}
+                            {entry["Management Remarks"] && <div className="col-span-2"><p className="text-gray-500 text-xs mb-0.5">Management Remarks</p><p className="font-medium text-amber-700">{entry["Management Remarks"]}</p></div>}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1893,6 +1934,12 @@ export default function MaterialReturnPage({ user }) {
           Material Return From Party
         </button>
         <button
+          onClick={() => setActiveTab("management_approval")}
+          className={`pb-3 px-4 text-sm font-medium transition-all relative ${activeTab === "management_approval" ? "text-blue-600 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-blue-600" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          Management Approval
+        </button>
+        <button
           onClick={() => setActiveTab("arrange_logistic")}
           className={`pb-3 px-4 text-sm font-medium transition-all relative ${activeTab === "arrange_logistic" ? "text-blue-600 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-blue-600" : "text-gray-500 hover:text-gray-700"}`}
         >
@@ -1903,12 +1950,6 @@ export default function MaterialReturnPage({ user }) {
           className={`pb-3 px-4 text-sm font-medium transition-all relative ${activeTab === "received_return" ? "text-blue-600 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-blue-600" : "text-gray-500 hover:text-gray-700"}`}
         >
           Received Return Material From Party
-        </button>
-        <button
-          onClick={() => setActiveTab("management_approval")}
-          className={`pb-3 px-4 text-sm font-medium transition-all relative ${activeTab === "management_approval" ? "text-blue-600 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-full after:h-0.5 after:bg-blue-600" : "text-gray-500 hover:text-gray-700"}`}
-        >
-          Management Approval
         </button>
         <button
           onClick={() => setActiveTab("issue_note")}
@@ -2276,7 +2317,7 @@ export default function MaterialReturnPage({ user }) {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setSelectedManagementEntry(null)}
+                onClick={() => { setSelectedManagementEntry(null); setManagementRemarks("") }}
                 className="rounded-full hover:bg-gray-200"
               >
                 <X className="w-5 h-5" />
@@ -2285,9 +2326,13 @@ export default function MaterialReturnPage({ user }) {
             <form onSubmit={handleManagementSubmit}>
               <CardContent className="p-6 space-y-4">
                 <div className="p-4 bg-amber-50 border border-amber-100 rounded-lg">
-                  <p className="text-sm text-amber-800 font-medium mb-4 italic">Are you sure you want to approve this material return?</p>
-                  
                   <div className="grid grid-cols-2 gap-y-3 gap-x-6 text-sm">
+                    {selectedManagementEntry["Invoice Number"] && (
+                      <div className="col-span-2">
+                        <p className="text-gray-500 text-xs">Invoice Number</p>
+                        <p className="font-semibold text-blue-700">{selectedManagementEntry["Invoice Number"]}</p>
+                      </div>
+                    )}
                     <div>
                       <p className="text-gray-500 text-xs">Party Name</p>
                       <p className="font-semibold truncate">{selectedManagementEntry["Party Name"]}</p>
@@ -2304,19 +2349,32 @@ export default function MaterialReturnPage({ user }) {
                       <p className="text-gray-500 text-xs">Return No.</p>
                       <p className="font-semibold text-blue-600">{selectedManagementEntry["Return No."]}</p>
                     </div>
-                    <div>
-                      <p className="text-gray-500 text-xs">Debit Note Type</p>
-                      <p className="font-semibold text-orange-600">{selectedManagementEntry["Debit Note"] || "—"}</p>
+                    <div className="col-span-2">
+                      <p className="text-gray-500 text-xs">Reason Of Return</p>
+                      <p className="font-semibold text-orange-600">{selectedManagementEntry["Reason Of Material Return"] || "—"}</p>
                     </div>
+                    {selectedManagementEntry["D.O Number"] && (
+                      <div>
+                        <p className="text-gray-500 text-xs">D.O Number</p>
+                        <p className="font-medium">{selectedManagementEntry["D.O Number"]}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="bg-blue-50 p-3 rounded-md text-xs text-blue-700 space-y-1">
-                  <p><strong>Note:</strong> Approving this will move it to the history section and mark the return process as finalized by management.</p>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Management Remarks</Label>
+                  <Textarea
+                    value={managementRemarks}
+                    onChange={(e) => setManagementRemarks(e.target.value)}
+                    placeholder="Enter approval remarks or notes..."
+                    rows={3}
+                    className="resize-none"
+                  />
                 </div>
               </CardContent>
               <div className="p-6 pt-0 flex justify-end gap-3 border-t bg-gray-50 rounded-b-lg">
-                <Button type="button" variant="outline" onClick={() => setSelectedManagementEntry(null)}>
+                <Button type="button" variant="outline" onClick={() => { setSelectedManagementEntry(null); setManagementRemarks("") }}>
                   Cancel
                 </Button>
                 <Button

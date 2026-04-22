@@ -5,12 +5,20 @@ import { getISTTimestamp } from "@/lib/dateUtils"
 import { supabase } from "@/lib/supabaseClient"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, Search, CheckCircle2, X } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Loader2, Search, CheckCircle2, X, ChevronDown, ChevronRight } from "lucide-react"
 import { useNotification } from "@/components/providers/NotificationProvider"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
@@ -31,6 +39,19 @@ const formatDate = (value) => {
   }
 }
 
+const emptyForm = (row) => ({
+  splitId: row.id,
+  productName: row.productName,
+  transporterName: row.transporterName,
+  allocatedQty: row.allocatedQty,
+  inStockOrNot: "",
+  orderNumberProduction: "",
+  qtyTransferred: "",
+  batchNumberRemarks: "",
+  indentSelfBatchNumber: "",
+  gpPercent: "",
+})
+
 export default function CheckDeliveryPage({ user }) {
   const { updateCount } = useNotification()
   const { toast } = useToast()
@@ -39,15 +60,9 @@ export default function CheckDeliveryPage({ user }) {
   const [submitting, setSubmitting] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState("pending")
-  const [selectedRow, setSelectedRow] = useState(null)
-  const [formData, setFormData] = useState({
-    inStockOrNot: "",
-    orderNumberProduction: "",
-    qtyTransferred: "",
-    batchNumberRemarks: "",
-    indentSelfBatchNumber: "",
-    gpPercent: "",
-  })
+  const [selectedGroup, setSelectedGroup] = useState(null)
+  const [splitForms, setSplitForms] = useState([])
+  const [expandedPO, setExpandedPO] = useState(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -59,7 +74,7 @@ export default function CheckDeliveryPage({ user }) {
         .order("id", { ascending: false })
 
       if (user.role !== "master") {
-        const userFirms = user.firm ? user.firm.split(",").map((firm) => firm.trim()) : []
+        const userFirms = user.firm ? user.firm.split(",").map((f) => f.trim()) : []
         if (!userFirms.includes("all")) {
           orderQuery = orderQuery.in("Firm Name", userFirms)
         }
@@ -69,9 +84,7 @@ export default function CheckDeliveryPage({ user }) {
       if (orderError) throw orderError
 
       const orderMap = new Map()
-      ;(orderData || []).forEach((row) => {
-        orderMap.set(row.id, row)
-      })
+      ;(orderData || []).forEach((row) => orderMap.set(row.id, row))
 
       const { data: splitData, error: splitError } = await supabase
         .from("po_logistics_splits")
@@ -85,7 +98,6 @@ export default function CheckDeliveryPage({ user }) {
         .map((split) => {
           const order = orderMap.get(split.po_id)
           if (!order) return null
-
           return {
             id: split.id,
             poId: split.po_id,
@@ -114,6 +126,10 @@ export default function CheckDeliveryPage({ user }) {
             transportType: order["Type Of Transporting"] || "",
             address: order["Address"] || "",
             gstNumber: order["Gst Number"] || "",
+            rateOfMaterial: order["Rate Of Material"] || "",
+            totalPOValue: order["Total PO Basic Value"] || "",
+            paymentTerms: order["Payment to Be Taken"] || "",
+            specificConcern: order["Specific Concern"] || "",
           }
         })
         .filter(Boolean)
@@ -121,11 +137,7 @@ export default function CheckDeliveryPage({ user }) {
       setRows(mergedRows)
     } catch (error) {
       console.error("Error fetching split delivery rows:", error)
-      toast({
-        title: "Error loading data",
-        description: error.message,
-        variant: "destructive",
-      })
+      toast({ title: "Error loading data", description: error.message, variant: "destructive" })
     } finally {
       setLoading(false)
     }
@@ -152,79 +164,79 @@ export default function CheckDeliveryPage({ user }) {
   const displayRows = useMemo(() => {
     const source = activeTab === "pending" ? pendingRows : historyRows
     if (!searchTerm.trim()) return source
-
     const term = searchTerm.toLowerCase()
     return source.filter((row) =>
-      Object.values(row).some((value) =>
-        value?.toString().toLowerCase().includes(term)
-      )
+      Object.values(row).some((v) => v?.toString().toLowerCase().includes(term))
     )
   }, [activeTab, historyRows, pendingRows, searchTerm])
+
   const groupedDisplayRows = useMemo(() => groupRowsByPo(displayRows), [displayRows])
 
-  const handleOpen = (row) => {
-    setSelectedRow(row)
-    setFormData({
-      inStockOrNot: row.inStockOrNot || "",
-      orderNumberProduction: row.orderNumberProduction || "",
-      qtyTransferred: row.qtyTransferred || "",
-      batchNumberRemarks: row.batchNumberRemarks || "",
-      indentSelfBatchNumber: row.indentSelfBatchNumber || "",
-      gpPercent: row.gpPercent || "",
-    })
+  const handleOpen = (group) => {
+    setSelectedGroup(group)
+    setSplitForms(group.rows.map((row) => emptyForm(row)))
   }
 
   const handleClose = () => {
-    setSelectedRow(null)
-    setFormData({
-      inStockOrNot: "",
-      orderNumberProduction: "",
-      qtyTransferred: "",
-      batchNumberRemarks: "",
-      indentSelfBatchNumber: "",
-      gpPercent: "",
+    setSelectedGroup(null)
+    setSplitForms([])
+  }
+
+  const updateForm = (index, field, value) => {
+    setSplitForms((prev) => {
+      const next = [...prev]
+      next[index] = { ...next[index], [field]: value }
+      return next
     })
   }
 
   const handleSubmit = async () => {
-    if (!selectedRow) return
+    // Validate all rows have inStockOrNot selected
+    for (const form of splitForms) {
+      if (!form.inStockOrNot) {
+        toast({
+          title: "Validation Error",
+          description: `Please select "In Stock Or Not" for ${form.productName} (${form.transporterName}).`,
+          variant: "destructive",
+        })
+        return
+      }
+      if (form.inStockOrNot === "From Purchase" && !form.indentSelfBatchNumber) {
+        toast({
+          title: "Validation Error",
+          description: `Enter Indent/Self Batch Number for ${form.productName}.`,
+          variant: "destructive",
+        })
+        return
+      }
+    }
 
     try {
       setSubmitting(true)
       const timestamp = getISTTimestamp()
 
-      const updatePayload = {
-        status: STATUS_CHECKED,
-        check_delivery_actual: timestamp,
-        check_delivery_in_stock_or_not: formData.inStockOrNot,
-        production_order_no: formData.orderNumberProduction || null,
-        qty_transferred: formData.qtyTransferred ? parseFloat(formData.qtyTransferred) : null,
-        batch_number_remarks: formData.batchNumberRemarks || null,
-        indent_self_batch_number: formData.indentSelfBatchNumber || null,
-        gp_percent: formData.gpPercent ? parseFloat(formData.gpPercent) : null,
-      }
+      await Promise.all(
+        splitForms.map((form) => {
+          const payload = {
+            status: STATUS_CHECKED,
+            check_delivery_actual: timestamp,
+            check_delivery_in_stock_or_not: form.inStockOrNot,
+            production_order_no: form.orderNumberProduction || null,
+            qty_transferred: form.qtyTransferred ? parseFloat(form.qtyTransferred) : null,
+            batch_number_remarks: form.batchNumberRemarks || null,
+            indent_self_batch_number: form.indentSelfBatchNumber || null,
+            gp_percent: form.gpPercent ? parseFloat(form.gpPercent) : null,
+          }
+          return supabase.from("po_logistics_splits").update(payload).eq("id", form.splitId)
+        })
+      )
 
-      const { error } = await supabase
-        .from("po_logistics_splits")
-        .update(updatePayload)
-        .eq("id", selectedRow.id)
-
-      if (error) throw error
-
-      toast({
-        title: "Success",
-        description: "Split row moved to dispatch planning.",
-      })
-
+      toast({ title: "Success", description: "All splits marked as checked." })
       handleClose()
       await fetchData()
     } catch (error) {
-      console.error("Error updating split row:", error)
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      })
+      console.error("Error updating split rows:", error)
+      toast({ title: "Error", description: error.message, variant: "destructive" })
     } finally {
       setSubmitting(false)
     }
@@ -234,7 +246,7 @@ export default function CheckDeliveryPage({ user }) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
         <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
-        <span className="text-gray-600">Loading split delivery rows...</span>
+        <span className="text-gray-600">Loading delivery checks...</span>
       </div>
     )
   }
@@ -248,11 +260,12 @@ export default function CheckDeliveryPage({ user }) {
         </div>
       </div>
 
+      {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="bg-blue-50 border-blue-100 shadow-sm">
           <CardContent className="p-6 flex justify-between items-center">
             <div>
-              <p className="text-sm font-medium text-blue-600">Total Rows</p>
+              <p className="text-sm font-medium text-blue-600">Total Splits</p>
               <div className="text-2xl font-bold text-blue-900">{rows.length}</div>
             </div>
             <div className="h-10 w-10 bg-blue-500 rounded-full flex items-center justify-center text-white">
@@ -284,25 +297,23 @@ export default function CheckDeliveryPage({ user }) {
         </Card>
       </div>
 
-      <div className="bg-white border rounded-md shadow-sm p-4">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                placeholder="Search split rows..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-10 w-full"
-              />
-            </div>
+      {/* Search + tabs */}
+      <div className="bg-white border rounded-md shadow-sm p-4 space-y-4">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 h-10"
+            />
           </div>
           <Button onClick={fetchData} variant="outline" className="h-10 px-3" disabled={loading}>
             <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
-
-        <div className="mt-4 flex bg-gray-100 p-1 rounded-md w-fit">
+        <div className="flex bg-gray-100 p-1 rounded-md w-fit">
           <button
             onClick={() => setActiveTab("pending")}
             className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all ${activeTab === "pending" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
@@ -318,198 +329,261 @@ export default function CheckDeliveryPage({ user }) {
         </div>
       </div>
 
+      {/* Table */}
       <div className="bg-white border rounded-md shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50 border-b border-gray-200">
                 {activeTab === "pending" && <TableHead>Action</TableHead>}
-                <TableHead>DO Number</TableHead>
-                <TableHead>Product</TableHead>
+                <TableHead>PO Number</TableHead>
                 <TableHead>Party</TableHead>
-                <TableHead>Transporter</TableHead>
-                <TableHead>Allocated Qty</TableHead>
-                <TableHead>Status</TableHead>
-                {activeTab === "history" && <TableHead>Checked On</TableHead>}
+                <TableHead>Firm</TableHead>
+                <TableHead>Splits</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {displayRows.length === 0 ? (
+              {groupedDisplayRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={5} className="text-center py-8 text-gray-500">
                     No rows found
                   </TableCell>
                 </TableRow>
-                ) : (
-                groupedDisplayRows.map((group) => (
+              ) : (
+                groupedDisplayRows.map((group) => {
+                  const isExpanded = expandedPO === group.key
+                  return (
                   <Fragment key={group.key}>
-                    <TableRow className="bg-slate-50">
-                      <TableCell colSpan={7} className="px-4 py-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
-                            <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
-                          </div>
-                          <span className="text-xs text-slate-500">{group.rows.length} split row{group.rows.length > 1 ? "s" : ""}</span>
+                    {/* PO header — Check button + expandable */}
+                    <TableRow
+                      className="bg-slate-50 cursor-pointer hover:bg-slate-100"
+                      onClick={() => setExpandedPO(isExpanded ? null : group.key)}
+                    >
+                      {activeTab === "pending" && (
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            size="sm"
+                            onClick={() => handleOpen(group)}
+                            className="bg-blue-600 hover:bg-blue-700"
+                          >
+                            Check
+                          </Button>
+                        </TableCell>
+                      )}
+                      <TableCell className="font-semibold text-slate-900">
+                        <div className="flex items-center gap-2">
+                          {isExpanded
+                            ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                            : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                          }
+                          {group.poNumber}
                         </div>
                       </TableCell>
-                    </TableRow>
-                    {group.rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {activeTab === "pending" && (
+                      <TableCell className="text-slate-700">{group.partyName}</TableCell>
+                      <TableCell className="text-slate-600">{group.rows[0]?.firmName}</TableCell>
                       <TableCell>
-                        <Button size="sm" onClick={() => handleOpen(row)} className="bg-blue-600 hover:bg-blue-700">
-                          Check
-                        </Button>
+                        <span className="text-xs text-slate-500">
+                          {group.rows.length} split{group.rows.length > 1 ? "s" : ""}
+                        </span>
                       </TableCell>
+                    </TableRow>
+
+                    {/* Expanded order details */}
+                    {isExpanded && (
+                      <TableRow>
+                        <TableCell colSpan={activeTab === "pending" ? 5 : 4} className="p-0 border-b border-slate-200">
+                          <div className="bg-slate-50/80 px-6 py-4 space-y-3">
+                            {group.rows.map((row) => (
+                              <div key={row.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                  <span className="text-sm font-semibold text-gray-800">{row.productName}</span>
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                    Qty: {row.allocatedQty} · {row.transporterName}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
+                                  <div>
+                                    <span className="text-gray-500">DO Number</span>
+                                    <p className="font-mono font-medium text-gray-800">{row.doNumber || "—"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Party PO Date</span>
+                                    <p className="font-medium text-gray-800">{row.partyPODate || "—"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Rate</span>
+                                    <p className="font-medium text-gray-800">{row.rateOfMaterial ? `₹${row.rateOfMaterial}` : "—"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Total PO Value</span>
+                                    <p className="font-medium text-green-700">{row.totalPOValue ? `₹${Number(row.totalPOValue).toLocaleString()}` : "—"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Transport Type</span>
+                                    <p className="font-medium text-gray-800">{row.transportType || "—"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Payment</span>
+                                    <p className="font-medium text-gray-800">{row.paymentTerms || "—"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">GST Number</span>
+                                    <p className="font-medium text-gray-800">{row.gstNumber || "—"}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Contact Person</span>
+                                    <p className="font-medium text-gray-800">{row.contactPersonName || "—"}</p>
+                                  </div>
+                                  {row.address && (
+                                    <div className="col-span-2">
+                                      <span className="text-gray-500">Address</span>
+                                      <p className="font-medium text-gray-800">{row.address}</p>
+                                    </div>
+                                  )}
+                                  {row.specificConcern && (
+                                    <div className="col-span-2">
+                                      <span className="text-gray-500">Specific Concern</span>
+                                      <p className="font-medium text-orange-700">{row.specificConcern}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     )}
-                    <TableCell>{row.doNumber}</TableCell>
-                    <TableCell>{row.productName}</TableCell>
-                    <TableCell>{row.partyName}</TableCell>
-                    <TableCell>{row.transporterName}</TableCell>
-                    <TableCell>{row.allocatedQty}</TableCell>
-                    <TableCell>{row.splitStatus}</TableCell>
-                    {activeTab === "history" && <TableCell>{formatDate(row.checkDeliveryActual)}</TableCell>}
-                  </TableRow>
-                    ))}
+
                   </Fragment>
-                ))
+                  )
+                })
               )}
             </TableBody>
           </Table>
         </div>
       </div>
 
-      {selectedRow && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
-              <CardTitle className="text-lg">Check Split for Delivery</CardTitle>
-              <Button variant="ghost" size="sm" onClick={handleClose} disabled={submitting}>
-                <X className="h-5 w-5" />
-              </Button>
-            </CardHeader>
-            <CardContent className="p-4 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <Label className="text-xs">DO Number</Label>
-                  <Input value={selectedRow.doNumber} disabled className="h-9" />
-                </div>
-                <div>
-                  <Label className="text-xs">Transporter</Label>
-                  <Input value={selectedRow.transporterName} disabled className="h-9" />
-                </div>
-                <div>
-                  <Label className="text-xs">Allocated Qty</Label>
-                  <Input value={selectedRow.allocatedQty} disabled className="h-9" />
-                </div>
-                <div>
-                  <Label className="text-xs">Product</Label>
-                  <Input value={selectedRow.productName} disabled className="h-9" />
-                </div>
-              </div>
+      {/* Modal */}
+      <Dialog open={!!selectedGroup} onOpenChange={(open) => !open && handleClose()}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Check for Delivery</DialogTitle>
+            <DialogDescription>
+              PO: {selectedGroup?.poNumber} · {selectedGroup?.rows[0]?.partyName}
+            </DialogDescription>
+          </DialogHeader>
 
-              <div className="space-y-2">
-                <Label className="text-sm">In Stock Or Not *</Label>
-                <Select
-                  value={formData.inStockOrNot}
-                  onValueChange={(value) => setFormData((prev) => ({ ...prev, inStockOrNot: value }))}
-                  disabled={submitting}
-                >
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="Select Option" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="In Stock">In Stock</SelectItem>
-                    <SelectItem value="For Production Planning">For Production Planning</SelectItem>
-                    <SelectItem value="From Purchase">From Purchase</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="space-y-5 py-2">
+            {splitForms.map((form, index) => (
+              <div key={form.splitId} className="border border-gray-200 rounded-xl overflow-hidden">
+                {/* Split header */}
+                <div className="bg-slate-50 px-4 py-3">
+                  <p className="text-sm font-semibold text-slate-900">{form.productName}</p>
+                  <p className="text-xs text-slate-500">
+                    {form.transporterName} · Qty: {form.allocatedQty}
+                  </p>
+                </div>
 
-              {formData.inStockOrNot === "In Stock" && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-xs">Order Number Of The Production</Label>
-                    <Input
-                      value={formData.orderNumberProduction}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, orderNumberProduction: e.target.value }))}
-                      className="h-9 text-sm"
+                {/* Form fields */}
+                <div className="p-4 space-y-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs">In Stock Or Not *</Label>
+                    <Select
+                      value={form.inStockOrNot}
+                      onValueChange={(v) => updateForm(index, "inStockOrNot", v)}
                       disabled={submitting}
-                    />
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Select Option" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="In Stock">In Stock</SelectItem>
+                        <SelectItem value="For Production Planning">For Production Planning</SelectItem>
+                        <SelectItem value="From Purchase">From Purchase</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Qty Transferred</Label>
-                    <Input
-                      value={formData.qtyTransferred}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, qtyTransferred: e.target.value }))}
-                      className="h-9 text-sm"
-                      disabled={submitting}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Batch Number Remarks</Label>
-                    <Input
-                      value={formData.batchNumberRemarks}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, batchNumberRemarks: e.target.value }))}
-                      className="h-9 text-sm"
-                      disabled={submitting}
-                    />
-                  </div>
-                </div>
-              )}
 
-              {formData.inStockOrNot === "From Purchase" && (
-                <div className="space-y-2">
-                  <Label className="text-xs">Indent/Self Batch Number *</Label>
-                  <Input
-                    value={formData.indentSelfBatchNumber}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, indentSelfBatchNumber: e.target.value }))}
-                    className="h-9 text-sm"
-                    disabled={submitting}
-                  />
-                </div>
-              )}
-
-              {formData.inStockOrNot === "For Production Planning" && (
-                <div className="space-y-2">
-                  <Label className="text-xs">GP % *</Label>
-                  <Input
-                    value={formData.gpPercent}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, gpPercent: e.target.value }))}
-                    className="h-9 text-sm"
-                    disabled={submitting}
-                  />
-                </div>
-              )}
-
-              <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t">
-                <Button variant="outline" onClick={handleClose} disabled={submitting}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleSubmit}
-                  className="bg-blue-600 hover:bg-blue-700"
-                  disabled={
-                    submitting ||
-                    !formData.inStockOrNot ||
-                    (formData.inStockOrNot === "From Purchase" && !formData.indentSelfBatchNumber)
-                  }
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    "Submit Check"
+                  {form.inStockOrNot === "In Stock" && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Order Number Of Production</Label>
+                        <Input
+                          value={form.orderNumberProduction}
+                          onChange={(e) => updateForm(index, "orderNumberProduction", e.target.value)}
+                          className="h-9 text-sm"
+                          disabled={submitting}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Qty Transferred</Label>
+                        <Input
+                          type="number"
+                          value={form.qtyTransferred}
+                          onChange={(e) => updateForm(index, "qtyTransferred", e.target.value)}
+                          className="h-9 text-sm"
+                          disabled={submitting}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Batch Number Remarks</Label>
+                        <Input
+                          value={form.batchNumberRemarks}
+                          onChange={(e) => updateForm(index, "batchNumberRemarks", e.target.value)}
+                          className="h-9 text-sm"
+                          disabled={submitting}
+                        />
+                      </div>
+                    </div>
                   )}
-                </Button>
+
+                  {form.inStockOrNot === "From Purchase" && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">Indent / Self Batch Number *</Label>
+                      <Input
+                        value={form.indentSelfBatchNumber}
+                        onChange={(e) => updateForm(index, "indentSelfBatchNumber", e.target.value)}
+                        className="h-9 text-sm"
+                        disabled={submitting}
+                      />
+                    </div>
+                  )}
+
+                  {form.inStockOrNot === "For Production Planning" && (
+                    <div className="space-y-1">
+                      <Label className="text-xs">GP %</Label>
+                      <Input
+                        type="number"
+                        value={form.gpPercent}
+                        onChange={(e) => updateForm(index, "gpPercent", e.target.value)}
+                        className="h-9 text-sm"
+                        disabled={submitting}
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleClose} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={submitting || splitForms.some((f) => !f.inStockOrNot)}
+            >
+              {submitting ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Submitting...</>
+              ) : (
+                "Submit Check"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

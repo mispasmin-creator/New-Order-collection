@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { X, Search, Loader2, CheckCircle2, Truck } from "lucide-react"
+import { X, Search, Loader2, CheckCircle2, Truck, ChevronDown, ChevronRight } from "lucide-react"
 import { supabase } from "@/lib/supabaseClient"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
@@ -64,7 +64,8 @@ export default function LogisticPage() {
   const [transporters, setTransporters] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [selectedGroup, setSelectedGroup] = useState(null)
+  const [expandedGroup, setExpandedGroup] = useState(null)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
   const [formData, setFormData] = useState({
@@ -73,7 +74,6 @@ export default function LogisticPage() {
     driverMobileNo: "",
     vehicleNoPlateImage: null,
     biltyNo: "",
-    actualTruckQty: "",
     typeOfTransporting: "",
     typeOfRate: "",
     transportRatePerTon: "",
@@ -85,24 +85,39 @@ export default function LogisticPage() {
     try {
       setLoading(true)
 
-      const [{ data: dispatchData, error: dispatchError }, { data: orderData, error: orderError }] = await Promise.all([
+      const [
+        { data: dispatchData, error: dispatchError },
+        { data: orderData, error: orderError },
+        { data: approvedSplitsData, error: approvedSplitsError },
+      ] = await Promise.all([
         supabase.from("DISPATCH").select("*").order("id", { ascending: false }),
         supabase.from("ORDER RECEIPT").select('id, "PARTY PO NO (As Per Po Exact)", "Party Names"'),
+        supabase.from("po_logistics_splits").select("id, payment_term_status, accounts_remarks").eq("status", "Accounts Approved"),
       ])
 
       if (dispatchError) throw dispatchError
       if (orderError) throw orderError
+      if (approvedSplitsError) throw approvedSplitsError
 
       const orderMap = new Map()
-      ;(orderData || []).forEach((row) => {
-        orderMap.set(row.id, row)
-      })
+      ;(orderData || []).forEach((row) => orderMap.set(row.id, row))
+
+      // Map of split id → accounts info for approved splits
+      const approvedSplitMap = new Map()
+      ;(approvedSplitsData || []).forEach((s) => approvedSplitMap.set(s.id, s))
 
       const pending = []
       const history = []
 
       ;(dispatchData || []).forEach((row) => {
         const order = row.po_id ? orderMap.get(row.po_id) : null
+        const splitId = row.logistics_split_id || null
+        const splitInfo = splitId ? approvedSplitMap.get(splitId) : null
+
+        // Gate: only show DISPATCH records whose split is Accounts Approved
+        // (if no split linked, allow through for legacy data)
+        if (splitId && !splitInfo) return
+
         const mapped = {
           id: row.id,
           partyPONumber: order?.["PARTY PO NO (As Per Po Exact)"] || "",
@@ -124,8 +139,10 @@ export default function LogisticPage() {
           typeOfRate: row[DB_COLUMNS.TYPE_OF_RATE] || "",
           transportRatePerTon: row[DB_COLUMNS.TRANSPORT_RATE] || "",
           fixedAmount: row[DB_COLUMNS.FIXED_AMOUNT] || "",
-          logisticsSplitId: row.logistics_split_id || null,
+          logisticsSplitId: splitId,
           logisticsPlanId: row.logistics_plan_id || null,
+          paymentTermStatus: splitInfo?.payment_term_status || "",
+          accountsRemarks: splitInfo?.accounts_remarks || "",
         }
 
         if (row[DB_COLUMNS.PLANNED1] && !row[DB_COLUMNS.ACTUAL1]) {
@@ -180,28 +197,27 @@ export default function LogisticPage() {
   }, [activeTab, historyOrders, orders, searchTerm])
   const groupedDisplayOrders = useMemo(() => groupRowsByPo(displayOrders), [displayOrders])
 
-  const generateLGSTNumber = useCallback(() => {
-    if (historyOrders.length === 0) return "LGST-001"
+  const generateLGSTNumbers = useCallback((count) => {
     let maxNumber = 0
     historyOrders.forEach((order) => {
       const match = order.lgstSrNumber?.match(/LGST-(\d+)/i)
-      if (match) {
-        maxNumber = Math.max(maxNumber, parseInt(match[1], 10))
-      }
+      if (match) maxNumber = Math.max(maxNumber, parseInt(match[1], 10))
     })
-    return `LGST-${String(maxNumber + 1).padStart(3, "0")}`
+    return Array.from({ length: count }, (_, i) =>
+      `LGST-${String(maxNumber + 1 + i).padStart(3, "0")}`
+    )
   }, [historyOrders])
 
-  const handleOpen = (order) => {
-    setSelectedOrder(order)
+  const handleOpen = (group) => {
+    const firstRow = group.rows[0]
+    setSelectedGroup(group)
     setFormData({
-      transporterName: order.transporterName || "",
+      transporterName: firstRow.transporterName || "",
       truckNo: "",
       driverMobileNo: "",
       vehicleNoPlateImage: null,
       biltyNo: "",
-      actualTruckQty: order.qtyToBeDispatched ? String(order.qtyToBeDispatched) : "",
-      typeOfTransporting: order.typeOfTransporting || "",
+      typeOfTransporting: firstRow.typeOfTransporting || "",
       typeOfRate: "",
       transportRatePerTon: "",
       fixedAmount: "",
@@ -209,14 +225,13 @@ export default function LogisticPage() {
   }
 
   const handleClose = () => {
-    setSelectedOrder(null)
+    setSelectedGroup(null)
     setFormData({
       transporterName: "",
       truckNo: "",
       driverMobileNo: "",
       vehicleNoPlateImage: null,
       biltyNo: "",
-      actualTruckQty: "",
       typeOfTransporting: "",
       typeOfRate: "",
       transportRatePerTon: "",
@@ -224,70 +239,80 @@ export default function LogisticPage() {
     })
   }
 
+  const isFor = formData.typeOfTransporting === "For"
+
   const handleSubmit = async () => {
-    if (!selectedOrder) return
+    if (!selectedGroup) return
 
     try {
       setSubmitting(true)
 
-      const lgstNumber = generateLGSTNumber()
       const actualDate = getISTTimestamp()
-      let vehicleImageUrl = ""
+      const lgstNumbers = generateLGSTNumbers(selectedGroup.rows.length)
 
+      let vehicleImageUrl = ""
       if (formData.vehicleNoPlateImage) {
         const file = formData.vehicleNoPlateImage
         const fileExt = file.name.split(".").pop()
-        const fileName = `logistic/${lgstNumber}_${Date.now()}.${fileExt}`
+        const fileName = `logistic/${lgstNumbers[0]}_${Date.now()}.${fileExt}`
         const { error: uploadError } = await supabase.storage.from("images").upload(fileName, file)
         if (uploadError) throw uploadError
         const { data: { publicUrl } } = supabase.storage.from("images").getPublicUrl(fileName)
         vehicleImageUrl = publicUrl
       }
 
-      const updates = {
+      const baseUpdates = {
         [DB_COLUMNS.ACTUAL1]: actualDate,
-        [DB_COLUMNS.LGST_SR_NUMBER]: lgstNumber,
-        [DB_COLUMNS.ACTUAL_TRUCK_QTY]: parseFloat(formData.actualTruckQty) || null,
         [DB_COLUMNS.TYPE_OF_TRANSPORTING_LOGISTIC]: formData.typeOfTransporting,
         [DB_COLUMNS.TRANSPORTER_NAME]: formData.transporterName,
         [DB_COLUMNS.TRUCK_NO]: formData.truckNo,
         [DB_COLUMNS.DRIVER_MOBILE]: formData.driverMobileNo,
         [DB_COLUMNS.VEHICLE_IMAGE]: vehicleImageUrl,
         [DB_COLUMNS.BILTY_NO]: formData.biltyNo,
-        [DB_COLUMNS.TYPE_OF_RATE]: formData.typeOfRate,
+        [DB_COLUMNS.TYPE_OF_RATE]: isFor ? null : formData.typeOfRate,
+        [DB_COLUMNS.TRANSPORT_RATE]: null,
+        [DB_COLUMNS.FIXED_AMOUNT]: null,
       }
 
-      if (formData.typeOfRate === "Per Matric Ton rate") {
-        updates[DB_COLUMNS.TRANSPORT_RATE] = parseFloat(formData.transportRatePerTon) || null
-        updates[DB_COLUMNS.FIXED_AMOUNT] = null
-      } else if (formData.typeOfRate === "Fixed Amount") {
-        updates[DB_COLUMNS.TRANSPORT_RATE] = null
-        updates[DB_COLUMNS.FIXED_AMOUNT] = parseFloat(formData.fixedAmount) || null
-      } else if (formData.typeOfRate === "Ex Factory Transporter") {
-        updates[DB_COLUMNS.TRANSPORT_RATE] = 0
-        updates[DB_COLUMNS.FIXED_AMOUNT] = 0
+      if (!isFor) {
+        if (formData.typeOfRate === "Per Matric Ton rate") {
+          baseUpdates[DB_COLUMNS.TRANSPORT_RATE] = parseFloat(formData.transportRatePerTon) || null
+        } else if (formData.typeOfRate === "Fixed Amount") {
+          baseUpdates[DB_COLUMNS.FIXED_AMOUNT] = parseFloat(formData.fixedAmount) || null
+        } else if (formData.typeOfRate === "Ex Factory Transporter") {
+          baseUpdates[DB_COLUMNS.TRANSPORT_RATE] = 0
+          baseUpdates[DB_COLUMNS.FIXED_AMOUNT] = 0
+        }
       }
 
-      const { error } = await supabase
-        .from("DISPATCH")
-        .update(updates)
-        .eq("id", selectedOrder.id)
+      await Promise.all(
+        selectedGroup.rows.map((row, i) => {
+          const lgstNumber = lgstNumbers[i]
+          return supabase
+            .from("DISPATCH")
+            .update({
+              ...baseUpdates,
+              [DB_COLUMNS.LGST_SR_NUMBER]: lgstNumber,
+              [DB_COLUMNS.ACTUAL_TRUCK_QTY]: parseFloat(row.qtyToBeDispatched) || null,
+            })
+            .eq("id", row.id)
+        })
+      )
 
-      if (error) throw error
-
-      if (selectedOrder.logisticsSplitId) {
-        await supabase
-          .from("po_logistics_splits")
-          .update({
-            status: "Logistic Completed",
-            lgst_sr_number: lgstNumber,
-          })
-          .eq("id", selectedOrder.logisticsSplitId)
-      }
+      await Promise.all(
+        selectedGroup.rows
+          .filter((row) => row.logisticsSplitId)
+          .map((row, i) =>
+            supabase
+              .from("po_logistics_splits")
+              .update({ status: "Logistic Completed", lgst_sr_number: lgstNumbers[i] })
+              .eq("id", row.logisticsSplitId)
+          )
+      )
 
       toast({
         title: "Success",
-        description: `Logistic details submitted successfully. LGST: ${lgstNumber}`,
+        description: `Logistic submitted for PO ${selectedGroup.poNumber}. LGST: ${lgstNumbers.join(", ")}`,
       })
 
       handleClose()
@@ -397,66 +422,154 @@ export default function LogisticPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50 border-b border-gray-200">
+                <TableHead className="w-8" />
                 {activeTab === "pending" && <TableHead>Action</TableHead>}
                 {activeTab === "history" && <TableHead>LGST-Sr</TableHead>}
-                <TableHead>D-Sr</TableHead>
-                <TableHead>DO Number</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Transporter</TableHead>
-                <TableHead>Qty</TableHead>
+                <TableHead>PO Number</TableHead>
+                <TableHead>Party</TableHead>
+                <TableHead>Products</TableHead>
                 <TableHead>{activeTab === "pending" ? "Planned" : "Actual"}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {displayOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
-                    No rows found
-                  </TableCell>
+                  <TableCell colSpan={6} className="text-center py-8 text-gray-500">No rows found</TableCell>
                 </TableRow>
               ) : (
-                groupedDisplayOrders.map((group) => (
-                  <Fragment key={group.key}>
-                    <TableRow className="bg-slate-50">
-                      <TableCell colSpan={7} className="px-4 py-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
-                            <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
-                          </div>
-                          <span className="text-xs text-slate-500">{group.rows.length} row{group.rows.length > 1 ? "s" : ""}</span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {group.rows.map((row) => (
-                  <TableRow key={row.id}>
-                    {activeTab === "pending" && (
-                      <TableCell>
-                        <Button size="sm" onClick={() => handleOpen(row)} className="bg-blue-600 hover:bg-blue-700">
-                          Handle
-                        </Button>
-                      </TableCell>
-                    )}
-                    {activeTab === "history" && <TableCell>{row.lgstSrNumber}</TableCell>}
-                    <TableCell>{row.dSrNumber}</TableCell>
-                    <TableCell>{row.deliveryOrderNo}</TableCell>
-                    <TableCell>{row.productName}</TableCell>
-                    <TableCell>{row.transporterName || "Not set"}</TableCell>
-                    <TableCell>{activeTab === "pending" ? row.qtyToBeDispatched : row.actualTruckQty}</TableCell>
-                    <TableCell>{activeTab === "pending" ? row.planned1 : row.actual1}</TableCell>
-                  </TableRow>
-                    ))}
-                  </Fragment>
-                ))
+                groupedDisplayOrders.map((group) => {
+                  const isExpanded = expandedGroup === group.key
+                  return (
+                    <Fragment key={group.key}>
+                      {/* PO group header — clickable */}
+                      <TableRow
+                        className="bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                        onClick={() => setExpandedGroup(isExpanded ? null : group.key)}
+                      >
+                        <TableCell className="text-gray-400 pl-3">
+                          {isExpanded
+                            ? <ChevronDown className="w-4 h-4" />
+                            : <ChevronRight className="w-4 h-4" />
+                          }
+                        </TableCell>
+                        {activeTab === "pending" && (
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Button size="sm" onClick={() => handleOpen(group)} className="bg-blue-600 hover:bg-blue-700">
+                              Handle
+                            </Button>
+                          </TableCell>
+                        )}
+                        {activeTab === "history" && (
+                          <TableCell className="font-mono text-xs text-gray-600">
+                            {group.rows.map((r) => r.lgstSrNumber).filter(Boolean).join(", ") || "—"}
+                          </TableCell>
+                        )}
+                        <TableCell className="font-semibold text-slate-900">{group.poNumber}</TableCell>
+                        <TableCell className="text-slate-700">{group.partyName}</TableCell>
+                        <TableCell>
+                          <span className="text-xs text-slate-500">
+                            {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {activeTab === "pending" ? group.rows[0]?.planned1 : group.rows[0]?.actual1}
+                        </TableCell>
+                      </TableRow>
+
+                      {/* Expanded: detail cards per product */}
+                      {isExpanded && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="p-0 border-b border-slate-200">
+                            <div className="bg-slate-50/80 px-6 py-4 space-y-3">
+                              {group.rows.map((row) => (
+                                <div key={row.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <span className="text-sm font-semibold text-gray-800">{row.productName}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        Qty: {row.qtyToBeDispatched}
+                                      </span>
+                                      {row.paymentTermStatus === "Not Followed" && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                                          ⚠ Payment Term Not Followed
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
+                                    <div>
+                                      <span className="text-gray-500">D-Sr Number</span>
+                                      <p className="font-mono font-medium text-gray-800">{row.dSrNumber || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">DO Number</span>
+                                      <p className="font-mono font-medium text-gray-800">{row.deliveryOrderNo || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Transport Type</span>
+                                      <p className="font-medium text-gray-800">{row.typeOfTransporting || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Transporter</span>
+                                      <p className="font-medium text-gray-800">{row.transporterName || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Date of Dispatch</span>
+                                      <p className="font-medium text-gray-800">{row.dateOfDispatch || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Planned</span>
+                                      <p className="font-medium text-gray-800">{row.planned1 || "—"}</p>
+                                    </div>
+                                    {row.actual1 && (
+                                      <div>
+                                        <span className="text-gray-500">Actual</span>
+                                        <p className="font-medium text-green-700">{row.actual1}</p>
+                                      </div>
+                                    )}
+                                    {row.lgstSrNumber && (
+                                      <div>
+                                        <span className="text-gray-500">LGST-Sr</span>
+                                        <p className="font-mono font-medium text-gray-800">{row.lgstSrNumber}</p>
+                                      </div>
+                                    )}
+                                    {row.truckNo && (
+                                      <div>
+                                        <span className="text-gray-500">Truck No.</span>
+                                        <p className="font-medium text-gray-800">{row.truckNo}</p>
+                                      </div>
+                                    )}
+                                    {row.driverMobileNo && (
+                                      <div>
+                                        <span className="text-gray-500">Driver Mobile</span>
+                                        <p className="font-medium text-gray-800">{row.driverMobileNo}</p>
+                                      </div>
+                                    )}
+                                    {row.accountsRemarks && (
+                                      <div className="col-span-2">
+                                        <span className="text-gray-500">Accounts Remarks</span>
+                                        <p className="font-medium text-red-600 italic">{row.accountsRemarks}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  )
+                })
               )}
             </TableBody>
           </Table>
         </div>
       </div>
 
-      {selectedOrder && (
+      {selectedGroup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
               <CardTitle className="text-lg">Logistic Details</CardTitle>
               <Button variant="ghost" size="sm" onClick={handleClose} disabled={submitting}>
@@ -464,12 +577,34 @@ export default function LogisticPage() {
               </Button>
             </CardHeader>
             <CardContent className="p-4 space-y-4">
-              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm">
-                <p className="font-medium text-gray-900">{selectedOrder.partyName}</p>
-                <p className="text-gray-600 mt-1">DO: {selectedOrder.deliveryOrderNo} | DS: {selectedOrder.dSrNumber}</p>
-                <p className="text-gray-600">Product: {selectedOrder.productName}</p>
-                <p className="text-gray-600">Split ID: {selectedOrder.logisticsSplitId || "N/A"}</p>
-                <p className="text-sm text-blue-600 font-medium mt-1">LGST Number: {generateLGSTNumber()}</p>
+              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-gray-900">PO: {selectedGroup.poNumber}</p>
+                  <span className="text-xs text-blue-600 font-medium">
+                    LGST: {generateLGSTNumbers(selectedGroup.rows.length).join(", ")}
+                  </span>
+                </div>
+                <p className="text-gray-600">Party: {selectedGroup.partyName}</p>
+                <div className="border rounded-md overflow-hidden mt-1">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="text-left px-2 py-1 font-medium text-gray-600">D-Sr</th>
+                        <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
+                        <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {selectedGroup.rows.map((row) => (
+                        <tr key={row.id} className="bg-white">
+                          <td className="px-2 py-1 text-gray-700">{row.dSrNumber}</td>
+                          <td className="px-2 py-1 text-gray-700">{row.productName}</td>
+                          <td className="px-2 py-1 text-gray-700 text-right">{row.qtyToBeDispatched}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -491,35 +626,26 @@ export default function LogisticPage() {
                   </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-sm">Actual Truck Qty *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.actualTruckQty}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, actualTruckQty: e.target.value }))}
-                    className="h-10"
-                    disabled={submitting}
-                  />
-                </div>
 
-                <div className="space-y-2">
-                  <Label className="text-sm">Transporter Name *</Label>
-                  <Select
-                    value={formData.transporterName}
-                    onValueChange={(value) => setFormData((prev) => ({ ...prev, transporterName: value }))}
-                    disabled={submitting}
-                  >
-                    <SelectTrigger className="h-10">
-                      <SelectValue placeholder="Select Transporter" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {transporterOptions.map((transporter) => (
-                        <SelectItem key={transporter} value={transporter}>{transporter}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {!isFor && (
+                  <div className="space-y-2">
+                    <Label className="text-sm">Transporter Name *</Label>
+                    <Select
+                      value={formData.transporterName}
+                      onValueChange={(value) => setFormData((prev) => ({ ...prev, transporterName: value }))}
+                      disabled={submitting}
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Select Transporter" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {transporterOptions.map((transporter) => (
+                          <SelectItem key={transporter} value={transporter}>{transporter}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label className="text-sm">Truck No. *</Label>
@@ -541,32 +667,34 @@ export default function LogisticPage() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-sm">Type Of Rate *</Label>
-                  <Select
-                    value={formData.typeOfRate}
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        typeOfRate: value,
-                        transportRatePerTon: value === "Ex Factory Transporter" ? "0" : "",
-                        fixedAmount: value === "Ex Factory Transporter" ? "0" : "",
-                      }))
-                    }
-                    disabled={submitting}
-                  >
-                    <SelectTrigger className="h-10">
-                      <SelectValue placeholder="Select Rate Type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Fixed Amount">Fixed Amount</SelectItem>
-                      <SelectItem value="Per Matric Ton rate">Per Matric Ton rate</SelectItem>
-                      <SelectItem value="Ex Factory Transporter">Ex Factory Transporter</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                {!isFor && (
+                  <div className="space-y-2">
+                    <Label className="text-sm">Type Of Rate *</Label>
+                    <Select
+                      value={formData.typeOfRate}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          typeOfRate: value,
+                          transportRatePerTon: value === "Ex Factory Transporter" ? "0" : "",
+                          fixedAmount: value === "Ex Factory Transporter" ? "0" : "",
+                        }))
+                      }
+                      disabled={submitting}
+                    >
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Select Rate Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Fixed Amount">Fixed Amount</SelectItem>
+                        <SelectItem value="Per Matric Ton rate">Per Matric Ton rate</SelectItem>
+                        <SelectItem value="Ex Factory Transporter">Ex Factory Transporter</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
 
-                {formData.typeOfRate === "Per Matric Ton rate" && (
+                {!isFor && formData.typeOfRate === "Per Matric Ton rate" && (
                   <div className="space-y-2">
                     <Label className="text-sm">Transport Rate @Per Matric Ton *</Label>
                     <Input
@@ -580,7 +708,7 @@ export default function LogisticPage() {
                   </div>
                 )}
 
-                {formData.typeOfRate === "Fixed Amount" && (
+                {!isFor && formData.typeOfRate === "Fixed Amount" && (
                   <div className="space-y-2">
                     <Label className="text-sm">Fixed Amount *</Label>
                     <Input
@@ -631,13 +759,12 @@ export default function LogisticPage() {
                   disabled={
                     submitting ||
                     !formData.typeOfTransporting ||
-                    !formData.actualTruckQty ||
                     !formData.transporterName ||
                     !formData.truckNo ||
                     !formData.driverMobileNo ||
-                    !formData.typeOfRate ||
-                    (formData.typeOfRate === "Per Matric Ton rate" && !formData.transportRatePerTon) ||
-                    (formData.typeOfRate === "Fixed Amount" && !formData.fixedAmount)
+                    (!isFor && !formData.typeOfRate) ||
+                    (!isFor && formData.typeOfRate === "Per Matric Ton rate" && !formData.transportRatePerTon) ||
+                    (!isFor && formData.typeOfRate === "Fixed Amount" && !formData.fixedAmount)
                   }
                 >
                   {submitting ? (

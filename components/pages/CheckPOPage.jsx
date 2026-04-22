@@ -638,6 +638,7 @@ export default function CheckPOPage({ user, onNavigate }) {
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50 border-b border-gray-200">
+                  <TableHead className="px-4 w-12 font-semibold text-gray-900">Details</TableHead>
                   {activeTab === "pending" && (
                     <TableHead className="px-4 min-w-[180px] font-semibold text-gray-900" colSpan={2}>Expected Delivery <span className="text-red-500">*</span></TableHead>
                   )}
@@ -655,7 +656,6 @@ export default function CheckPOPage({ user, onNavigate }) {
                       <TableHead className="px-4 min-w-[120px] font-semibold text-gray-900">Actual Date</TableHead>
                     </>
                   )}
-                  <TableHead className="px-4 w-12 font-semibold text-gray-900">Details</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -700,6 +700,20 @@ export default function CheckPOPage({ user, onNavigate }) {
                         className={`hover:bg-gray-50 transition-colors border-b border-gray-100 ${selectedOrders.includes(order.id) ? "bg-blue-50" : ""
                           }`}
                       >
+                        <TableCell className="px-4 w-12">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => toggleRowExpansion(order.id)}
+                          >
+                            {expandedRow === order.id ? (
+                              <ChevronDown className="w-4 h-4" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </TableCell>
                         {activeTab === "pending" && (
                           <TableCell className="px-4 min-w-[180px]" colSpan={2}>
                             <Input
@@ -745,20 +759,6 @@ export default function CheckPOPage({ user, onNavigate }) {
                             </TableCell>
                           </>
                         )}
-                        <TableCell className="px-4 w-12">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0"
-                            onClick={() => toggleRowExpansion(order.id)}
-                          >
-                            {expandedRow === order.id ? (
-                              <ChevronDown className="w-4 h-4" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4" />
-                            )}
-                          </Button>
-                        </TableCell>
                       </TableRow>
                       {expandedRow === order.id && (
                         <TableRow>

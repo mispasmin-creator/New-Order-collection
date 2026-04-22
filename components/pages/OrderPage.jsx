@@ -88,7 +88,7 @@ export default function OrderPage({ user }) {
           timestamp: row["Timestamp"],
           doNumber: row["DO-Delivery Order No."],
           partyPONumber: row["PARTY PO NO (As Per Po Exact)"],
-          partyPODate: formatDate(row["Party PO Date"]),
+          partyPODate: formatDate(row["Expected Delivery Date"] || row["Party PO Date"]),
           partyName: row["Party Names"],
           productName: row["Product Name"],
           quantity: parseFloat(row["Quantity"]) || 0,
@@ -596,7 +596,7 @@ export default function OrderPage({ user }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <DetailField label="DO Number" value={selectedOrder.doNumber} />
                   <DetailField label="Party PO Number" value={selectedOrder.partyPONumber} />
-                  <DetailField label="Party PO Date" value={selectedOrder.partyPODate} />
+                  <DetailField label="Expected Delivery Date" value={selectedOrder.partyPODate} />
                   <DetailField label="Firm Name" value={selectedOrder.firmName} />
                   <DetailField label="Party Name" value={selectedOrder.partyName} />
                   <DetailField label="GST Number" value={selectedOrder.gstNumber} />
@@ -691,7 +691,6 @@ export default function OrderPage({ user }) {
                   </div>
                   <DetailField label="Planned 1" value={selectedOrder.planned1 || "Not set"} />
                   <DetailField label="Actual 1" value={selectedOrder.actual1 || "Not set"} />
-                  <DetailField label="Expected Delivery" value={selectedOrder.expectedDelivery || "Not set"} />
                 </div>
               </section>
 

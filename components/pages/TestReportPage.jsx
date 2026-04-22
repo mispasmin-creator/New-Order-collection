@@ -24,18 +24,13 @@ export default function TestReportPage({ user }) {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const { toast } = useToast()
-  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [selectedGroup, setSelectedGroup] = useState(null)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
   const [formData, setFormData] = useState({
     loadingImage1: null,
     loadingImage2: null,
     loadingImage3: null
-  })
-  const [uploadingImages, setUploadingImages] = useState({
-    loadingImage1: false,
-    loadingImage2: false,
-    loadingImage3: false
   })
   const [uploadedUrls, setUploadedUrls] = useState({
     loadingImage1: "",
@@ -67,8 +62,6 @@ export default function TestReportPage({ user }) {
       ;(orderData || []).forEach((row) => {
         orderMap.set(row.id, row)
       })
-
-      console.log("Raw DISPATCH Supabase response:", data)
 
       const pending = []
       const history = []
@@ -125,7 +118,6 @@ export default function TestReportPage({ user }) {
 
       setOrders(pending)
       setCompletedOrders(history)
-      console.log("Load Material data loaded:", pending.length, "pending,", history.length, "history")
     } catch (error) {
       console.error("Error fetching load material data:", error)
       toast({
@@ -138,13 +130,8 @@ export default function TestReportPage({ user }) {
     }
   }
 
-  // Filter pending and history orders
-  const pendingOrders = orders
-  const historyOrders = completedOrders
-
   const searchFilteredOrders = (ordersList) => {
     if (!searchTerm) return ordersList
-
     return ordersList.filter((order) =>
       Object.values(order).some((value) =>
         value?.toString().toLowerCase().includes(searchTerm.toLowerCase())
@@ -153,24 +140,24 @@ export default function TestReportPage({ user }) {
   }
 
   const displayOrders = activeTab === "pending"
-    ? searchFilteredOrders(pendingOrders)
-    : searchFilteredOrders(historyOrders)
+    ? searchFilteredOrders(orders)
+    : searchFilteredOrders(completedOrders)
   const groupedDisplayOrders = useMemo(() => groupRowsByPo(displayOrders), [displayOrders])
 
-  const handleLoadMaterial = (order) => {
-    setSelectedOrder(order)
-    setFormData({
-      loadingImage1: null,
-      loadingImage2: null,
-      loadingImage3: null
-    })
-    setUploadedUrls({
-      loadingImage1: "",
-      loadingImage2: "",
-      loadingImage3: ""
-    })
+  // ── Group-level open/close ──────────────────────────────────────────────────
+  const handleOpen = (group) => {
+    setSelectedGroup(group)
+    setFormData({ loadingImage1: null, loadingImage2: null, loadingImage3: null })
+    setUploadedUrls({ loadingImage1: "", loadingImage2: "", loadingImage3: "" })
   }
 
+  const handleClose = () => {
+    setSelectedGroup(null)
+    setFormData({ loadingImage1: null, loadingImage2: null, loadingImage3: null })
+    setUploadedUrls({ loadingImage1: "", loadingImage2: "", loadingImage3: "" })
+  }
+
+  // ── Image helpers ───────────────────────────────────────────────────────────
   const handleFileSelect = async (event, imageNumber) => {
     const file = event.target.files[0]
     if (!file) return
@@ -178,26 +165,15 @@ export default function TestReportPage({ user }) {
     const imageKey = `loadingImage${imageNumber}`
 
     if (file.size > 5 * 1024 * 1024) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "File size should be less than 5MB",
-      })
+      toast({ variant: "destructive", title: "Error", description: "File size should be less than 5MB" })
       return
     }
-
     if (!file.type.startsWith('image/')) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Please select an image file",
-      })
+      toast({ variant: "destructive", title: "Error", description: "Please select an image file" })
       return
     }
 
-    // Generate local preview URL
     const localUrl = URL.createObjectURL(file)
-
     setFormData(prev => ({ ...prev, [imageKey]: file }))
     setUploadedUrls(prev => ({ ...prev, [imageKey]: localUrl }))
   }
@@ -208,14 +184,15 @@ export default function TestReportPage({ user }) {
     setUploadedUrls(prev => ({ ...prev, [imageKey]: "" }))
   }
 
+  // ── Submit: updates ALL rows in the group ───────────────────────────────────
   const handleSubmit = async () => {
-    if (!selectedOrder) return
+    if (!selectedGroup) return
 
-    if (!formData.loadingImage1 && !formData.loadingImage2 && !formData.loadingImage3) {
+    if (!formData.loadingImage1) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Please upload at least one loading image (Loading Image 1 is mandatory)",
+        description: "Loading Image 1 is mandatory",
       })
       return
     }
@@ -223,20 +200,19 @@ export default function TestReportPage({ user }) {
     try {
       setSubmitting(true)
 
-      const finalUrls = {
-        loadingImage1: "",
-        loadingImage2: "",
-        loadingImage3: ""
-      }
+      // Use the first row's LGST number as the reference for file naming
+      const refLgst = selectedGroup.rows[0]?.lgstSrNumber || "unknown"
 
-      // Upload files sequentially
+      const finalUrls = { loadingImage1: "", loadingImage2: "", loadingImage3: "" }
+
+      // Upload images once (shared across all rows in the group)
       for (const num of [1, 2, 3]) {
         const imageKey = `loadingImage${num}`
         const file = formData[imageKey]
 
-        if (file && file instanceof File) {
+        if (file instanceof File) {
           const fileExt = file.name.split('.').pop()
-          const fileName = `${STORAGE_FOLDER}/load_material_${selectedOrder.lgstSrNumber}_img${num}_${Date.now()}.${fileExt}`
+          const fileName = `${STORAGE_FOLDER}/load_${refLgst}_img${num}_${Date.now()}.${fileExt}`
 
           const { error: uploadError } = await supabase.storage
             .from(STORAGE_BUCKET)
@@ -254,40 +230,28 @@ export default function TestReportPage({ user }) {
 
       const actualDateTime = getISTTimestamp()
 
-      const { error } = await supabase
-        .from('DISPATCH')
-        .update({
-          "Actual2": actualDateTime,
-          "Loading Image 1": finalUrls.loadingImage1 || "",
-          "Loading Image 2": finalUrls.loadingImage2 || "",
-          "Loading Image 3": finalUrls.loadingImage3 || ""
-        })
-        .eq('id', selectedOrder.id)
-
-      if (error) {
-        throw error
-      }
-
-      // Refresh data
-      await fetchLoadMaterialData()
-
-      // Clear form
-      setSelectedOrder(null)
-      setFormData({
-        loadingImage1: null,
-        loadingImage2: null,
-        loadingImage3: null
-      })
-      setUploadedUrls({
-        loadingImage1: "",
-        loadingImage2: "",
-        loadingImage3: ""
-      })
+      // Update every row in the group simultaneously
+      await Promise.all(
+        selectedGroup.rows.map((row) =>
+          supabase
+            .from('DISPATCH')
+            .update({
+              "Actual2": actualDateTime,
+              "Loading Image 1": finalUrls.loadingImage1 || "",
+              "Loading Image 2": finalUrls.loadingImage2 || "",
+              "Loading Image 3": finalUrls.loadingImage3 || "",
+            })
+            .eq('id', row.id)
+        )
+      )
 
       toast({
         title: "Success",
-        description: "Load Material submitted successfully!",
+        description: `Load Material submitted for PO ${selectedGroup.poNumber} (${selectedGroup.rows.length} row${selectedGroup.rows.length > 1 ? "s" : ""}).`,
       })
+
+      handleClose()
+      await fetchLoadMaterialData()
     } catch (error) {
       console.error("Error submitting load material:", error)
       toast({
@@ -300,34 +264,16 @@ export default function TestReportPage({ user }) {
     }
   }
 
-  const handleCancel = () => {
-    setSelectedOrder(null)
-    setFormData({
-      loadingImage1: null,
-      loadingImage2: null,
-      loadingImage3: null
-    })
-    setUploadedUrls({
-      loadingImage1: "",
-      loadingImage2: "",
-      loadingImage3: ""
-    })
-  }
-
   const formatDateTime = (dateTimeString) => {
     if (!dateTimeString || dateTimeString === "" || dateTimeString === " ") return "N/A"
     try {
       const date = new Date(dateTimeString)
       if (isNaN(date.getTime())) return dateTimeString
       return date.toLocaleString('en-IN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true
       })
-    } catch (e) {
+    } catch {
       return dateTimeString
     }
   }
@@ -427,19 +373,19 @@ export default function TestReportPage({ user }) {
             onClick={() => setActiveTab("pending")}
             className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all text-center ${activeTab === "pending" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
           >
-            Pending ({pendingOrders.length})
+            Pending ({orders.length})
           </button>
           <button
             onClick={() => setActiveTab("history")}
             className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all text-center ${activeTab === "history" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
           >
-            History ({historyOrders.length})
+            History ({completedOrders.length})
           </button>
         </div>
       </div>
 
-      <div className="bg-white border rounded-md shadow-sm overflow-hidden mt-4">
-        <div className="hidden lg:block overflow-x-auto">
+      <div className="bg-white border rounded-md shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50 border-b border-gray-200">
@@ -449,7 +395,6 @@ export default function TestReportPage({ user }) {
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">LGST-Sr Number</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Delivery Order No.</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Dispatch No.</TableHead>
-                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Party Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Product Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Truck Qty</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transporter</TableHead>
@@ -463,10 +408,7 @@ export default function TestReportPage({ user }) {
             <TableBody>
               {displayOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell
-                    colSpan={10}
-                    className="text-center py-8 text-gray-500"
-                  >
+                  <TableCell colSpan={10} className="text-center py-8 text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <span className="text-lg">
                         {activeTab === "pending"
@@ -479,107 +421,103 @@ export default function TestReportPage({ user }) {
               ) : (
                 groupedDisplayOrders.map((group) => (
                   <Fragment key={group.key}>
+                    {/* ── PO group header row ── */}
                     <TableRow className="bg-slate-50">
-                      <TableCell colSpan={10} className="px-4 py-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <TableCell colSpan={activeTab === "pending" ? 10 : 9} className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          {activeTab === "pending" && (
+                            <Button
+                              size="sm"
+                              onClick={() => handleOpen(group)}
+                              className="bg-blue-600 hover:bg-blue-700 h-8 text-xs shrink-0"
+                              disabled={submitting}
+                            >
+                              <Upload className="w-3 h-3 mr-1" />
+                              Load
+                            </Button>
+                          )}
                           <div className="flex flex-col">
                             <span className="text-sm font-semibold text-slate-900">PO Number: {group.poNumber}</span>
                             <span className="text-xs text-slate-600">Party Name: {group.partyName}</span>
                           </div>
-                          <span className="text-xs text-slate-500">{group.rows.length} row{group.rows.length > 1 ? "s" : ""}</span>
+                          <span className="text-xs text-slate-500 ml-auto">{group.rows.length} product{group.rows.length > 1 ? "s" : ""}</span>
                         </div>
                       </TableCell>
                     </TableRow>
+
+                    {/* ── Individual product rows ── */}
                     {group.rows.map((order) => (
-                  <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
-                    {activeTab === "pending" && (
-                      <TableCell className="py-2 px-4 min-w-[100px]">
-                        <Button
-                          size="sm"
-                          onClick={() => handleLoadMaterial(order)}
-                          className="bg-blue-600 hover:bg-blue-700 h-8 text-xs"
-                          disabled={submitting}
-                        >
-                          <Upload className="w-3 h-3 mr-1" />
-                          Load
-                        </Button>
-                      </TableCell>
-                    )}
-                    <TableCell className="py-2 px-4 min-w-[120px]">
-                      <Badge className="bg-blue-500 text-white rounded-sm whitespace-nowrap text-xs">
-                        {order.lgstSrNumber || "N/A"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[150px] font-medium text-sm">
-                      {order.deliveryOrderNo || "N/A"}
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[120px]">
-                      <Badge className="bg-purple-500 text-white rounded-sm whitespace-nowrap text-xs">
-                        {order.dispatchNo || "N/A"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">
-                      {order.partyName || "N/A"}
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">
-                      {order.productName || "N/A"}
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[100px] font-medium text-sm">
-                      {order.actualTruckQty || "N/A"}
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">
-                      {order.transporterName || "N/A"}
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[120px]">
-                      <Badge variant="outline" className="rounded-sm font-normal text-xs">
-                        {order.truckNo || "N/A"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[120px] font-medium whitespace-nowrap text-sm">
-                      {order.planned2 ? (
-                        <span className="text-orange-600">{formatDateTime(order.planned2)}</span>
-                      ) : "N/A"}
-                    </TableCell>
-                    {activeTab === "history" && (
-                      <TableCell className="py-2 px-4 min-w-[150px]">
-                        <div className="flex flex-wrap gap-1">
-                          {order.loadingImage1 && (
-                            <Badge
-                              variant="outline"
-                              className="cursor-pointer hover:bg-blue-50 text-xs font-normal"
-                              onClick={() => openImage(order.loadingImage1)}
-                            >
-                              <Eye className="w-3 h-3 mr-1" />
-                              Img 1
-                            </Badge>
-                          )}
-                          {order.loadingImage2 && (
-                            <Badge
-                              variant="outline"
-                              className="cursor-pointer hover:bg-blue-50 text-xs font-normal"
-                              onClick={() => openImage(order.loadingImage2)}
-                            >
-                              <Eye className="w-3 h-3 mr-1" />
-                              Img 2
-                            </Badge>
-                          )}
-                          {order.loadingImage3 && (
-                            <Badge
-                              variant="outline"
-                              className="cursor-pointer hover:bg-blue-50 text-xs font-normal"
-                              onClick={() => openImage(order.loadingImage3)}
-                            >
-                              <Eye className="w-3 h-3 mr-1" />
-                              Img 3
-                            </Badge>
-                          )}
-                          {!order.loadingImage1 && !order.loadingImage2 && !order.loadingImage3 && (
-                            <span className="text-gray-400 text-xs">No images</span>
-                          )}
-                        </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
+                      <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
+                        {activeTab === "pending" && <TableCell className="py-2 px-4 min-w-[100px]" />}
+                        <TableCell className="py-2 px-4 min-w-[120px]">
+                          <Badge className="bg-blue-500 text-white rounded-sm whitespace-nowrap text-xs">
+                            {order.lgstSrNumber || "N/A"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] font-medium text-sm">
+                          {order.deliveryOrderNo || "N/A"}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px]">
+                          <Badge className="bg-purple-500 text-white rounded-sm whitespace-nowrap text-xs">
+                            {order.dispatchNo || "N/A"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">
+                          {order.productName || "N/A"}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[100px] font-medium text-sm">
+                          {order.actualTruckQty || "N/A"}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[150px] text-sm">
+                          {order.transporterName || "N/A"}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px]">
+                          <Badge variant="outline" className="rounded-sm font-normal text-xs">
+                            {order.truckNo || "N/A"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[120px] font-medium whitespace-nowrap text-sm">
+                          {order.planned2 ? (
+                            <span className="text-orange-600">{formatDateTime(order.planned2)}</span>
+                          ) : "N/A"}
+                        </TableCell>
+                        {activeTab === "history" && (
+                          <TableCell className="py-2 px-4 min-w-[150px]">
+                            <div className="flex flex-wrap gap-1">
+                              {order.loadingImage1 && (
+                                <Badge
+                                  variant="outline"
+                                  className="cursor-pointer hover:bg-blue-50 text-xs font-normal"
+                                  onClick={() => openImage(order.loadingImage1)}
+                                >
+                                  <Eye className="w-3 h-3 mr-1" />Img 1
+                                </Badge>
+                              )}
+                              {order.loadingImage2 && (
+                                <Badge
+                                  variant="outline"
+                                  className="cursor-pointer hover:bg-blue-50 text-xs font-normal"
+                                  onClick={() => openImage(order.loadingImage2)}
+                                >
+                                  <Eye className="w-3 h-3 mr-1" />Img 2
+                                </Badge>
+                              )}
+                              {order.loadingImage3 && (
+                                <Badge
+                                  variant="outline"
+                                  className="cursor-pointer hover:bg-blue-50 text-xs font-normal"
+                                  onClick={() => openImage(order.loadingImage3)}
+                                >
+                                  <Eye className="w-3 h-3 mr-1" />Img 3
+                                </Badge>
+                              )}
+                              {!order.loadingImage1 && !order.loadingImage2 && !order.loadingImage3 && (
+                                <span className="text-gray-400 text-xs">No images</span>
+                              )}
+                            </div>
+                          </TableCell>
+                        )}
+                      </TableRow>
                     ))}
                   </Fragment>
                 ))
@@ -589,175 +527,183 @@ export default function TestReportPage({ user }) {
         </div>
       </div>
 
-      {selectedOrder && (
+      {/* ── Modal ─────────────────────────────────────────────────────────────── */}
+      {selectedGroup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
-              <CardTitle className="text-lg lg:text-xl">Complete Load Material</CardTitle>
-              <Button variant="ghost" size="sm" onClick={handleCancel} disabled={submitting}>
+              <CardTitle className="text-lg">Complete Load Material</CardTitle>
+              <Button variant="ghost" size="sm" onClick={handleClose} disabled={submitting}>
                 <X className="h-5 w-5" />
               </Button>
             </CardHeader>
-            <CardContent className="p-4 lg:p-6">
-              <div className="space-y-6">
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3 uppercase tracking-wider">Order Information</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-y-4 gap-x-6">
-                    <div>
-                      <Label className="text-xs text-gray-500 block mb-1">LGST-Sr Number</Label>
-                      <p className="font-medium text-gray-900">{selectedOrder.lgstSrNumber || "N/A"}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-gray-500 block mb-1">Delivery Order No.</Label>
-                      <p className="font-medium text-gray-900">{selectedOrder.deliveryOrderNo || "N/A"}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-gray-500 block mb-1">Dispatch No.</Label>
-                      <p className="font-medium text-gray-900">{selectedOrder.dispatchNo || "N/A"}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-gray-500 block mb-1">Party Name</Label>
-                      <p className="font-medium text-gray-900">{selectedOrder.partyName || "N/A"}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-gray-500 block mb-1">Product Name</Label>
-                      <p className="font-medium text-gray-900">{selectedOrder.productName || "N/A"}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-gray-500 block mb-1">Actual Truck Qty</Label>
-                      <p className="font-medium text-gray-900">{selectedOrder.actualTruckQty || "N/A"}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-gray-500 block mb-1">Transporter</Label>
-                      <p className="font-medium text-gray-900">{selectedOrder.transporterName || "N/A"}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-gray-500 block mb-1">Truck No</Label>
-                      <p className="font-medium text-gray-900">{selectedOrder.truckNo || "N/A"}</p>
-                    </div>
-                    <div>
-                      <Label className="text-xs text-gray-500 block mb-1">Planned Date / Time</Label>
-                      <p className="font-medium text-orange-600 font-medium">
-                        {formatDateTime(selectedOrder.planned2)}
-                      </p>
-                    </div>
-                  </div>
+            <CardContent className="p-4 lg:p-6 space-y-6">
+
+              {/* PO + product list */}
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-gray-900">PO: {selectedGroup.poNumber}</p>
+                  <span className="text-xs text-slate-500">{selectedGroup.rows.length} product{selectedGroup.rows.length > 1 ? "s" : ""}</span>
+                </div>
+                <p className="text-gray-600">Party: {selectedGroup.partyName}</p>
+                <div className="border rounded-md overflow-hidden mt-1">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="text-left px-2 py-1 font-medium text-gray-600">LGST-Sr</th>
+                        <th className="text-left px-2 py-1 font-medium text-gray-600">DO No.</th>
+                        <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
+                        <th className="text-right px-2 py-1 font-medium text-gray-600">Truck Qty</th>
+                        <th className="text-right px-2 py-1 font-medium text-gray-600">Planned2</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {selectedGroup.rows.map((row) => (
+                        <tr key={row.id} className="bg-white">
+                          <td className="px-2 py-1 text-gray-700">{row.lgstSrNumber || "N/A"}</td>
+                          <td className="px-2 py-1 text-gray-700">{row.deliveryOrderNo || "N/A"}</td>
+                          <td className="px-2 py-1 text-gray-700">{row.productName || "N/A"}</td>
+                          <td className="px-2 py-1 text-gray-700 text-right">{row.actualTruckQty || row.qtyToBeDispatched || "N/A"}</td>
+                          <td className="px-2 py-1 text-orange-600 text-right whitespace-nowrap">{formatDateTime(row.planned2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
 
-                <div className="border-t pt-6">
-                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                    <span className="w-1 h-6 bg-blue-600 rounded-full inline-block"></span>
-                    Upload Loading Images
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Please upload at least one loading image. Image 1 is mandatory. Max file size: 5MB each.
-                  </p>
+                {/* Shared logistic info from first row */}
+                {selectedGroup.rows[0] && (
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 pt-2 border-t text-xs">
+                    <div>
+                      <span className="text-gray-500">Transporter: </span>
+                      <span className="font-medium text-gray-800">{selectedGroup.rows[0].transporterName || "N/A"}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Truck No: </span>
+                      <span className="font-medium text-gray-800">{selectedGroup.rows[0].truckNo || "N/A"}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Driver: </span>
+                      <span className="font-medium text-gray-800">{selectedGroup.rows[0].driverMobileNo || "N/A"}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Bilty No: </span>
+                      <span className="font-medium text-gray-800">{selectedGroup.rows[0].biltyNo || "N/A"}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    {[1, 2, 3].map((num) => (
-                      <div key={num} className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-sm font-medium">
-                            Loading Image {num} {num === 1 && "*"}
-                            {uploadingImages[`loadingImage${num}`] && (
-                              <Loader2 className="w-3 h-3 ml-2 animate-spin inline" />
-                            )}
-                          </Label>
-                          {uploadedUrls[`loadingImage${num}`] && (
-                            <div className="flex gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0"
-                                onClick={() => openImage(uploadedUrls[`loadingImage${num}`])}
-                                title="View Image"
-                              >
-                                <Eye className="w-3 h-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0"
-                                onClick={() => removeImage(num)}
-                                title="Remove Image"
-                                disabled={submitting}
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          )}
-                        </div>
+              {/* Image upload section */}
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+                  <span className="w-1 h-5 bg-blue-600 rounded-full inline-block" />
+                  Upload Loading Images
+                </h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Images are shared across all rows in this PO. Image 1 is mandatory. Max 5MB each.
+                </p>
 
-                        <div>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            ref={num === 1 ? fileInputRef1 : num === 2 ? fileInputRef2 : fileInputRef3}
-                            onChange={(e) => handleFileSelect(e, num)}
-                            className="hidden"
-                            disabled={submitting}
-                          />
-                          <Button
-                            variant="outline"
-                            className="w-full h-24 border-dashed bg-gray-50 hover:bg-gray-100"
-                            onClick={() => {
-                              if (num === 1) fileInputRef1.current.click()
-                              else if (num === 2) fileInputRef2.current.click()
-                              else fileInputRef3.current.click()
-                            }}
-                            disabled={submitting || uploadingImages[`loadingImage${num}`]}
-                          >
-                            <div className="flex flex-col items-center">
-                              <Upload className="w-6 h-6 mb-2 text-gray-400" />
-                              <span className="text-sm text-gray-600">
-                                {uploadedUrls[`loadingImage${num}`] ? "✓ Uploaded" : `Click to Upload`}
-                              </span>
-                            </div>
-                          </Button>
-                        </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  {[1, 2, 3].map((num) => (
+                    <div key={num} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-medium">
+                          Image {num} {num === 1 && <span className="text-red-500">*</span>}
+                        </Label>
+                        {uploadedUrls[`loadingImage${num}`] && (
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0"
+                              onClick={() => openImage(uploadedUrls[`loadingImage${num}`])}
+                              title="View Image"
+                            >
+                              <Eye className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0"
+                              onClick={() => removeImage(num)}
+                              title="Remove Image"
+                              disabled={submitting}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
 
-                  <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-md">
-                    <p className="text-sm text-blue-700 flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
-                      <span>
-                        The "Actual2" field will be auto-populated with the current date/time when you submit.
-                      </span>
-                    </p>
-                  </div>
+                      <div>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          ref={num === 1 ? fileInputRef1 : num === 2 ? fileInputRef2 : fileInputRef3}
+                          onChange={(e) => handleFileSelect(e, num)}
+                          className="hidden"
+                          disabled={submitting}
+                        />
+                        <Button
+                          variant="outline"
+                          className="w-full h-24 border-dashed bg-gray-50 hover:bg-gray-100"
+                          onClick={() => {
+                            if (num === 1) fileInputRef1.current.click()
+                            else if (num === 2) fileInputRef2.current.click()
+                            else fileInputRef3.current.click()
+                          }}
+                          disabled={submitting}
+                        >
+                          <div className="flex flex-col items-center">
+                            <Upload className="w-6 h-6 mb-2 text-gray-400" />
+                            <span className="text-sm text-gray-600">
+                              {uploadedUrls[`loadingImage${num}`] ? "✓ Selected" : "Click to Upload"}
+                            </span>
+                          </div>
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
-                <div className="border-t pt-6">
-                  <div className="flex flex-col sm:flex-row justify-end gap-3">
-                    <Button
-                      variant="outline"
-                      onClick={handleCancel}
-                      className="w-full sm:w-auto"
-                      disabled={submitting}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleSubmit}
-                      className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
-                      disabled={submitting || !formData.loadingImage1}
-                    >
-                      {submitting ? (
-                        <>
-                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Submitting...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="w-4 h-4 mr-2" />
-                          Complete Load Material
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-md">
+                  <p className="text-xs text-blue-700 flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>
+                      Submitting will set <strong>Actual2</strong> to the current date/time for all {selectedGroup.rows.length} row{selectedGroup.rows.length > 1 ? "s" : ""} in this PO group.
+                    </span>
+                  </p>
                 </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="border-t pt-4 flex flex-col sm:flex-row justify-end gap-3">
+                <Button
+                  variant="outline"
+                  onClick={handleClose}
+                  className="w-full sm:w-auto"
+                  disabled={submitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSubmit}
+                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  disabled={submitting || !formData.loadingImage1}
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Complete Load Material
+                    </>
+                  )}
+                </Button>
               </div>
             </CardContent>
           </Card>

@@ -34,7 +34,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     "Timestamp": "",
     "DO-Delivery Order No.": "",
     "PARTY PO NO (As Per Po Exact)": "",
-    "Party PO Date": "",
+    "Expected Delivery Date": "",
     "Party Name": "",
     "Gst Number": "",
     "Address": "",
@@ -68,8 +68,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     "Lead Time For Collection Of Final Payment": "",
     "Type Of Application": "",
 
-    // Agent & Marketing
-    "Is This Order Through Some Agent": "",
+    // Marketing
     "Marketing Mangager Name": "",
 
     // Product specific fields
@@ -102,7 +101,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     paymentToBeTakens: ["Yes", "No"],
     orderReceivedFroms: ["NBD & CRR OF CRR FMS", "NBD AND NBD OF CRR OUTGOING FMS", "CRR ENQUIRY"],
     typeOfApplications: ["Full application", "Our Supervision only", "Patching only", "None of the above"],
-    agents: ["Yes", "No"],
     retentionPayments: ["Yes", "No"]
   })
 
@@ -377,7 +375,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "Timestamp": timestamp,
       "DO-Delivery Order No.": doNumber,
       "PARTY PO NO (As Per Po Exact)": formData["PARTY PO NO (As Per Po Exact)"],
-      "Party PO Date": formData["Party PO Date"],
+      "Expected Delivery Date": formData["Expected Delivery Date"],
       "Party Names": formData["Party Name"],
       "Product Name": "",
       "Quantity": 0,
@@ -385,7 +383,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "Type Of Transporting": formData["Type Of Transporting"],
       "Type Of Packaging": formData["Type of Packaging"],
       "Upload SO": uploadedFileUrl,
-      "Is This Order Through Some Agent": formData["Is This Order Through Some Agent"],
       "Order Received From": formData["Order Received From"],
       "Type Of Measurement": "",
       "Contact Person Name": formData["Contact Person Name"],
@@ -442,7 +439,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     const mandatoryFields = [
       { key: "Firm Name", label: "Firm Name" },
       { key: "PARTY PO NO (As Per Po Exact)", label: "PARTY PO NO" },
-      { key: "Party PO Date", label: "Party PO Date" },
+      { key: "Expected Delivery Date", label: "Expected Delivery Date" },
       { key: "Party Name", label: "Party Name" },
       { key: "Contact Person Name", label: "Contact Person Name" },
       { key: "Contact Person WhatsApp No.", label: "Contact Person WhatsApp No." }
@@ -543,7 +540,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
         "Timestamp": timestamp,
         "DO-Delivery Order No.": "",
         "PARTY PO NO (As Per Po Exact)": "",
-        "Party PO Date": "",
+        "Expected Delivery Date": "",
         "Party Name": "",
         "Gst Number": "",
         "Address": "",
@@ -566,7 +563,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
         "Specific Concern": "",
         "Lead Time For Collection Of Final Payment": "",
         "Type Of Application": "",
-        "Is This Order Through Some Agent": "",
         "Marketing Mangager Name": "",
         "Type of Packaging": "",
         "Product Name": "",
@@ -651,7 +647,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       ...prev,
       "Timestamp": generateTimestamp(),
       "PARTY PO NO (As Per Po Exact)": `TEST-PO-${Date.now().toString().slice(-6)}`,
-      "Party PO Date": poDate,
+      "Expected Delivery Date": poDate,
       "Party Name": selectedPartyName,
       "Gst Number": partyDetails.gst || `29TEST${Date.now().toString().slice(-10)}`,
       "Address": partyDetails.address || "Sample Industrial Area, Bengaluru",
@@ -678,7 +674,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "Specific Concern": "Auto-filled test order for development verification.",
       "Lead Time For Collection Of Final Payment": randomNumber(7, 30, 0),
       "Type Of Application": pickRandom(dropdownData.typeOfApplications, "Full application"),
-      "Is This Order Through Some Agent": pickRandom(dropdownData.agents, "No"),
       "Marketing Mangager Name": pickRandom(dropdownData.marketingMangagerNames, "Test Manager"),
       "Product Name": mockProduct["Product Name"],
       "Quantity": mockProduct["Quantity"],
@@ -808,15 +803,15 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                 />
               </div>
 
-              {/* Party PO Date */}
+              {/* Expected Delivery Date */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
-                  Party PO Date <span className="text-red-500">*</span>
+                  Expected Delivery Date <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   type="date"
-                  value={formData["Party PO Date"]}
-                  onChange={(e) => handleInputChange("Party PO Date", e.target.value)}
+                  value={formData["Expected Delivery Date"]}
+                  onChange={(e) => handleInputChange("Expected Delivery Date", e.target.value)}
                   className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                   required
                 />

@@ -17,7 +17,6 @@ import {
   Receipt,
   Scale,
   FileImage,
-  Layers,
   Archive,
   LogOut,
   User,
@@ -25,6 +24,7 @@ import {
   Bell,
   RotateCcw,
   PackageCheck,
+  BadgeCheck,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -38,12 +38,12 @@ const pageIcons = {
   "Logistics Approval": CheckSquare,
   "Check for Delivery": Truck,
   "Dispatch Planning": Calendar,
+  "Accounts Approval": BadgeCheck,
   "Logistic": Package,
   "Load Material": Truck,
   "Invoice": Receipt,
   "TC": FileCheck,
   "Wetman Entry": Scale,
-  "CRM": Layers,
   "Material Return": RotateCcw,
   "Debit Note": FileText,
   "Logistics Fulfillment": PackageCheck,
@@ -52,26 +52,27 @@ const pageIcons = {
 const pageRoutes = {
   "Dashboard": "/dashboard",
   "Order": "/order",
+  "Make PI": "/payments-pi",
+  "Received PI Payment": "/received-pi-payment",
   "Check PO": "/check-po",
   "Received Accounts": "/received-accounts",
   "Arrange Logistics": "/arrange-logistics",
   "Logistics Approval": "/logistics-approval",
   "Check for Delivery": "/check-delivery",
   "Dispatch Planning": "/dispatch-planning",
+  "Accounts Approval": "/accounts-approval",
   "Logistic": "/logistic",
   "Load Material": "/load-material",
   "Invoice": "/invoice",
   "TC": "/tc",
   "Wetman Entry": "/wetman-entry",
   "Bilty Entry": "/bilty-entry",
-  "CRM": "/crm",
   "MATERIAL RECEIPT": "/material-receipt",
   "Material Return": "/material-return",
   "Debit Note": "/debit-note",
   "Logistics Fulfillment": "/logistics-fulfillment",
 }
 
-// Default page order for sorting
 const defaultPageOrder = [
   "Dashboard",
   "Order",
@@ -81,15 +82,17 @@ const defaultPageOrder = [
   "Logistics Approval",
   "Check for Delivery",
   "Dispatch Planning",
+  "Accounts Approval",
   "Logistic",
   "Load Material",
   "Wetman Entry",
   "Invoice",
   "TC",
   "Logistics Fulfillment",
-  "CRM",
   "Material Return",
-  "Debit Note"
+  "Debit Note",
+  "Make PI",
+  "Received PI Payment"
 ]
 
 import { useNotification } from "@/components/providers/NotificationProvider"
@@ -190,6 +193,37 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         counts["Received Accounts"] = count
       }
 
+      // Fetch real-time count for "Make PI" — POs with Actual 2 set that don't have PI created yet
+      let makePIQuery = supabase
+        .from('ORDER RECEIPT')
+        .select('"PARTY PO NO (As Per Po Exact)", "Actual 2", "Firm Name"')
+        .not('Actual 2', 'is', null)
+
+      if (user.role !== "master") {
+        const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
+        if (!userFirms.includes('all')) {
+          makePIQuery = makePIQuery.in('Firm Name', userFirms)
+        }
+      }
+
+      const { data: makePIData, error: makePIError } = await makePIQuery
+      if (!makePIError && makePIData) {
+        // Get PO numbers that already have PIs
+        const { data: existingPIs } = await supabase.from('po_pi_records').select('po_number')
+        const existingPOSet = new Set((existingPIs || []).map(r => r.po_number))
+        const uniquePOs = new Set(makePIData.map(r => r["PARTY PO NO (As Per Po Exact)"]))
+        counts["Make PI"] = [...uniquePOs].filter(po => !existingPOSet.has(po)).length
+      }
+
+      // Fetch count for "Received PI Payment" — pending PI slabs
+      const { data: pendingPIs, error: pendingPIsError } = await supabase
+        .from('po_pi_records')
+        .select('po_number')
+        .eq('status', 'Pending')
+      if (!pendingPIsError && pendingPIs) {
+        counts["Received PI Payment"] = new Set(pendingPIs.map(r => r.po_number)).size
+      }
+
       if (accessibleOrderIds.length > 0) {
         const { data: checkDeliveryData, error: checkDeliveryError } = await supabase
           .from('po_logistics_splits')
@@ -215,8 +249,19 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         if (!dispatchStartError && dispatchStartData) {
           counts["Dispatch Planning"] = dispatchStartData.length
         }
+
+        const { data: accountsData, error: accountsError } = await supabase
+          .from('po_logistics_splits')
+          .select('po_id, status')
+          .eq('status', 'Dispatched')
+          .in('po_id', accessibleOrderIds)
+
+        if (!accountsError && accountsData) {
+          counts["Accounts Approval"] = accountsData.length
+        }
       } else {
         counts["Dispatch Planning"] = 0
+        counts["Accounts Approval"] = 0
       }
 
       // Fetch real-time count for "Logistic" from Supabase
@@ -294,20 +339,6 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         }).length
 
         counts["TC"] = count
-      }
-
-      // Fetch real-time count for "CRM" from Supabase
-      const { data: crmData, error: crmError } = await supabase
-        .from('DELIVERY')
-        .select('"Planned 4", "Actual4"')
-        .not('Planned 4', 'is', null)
-
-      if (!crmError && crmData) {
-        const count = crmData.filter(row =>
-          row["Planned 4"] &&
-          (!row["Actual4"] || String(row["Actual4"]).trim() === "")
-        ).length
-        counts["CRM"] = count
       }
 
       // Fetch real-time count for "Bilty Entry" from Supabase
