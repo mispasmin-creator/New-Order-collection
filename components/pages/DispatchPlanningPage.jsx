@@ -872,7 +872,8 @@ export default function DispatchPlanningPage({ user }) {
                       <tr>
                         <th className="text-left px-4 py-2.5 font-semibold">DO Number</th>
                         <th className="text-left px-4 py-2.5 font-semibold">Product</th>
-                        <th className="text-right px-4 py-2.5 font-semibold">Split Quantity</th>
+                        <th className="text-right px-4 py-2.5 font-semibold">Product Order Qty</th>
+                        <th className="text-right px-4 py-2.5 font-semibold">Dispatched Quantity</th>
                         <th className="text-right px-4 py-2.5 font-semibold">Pending</th>
                         <th className="text-right px-4 py-2.5 font-semibold min-w-[120px]">Dispatch *</th>
                         <th className="px-4 py-2.5" />
@@ -887,6 +888,7 @@ export default function DispatchPlanningPage({ user }) {
                             {line.productName}
                           </td>
                           <td className="px-4 py-3 text-right text-gray-700">{line.allocatedQty}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">0</td>
                           <td className="px-4 py-3 text-right font-medium">
                             {(() => {
                               const pending = Math.max(0, line.allocatedQty - (parseFloat(line.dispatchQty) || 0))
