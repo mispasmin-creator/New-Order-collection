@@ -47,6 +47,7 @@ const pageIcons = {
   "Wetman Entry": Scale,
   "Material Return": RotateCcw,
   "Return of Material": RotateCcw,
+  "Retention": Receipt,
   "Management Approval": ShieldCheck,
   "Debit Note": FileText,
   "Bilty Update": PackageCheck,
@@ -73,6 +74,7 @@ const pageRoutes = {
   "MATERIAL RECEIPT": "/material-receipt",
   "Material Return": "/material-return",
   "Return of Material": "/return-of-material",
+  "Retention": "/retention",
   "Management Approval": "/management-approval",
   "Debit Note": "/debit-note",
   "Bilty Update": "/logistics-fulfillment",
@@ -98,6 +100,7 @@ const defaultPageOrder = [
   "Management Approval",
   "Debit Note",
   "Return of Material",
+  "Retention",
   "Make PI",
   "Received PI Payment"
 ]

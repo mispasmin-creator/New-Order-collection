@@ -76,19 +76,29 @@ export default function MakePIPage({ user }) {
 
   // existing PIs for this session (to show "Already Created" badge)
   const [createdPIs, setCreatedPIs] = useState(new Set()) // set of po_numbers that have PIs
+  const [piRaisedAmounts, setPiRaisedAmounts] = useState({}) // { po_number: total_raised }
+  const [dispatchedQuantities, setDispatchedQuantities] = useState({}) // { do_id: qty }
+  const [piToMakeAmounts, setPiToMakeAmounts] = useState({}) // { do_id: amount }
+  const [manualDueDate, setManualDueDate] = useState("")
+  const [manualNotes, setManualNotes] = useState("")
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       const [ordersRes, pisRes] = await Promise.all([
         supabase.from("ORDER RECEIPT").select("*").not("Actual 2", "is", null).order("id", { ascending: false }),
-        supabase.from("po_pi_records").select("po_number, status")
+        supabase.from("po_pi_records").select("po_number, status, expected_amount")
       ])
       if (ordersRes.error) throw ordersRes.error
       setOrders(ordersRes.data || [])
 
       if (!pisRes.error && pisRes.data) {
         setCreatedPIs(new Set(pisRes.data.map(r => r.po_number)))
+        const raised = {}
+        pisRes.data.forEach(r => {
+          raised[r.po_number] = (raised[r.po_number] || 0) + (Number(r.expected_amount) || 0)
+        })
+        setPiRaisedAmounts(raised)
       }
     } catch (err) {
       toast({ title: "Error loading data", description: err.message, variant: "destructive" })
@@ -147,13 +157,38 @@ export default function MakePIPage({ user }) {
     const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n
   })
 
-  const openDialog = (group) => {
+  const openDialog = async (group) => {
     setSelectedGroup(group)
     const slabs = parsePIType(group.rows[0]?.typeOfPI)
     const dates = {}; const notes = {}
     slabs.forEach(s => { dates[s.key] = ""; notes[s.key] = "" })
     setPiDueDates(dates); setPiNotes(notes)
+
+    const initialPiToMake = {}
+    group.rows.forEach(r => { initialPiToMake[r.id] = "" })
+    setPiToMakeAmounts(initialPiToMake)
+    setManualDueDate("")
+    setManualNotes("")
+
     setDialogOpen(true)
+
+    try {
+      const rowIds = group.rows.map(r => r.id)
+      const { data: splits } = await supabase.from("po_logistics_splits")
+        .select("po_id, allocated_qty, status")
+        .in("po_id", rowIds)
+        .in("status", ["Dispatched", "Logistic Completed", "Accounts Approved"])
+      
+      const qtyMap = {}
+      if (splits) {
+        splits.forEach(s => {
+          qtyMap[s.po_id] = (qtyMap[s.po_id] || 0) + (Number(s.allocated_qty) || 0)
+        })
+      }
+      setDispatchedQuantities(qtyMap)
+    } catch (e) {
+      console.error("Error fetching dispatched quantities", e)
+    }
   }
 
   const totalPOValue = useMemo(() => {
@@ -167,11 +202,15 @@ export default function MakePIPage({ user }) {
   }, [selectedGroup])
 
   const handleCreatePI = async () => {
-    for (const slab of piSlabs) {
-      if (!piDueDates[slab.key]) {
-        toast({ title: "Missing due date", description: `Set due date for "${slab.label}"`, variant: "destructive" })
-        return
-      }
+    const totalPiToMake = selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeAmounts[r.id]) || 0), 0)
+
+    if (totalPiToMake <= 0) {
+      toast({ title: "No Amount", description: "Please enter at least some PI to make amount.", variant: "destructive" })
+      return
+    }
+    if (!manualDueDate) {
+      toast({ title: "Missing due date", description: "Set due date for the PI", variant: "destructive" })
+      return
     }
 
     setSubmitting(true)
@@ -183,29 +222,29 @@ export default function MakePIPage({ user }) {
       const typeOfPI = selectedGroup.rows[0]?.typeOfPI || ""
       const poIds = selectedGroup.rows.map(r => r.id)
 
-      const records = piSlabs.map(slab => ({
+      const record = {
         po_number: poNumber,
         po_ids: poIds,
         pi_number: generatePINumber(),
         party_name: partyName,
         firm_name: firmName,
         pi_type: typeOfPI,
-        slab_label: slab.label,
-        slab_pct: slab.pct,
+        slab_label: "Manual PI",
+        slab_pct: Math.round((totalPiToMake / totalPOValue) * 100),
         total_po_value: totalPOValue,
-        expected_amount: Math.round((totalPOValue * slab.pct) / 100),
-        due_date: piDueDates[slab.key],
-        notes: piNotes[slab.key] || "",
+        expected_amount: totalPiToMake,
+        due_date: manualDueDate,
+        notes: manualNotes,
         status: "Pending",
         created_at: ts,
-      }))
+      }
 
-      const { error } = await supabase.from("po_pi_records").insert(records)
+      const { error } = await supabase.from("po_pi_records").insert([record])
       if (error) throw error
 
       toast({
         title: "PI Created",
-        description: `${records.length} PI slab(s) created for PO ${poNumber}`,
+        description: `PI created for PO ${poNumber}`,
         className: "bg-green-50 border-green-200 text-green-800",
       })
       setDialogOpen(false)
@@ -373,43 +412,95 @@ export default function MakePIPage({ user }) {
 
       {/* Create PI Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><FilePlus className="w-5 h-5 text-violet-600" />Create PI</DialogTitle>
             <DialogDescription>PO: <strong>{selectedGroup?.poNumber}</strong> — {selectedGroup?.partyName}</DialogDescription>
           </DialogHeader>
 
           {selectedGroup && (
-            <div className="space-y-5 py-2">
-              <div className="bg-violet-50 border border-violet-200 rounded-lg p-3">
-                <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Type of PI</p>
-                <p className="font-semibold text-violet-900 mt-1">{selectedGroup.rows[0]?.typeOfPI || "—"}</p>
-                <p className="text-sm text-violet-700 mt-1">Total Amount: <strong className="tabular-nums">{formatCurrency(totalPOValue)}</strong></p>
+            <div className="space-y-6 py-2">
+              <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 flex gap-6">
+                <div>
+                  <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Type of PI</p>
+                  <p className="font-semibold text-violet-900 mt-1">{selectedGroup.rows[0]?.typeOfPI || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Total PO Amount</p>
+                  <p className="font-semibold text-violet-900 mt-1 tabular-nums">{formatCurrency(totalPOValue)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Total PI Raised</p>
+                  <p className="font-semibold text-violet-900 mt-1 tabular-nums">{formatCurrency(piRaisedAmounts[selectedGroup.poNumber] || 0)}</p>
+                </div>
               </div>
 
-              <div className="space-y-4">
-                <p className="text-sm font-medium text-gray-700">Set due date for each PI slab:</p>
-                {piSlabs.map(slab => {
-                  const expected = Math.round((totalPOValue * slab.pct) / 100)
-                  return (
-                    <div key={slab.key} className="border border-gray-200 rounded-lg p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-semibold text-gray-800">{slab.label}</p>
-                        <span className="text-sm font-bold text-violet-700 tabular-nums">{formatCurrency(expected)}</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-gray-500">Due Date <span className="text-red-500">*</span></label>
-                          <Input type="date" value={piDueDates[slab.key] || ""} onChange={e => setPiDueDates(prev => ({ ...prev, [slab.key]: e.target.value }))} className="h-9" />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-gray-500">Notes (optional)</label>
-                          <Input placeholder="Any remark..." value={piNotes[slab.key] || ""} onChange={e => setPiNotes(prev => ({ ...prev, [slab.key]: e.target.value }))} className="h-9" />
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+              <div className="border rounded-md overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-slate-50">
+                    <TableRow>
+                      <TableHead className="min-w-[120px]">DO Number</TableHead>
+                      <TableHead className="min-w-[150px]">Product</TableHead>
+                      <TableHead className="text-right">Order Qty</TableHead>
+                      <TableHead className="text-right">Dispatched Qty</TableHead>
+                      <TableHead className="text-right">Pending Qty</TableHead>
+                      <TableHead className="text-right">PI Raised</TableHead>
+                      <TableHead className="text-right">Pending to PI</TableHead>
+                      <TableHead className="text-right min-w-[120px]">PI to make</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedGroup.rows.map(row => {
+                      const dispatchedQty = dispatchedQuantities[row.id] || 0
+                      const pendingQty = Math.max(0, row.quantity - dispatchedQty)
+                      const totalPIRaised = piRaisedAmounts[selectedGroup.poNumber] || 0
+                      // Proportional PI Raised for this DO
+                      const proportionalPIRaised = totalPOValue > 0 ? (row.adjustedAmount / totalPOValue) * totalPIRaised : 0
+                      const pendingToPIRaised = Math.max(0, row.adjustedAmount - proportionalPIRaised)
+
+                      return (
+                        <TableRow key={row.id}>
+                          <TableCell className="font-medium text-xs">{row.rawData["DO-Delivery Order No."] || "N/A"}</TableCell>
+                          <TableCell className="text-sm">{row.productName}</TableCell>
+                          <TableCell className="text-right">{row.quantity}</TableCell>
+                          <TableCell className="text-right font-medium text-blue-600">{dispatchedQty}</TableCell>
+                          <TableCell className="text-right">{pendingQty}</TableCell>
+                          <TableCell className="text-right tabular-nums text-slate-600">{formatCurrency(proportionalPIRaised)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-orange-600 font-medium">{formatCurrency(pendingToPIRaised)}</TableCell>
+                          <TableCell>
+                            <Input 
+                              type="number" 
+                              placeholder="0" 
+                              className="h-8 text-right w-24 ml-auto"
+                              value={piToMakeAmounts[row.id] || ""}
+                              onChange={e => setPiToMakeAmounts(prev => ({ ...prev, [row.id]: e.target.value }))}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="bg-slate-50 border rounded-lg p-4 space-y-4">
+                <p className="text-sm font-medium text-slate-800">PI Details</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-500">Due Date <span className="text-red-500">*</span></label>
+                    <Input type="date" value={manualDueDate} onChange={e => setManualDueDate(e.target.value)} className="h-9" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-500">Notes (optional)</label>
+                    <Input placeholder="Any remark..." value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="h-9" />
+                  </div>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t mt-4">
+                  <span className="text-sm font-semibold text-slate-700">Total PI to Make:</span>
+                  <span className="text-lg font-bold text-violet-700 tabular-nums">
+                    {formatCurrency(selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeAmounts[r.id]) || 0), 0))}
+                  </span>
+                </div>
               </div>
             </div>
           )}

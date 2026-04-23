@@ -342,23 +342,50 @@ export default function DispatchPlanningPage({ user }) {
       // Removed test cert upload logic as it's now handled in the TC module
       let testCertUrl = null
 
-      // Each split has its own ORDER RECEIPT row (different products), safe to run in parallel
+      // Group active lines by poId to avoid race conditions when updating the same ORDER RECEIPT
+      const linesByPo = {}
+      for (let i = 0; i < activeLines.length; i++) {
+        const line = activeLines[i]
+        if (!linesByPo[line.poId]) linesByPo[line.poId] = []
+        linesByPo[line.poId].push({ ...line, dSrIdx: i })
+      }
+
+      // Step 1: Validate and update ORDER RECEIPT for each unique PO sequentially
+      for (const poId of Object.keys(linesByPo)) {
+        const lines = linesByPo[poId]
+        const totalDispatchQtyForPo = lines.reduce((sum, l) => sum + (parseFloat(l.dispatchQty) || 0), 0)
+
+        // Fetch latest order state
+        const { data: latestOrder, error: loErr } = await supabase
+          .from("ORDER RECEIPT")
+          .select('id, "Quantity", "Delivered", "Pending Qty"')
+          .eq("id", poId)
+          .single()
+        if (loErr) throw loErr
+
+        const latestDelivered = parseFloat(latestOrder?.Delivered) || 0
+        const totalQty = parseFloat(latestOrder?.Quantity) || 0
+        const latestPending = parseFloat(latestOrder?.["Pending Qty"]) || Math.max(0, totalQty - latestDelivered)
+
+        if (totalDispatchQtyForPo > latestPending + 0.0001) {
+          throw new Error(`Total dispatch quantity (${totalDispatchQtyForPo}) for this batch exceeds the current pending quantity (${latestPending}) for this PO.`)
+        }
+
+        // Update ORDER RECEIPT
+        const newDelivered = latestDelivered + totalDispatchQtyForPo
+        const newPending = Math.max(0, totalQty - newDelivered)
+        const orderUpdate = { Delivered: newDelivered, "Pending Qty": newPending }
+        if (newPending <= 0.01) orderUpdate["Actual 4"] = timestamp
+
+        const { error: orErr } = await supabase.from("ORDER RECEIPT").update(orderUpdate).eq("id", poId)
+        if (orErr) throw orErr
+      }
+
+      // Step 2: Insert DISPATCH rows and update po_logistics_splits
       await Promise.all(
-        activeLines.map(async (line, idx) => {
+        activeLines.map(async (line) => {
           const dispatchQty = parseFloat(line.dispatchQty) || 0
-
-          // Fresh pending qty for this ORDER RECEIPT row
-          const { data: latestOrder, error: loErr } = await supabase
-            .from("ORDER RECEIPT")
-            .select('id, "Quantity", "Delivered", "Pending Qty"')
-            .eq("id", line.poId)
-            .single()
-          if (loErr) throw loErr
-
-          const latestDelivered = parseFloat(latestOrder?.Delivered) || 0
-          const totalQty = parseFloat(latestOrder?.Quantity) || 0
-          const latestPending = parseFloat(latestOrder?.["Pending Qty"]) || Math.max(totalQty - latestDelivered, 0)
-          if (dispatchQty - latestPending > 0.0001) throw new Error(`Dispatch qty for "${line.productName}" exceeds current pending qty (${latestPending}).`)
+          const idx = activeLines.indexOf(line) // Use original index for D-Sr numbers
 
           // Insert DISPATCH row
           const { data: inserted, error: dispErr } = await supabase
@@ -372,7 +399,6 @@ export default function DispatchPlanningPage({ user }) {
               "Qty To Be Dispatched": dispatchQty,
               "Type Of Transporting": commonForm.typeOfTransporting,
               "Date Of Dispatch": commonForm.dateOfDispatch,
-              "Trust Certificate Made": testCertUrl,
               "Transporter Name": line.transporterName,
               po_id: line.poId,
               logistics_plan_id: line.planId,
@@ -403,14 +429,6 @@ export default function DispatchPlanningPage({ user }) {
               }])
             if (remainErr) throw remainErr
           }
-
-          // Update ORDER RECEIPT delivered + pending
-          const newDelivered = latestDelivered + dispatchQty
-          const newPending = Math.max(totalQty - newDelivered, 0)
-          const orderUpdate = { Delivered: newDelivered, "Pending Qty": newPending }
-          if (newPending <= 0.01) orderUpdate["Actual 4"] = timestamp
-          const { error: orErr } = await supabase.from("ORDER RECEIPT").update(orderUpdate).eq("id", line.poId)
-          if (orErr) throw orErr
         })
       )
 

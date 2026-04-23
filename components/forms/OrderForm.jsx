@@ -623,7 +623,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     const total = (parseFloat(quantity) * parseFloat(rate)).toString()
     const now = new Date()
     const poDate = now.toISOString().slice(0, 10)
-    const packagingOptions = ["HDPE Bags", "Jumbo Bag", "Loose", "Boxes"]
+    const packagingOptions = ["25 kg in ton bag", "50 kg in ton bag", "25 Kg Bag (Normal)", "50 Kg Bag (Normal)"]
     const mockFile = new File(
       [`Test SO for ${selectedPartyName} generated at ${generateTimestamp()}`],
       `test-so-${Date.now()}.txt`,
@@ -665,7 +665,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "Adjusted Amount": randomNumber(0, 5000, 0),
       "Reference No.": `REF-${Date.now().toString().slice(-5)}`,
       "TC Required": pickRandom(["Yes", "No"], "No"),
-      "Type of Packaging": pickRandom(packagingOptions, "HDPE Bags"),
+      "Type of Packaging": pickRandom(packagingOptions, "25 kg in ton bag"),
       "Total PO Basic Value": total,
       "Payment to Be Taken": pickRandom(dropdownData.paymentToBeTakens, "Yes"),
       "Retention Payment": pickRandom(dropdownData.retentionPayments, "No"),
@@ -902,11 +902,8 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                     <SelectValue placeholder="Select packaging type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PP bags">PP bags</SelectItem>
-                    <SelectItem value="Jumbo bags">Jumbo bags</SelectItem>
-                    <SelectItem value="Small PP bags">Small PP bags</SelectItem>
-                    <SelectItem value="25 Kg Ton Bag">25 Kg Ton Bag</SelectItem>
-                    <SelectItem value="50 kg Ton Bag">50 kg Ton Bag</SelectItem>
+                    <SelectItem value="25 kg in ton bag">25 kg in ton bag</SelectItem>
+                    <SelectItem value="50 kg in ton bag">50 kg in ton bag</SelectItem>
                     <SelectItem value="25 Kg Bag (Normal)">25 Kg Bag (Normal)</SelectItem>
                     <SelectItem value="50 Kg Bag (Normal)">50 Kg Bag (Normal)</SelectItem>
                   </SelectContent>
