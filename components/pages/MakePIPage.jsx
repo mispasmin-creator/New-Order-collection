@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
-import { Search, Loader2, CheckCircle2, Clock, IndianRupee, FileText, ChevronDown, ChevronRight, RefreshCw, FilePlus } from "lucide-react"
+import { Search, Loader2, CheckCircle2, Clock, IndianRupee, FileText, ChevronDown, ChevronRight, RefreshCw, FilePlus, Upload, X, Paperclip } from "lucide-react"
 
 /** Parse PI type string into payment slabs */
 export const parsePIType = (piType = "") => {
@@ -88,6 +88,7 @@ export default function MakePIPage({ user }) {
   const [manualDueDate, setManualDueDate] = useState("")
   const [manualNotes, setManualNotes] = useState("")
   const [piAmountMode, setPiAmountMode] = useState("basic") // "basic" | "tax"
+  const [piFiles, setPiFiles] = useState({}) // { [rowId]: File }
 
   const fetchData = useCallback(async () => {
     try {
@@ -189,6 +190,7 @@ export default function MakePIPage({ user }) {
     setPiToMakeQtys(initialPiToMakeQtys)
     setManualDueDate("")
     setManualNotes("")
+    setPiFiles({})
 
     setDialogOpen(true)
 
@@ -250,6 +252,20 @@ export default function MakePIPage({ user }) {
     try {
       const ts = getISTTimestamp()
       const poNumber = selectedGroup.poNumber
+
+      // Upload PI files
+      const uploadResults = {}
+      for (const rowId of Object.keys(piFiles)) {
+        if (!piFiles[rowId]) continue
+        const file = piFiles[rowId]
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${poNumber}_PI_${rowId}_${Date.now()}.${fileExt}`
+        const { error: upErr } = await supabase.storage.from("images").upload(fileName, file)
+        if (upErr) throw upErr
+        const { data: { publicUrl } } = supabase.storage.from("images").getPublicUrl(fileName)
+        uploadResults[rowId] = publicUrl
+      }
+
       const partyName = selectedGroup.partyName
       const firmName = selectedGroup.rows[0]?.firmName || ""
       const typeOfPI = selectedGroup.rows[0]?.typeOfPI || ""
@@ -271,6 +287,7 @@ export default function MakePIPage({ user }) {
         notes: manualNotes,
         status: "Pending",
         created_at: ts,
+        pi_copy: JSON.stringify(uploadResults), // map of rowId -> URL
       }
 
       const { error } = await supabase.from("po_pi_records").insert([record])
@@ -520,6 +537,7 @@ export default function MakePIPage({ user }) {
                       <TableHead className="text-right">PI To Be Raised</TableHead>
                       <TableHead className="text-right">Pending to PI</TableHead>
                       <TableHead className="text-right min-w-[120px]">PI to make</TableHead>
+                      <TableHead className="text-center min-w-[100px]">PI Copy</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -597,6 +615,33 @@ export default function MakePIPage({ user }) {
                                   </>
                                 )
                               })()}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-center">
+                              {piFiles[row.id] ? (
+                                <div className="flex items-center gap-2 bg-violet-50 px-2 py-1 rounded border border-violet-200">
+                                  <Paperclip className="w-3 h-3 text-violet-600" />
+                                  <span className="text-[10px] font-medium text-violet-700 max-w-[60px] truncate">{piFiles[row.id].name}</span>
+                                  <button onClick={() => setPiFiles(p => ({ ...p, [row.id]: null }))} className="text-gray-400 hover:text-red-500">
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="relative">
+                                  <input
+                                    type="file"
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    onChange={e => {
+                                      const file = e.target.files?.[0]
+                                      if (file) setPiFiles(p => ({ ...p, [row.id]: file }))
+                                    }}
+                                  />
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-violet-600">
+                                    <Upload className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
