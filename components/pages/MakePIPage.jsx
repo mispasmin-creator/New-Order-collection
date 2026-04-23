@@ -45,6 +45,11 @@ const formatDate = (d) => {
   } catch { return d }
 }
 
+const formatQty = (q) => {
+  const n = Number(q) || 0
+  return n % 1 === 0 ? n.toString() : n.toFixed(2).replace(/\.?0+$/, "")
+}
+
 const sanitizeAdj = (raw, total) => {
   const r = Number(raw) || 0
   return (r > 0 && r <= total * 10) ? r : total
@@ -76,18 +81,20 @@ export default function MakePIPage({ user }) {
 
   // existing PIs for this session (to show "Already Created" badge)
   const [createdPIs, setCreatedPIs] = useState(new Set()) // set of po_numbers that have PIs
-  const [piRaisedAmounts, setPiRaisedAmounts] = useState({}) // { po_number: total_raised }
+  const [piRaisedAmounts, setPiRaisedAmounts] = useState({}) // { po_number: total_raised_amount }
+  const [piRaisedQuantities, setPiRaisedQuantities] = useState({}) // { po_number: total_raised_qty }
   const [dispatchedQuantities, setDispatchedQuantities] = useState({}) // { do_id: qty }
-  const [piToMakeAmounts, setPiToMakeAmounts] = useState({}) // { do_id: amount }
+  const [piToMakeQtys, setPiToMakeQtys] = useState({}) // { do_id: qty in tons }
   const [manualDueDate, setManualDueDate] = useState("")
   const [manualNotes, setManualNotes] = useState("")
+  const [piAmountMode, setPiAmountMode] = useState("basic") // "basic" | "tax"
 
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
       const [ordersRes, pisRes] = await Promise.all([
         supabase.from("ORDER RECEIPT").select("*").not("Actual 2", "is", null).order("id", { ascending: false }),
-        supabase.from("po_pi_records").select("po_number, status, expected_amount")
+        supabase.from("po_pi_records").select("po_number, status, expected_amount, pi_quantity")
       ])
       if (ordersRes.error) throw ordersRes.error
       setOrders(ordersRes.data || [])
@@ -95,10 +102,13 @@ export default function MakePIPage({ user }) {
       if (!pisRes.error && pisRes.data) {
         setCreatedPIs(new Set(pisRes.data.map(r => r.po_number)))
         const raised = {}
+        const raisedQty = {}
         pisRes.data.forEach(r => {
           raised[r.po_number] = (raised[r.po_number] || 0) + (Number(r.expected_amount) || 0)
+          raisedQty[r.po_number] = (raisedQty[r.po_number] || 0) + (Number(r.pi_quantity) || 0)
         })
         setPiRaisedAmounts(raised)
+        setPiRaisedQuantities(raisedQty)
       }
     } catch (err) {
       toast({ title: "Error loading data", description: err.message, variant: "destructive" })
@@ -147,9 +157,19 @@ export default function MakePIPage({ user }) {
 
   const groupedOrders = useMemo(() => groupRowsByPo(searched), [searched])
 
-  // POs that still need a PI created
-  const pendingGroups = useMemo(() => groupedOrders.filter(g => !createdPIs.has(g.poNumber)), [groupedOrders, createdPIs])
-  const doneGroups = useMemo(() => groupedOrders.filter(g => createdPIs.has(g.poNumber)), [groupedOrders, createdPIs])
+  // POs that still need a PI created — any PO where raised qty < total order qty
+  const pendingGroups = useMemo(() => groupedOrders.filter(g => {
+    const totalOrderQty = g.rows.reduce((s, r) => s + (r.quantity || 0), 0)
+    const raisedQty = piRaisedQuantities[g.poNumber] || 0
+    return raisedQty < totalOrderQty
+  }), [groupedOrders, piRaisedQuantities])
+
+  // POs fully PI'd — raised qty >= total order qty
+  const doneGroups = useMemo(() => groupedOrders.filter(g => {
+    const totalOrderQty = g.rows.reduce((s, r) => s + (r.quantity || 0), 0)
+    const raisedQty = piRaisedQuantities[g.poNumber] || 0
+    return raisedQty >= totalOrderQty && totalOrderQty > 0
+  }), [groupedOrders, piRaisedQuantities])
 
   useEffect(() => { updateCount("Make PI", pendingGroups.length) }, [pendingGroups.length, updateCount])
 
@@ -164,9 +184,9 @@ export default function MakePIPage({ user }) {
     slabs.forEach(s => { dates[s.key] = ""; notes[s.key] = "" })
     setPiDueDates(dates); setPiNotes(notes)
 
-    const initialPiToMake = {}
-    group.rows.forEach(r => { initialPiToMake[r.id] = "" })
-    setPiToMakeAmounts(initialPiToMake)
+    const initialPiToMakeQtys = {}
+    group.rows.forEach(r => { initialPiToMakeQtys[r.id] = "" })
+    setPiToMakeQtys(initialPiToMakeQtys)
     setManualDueDate("")
     setManualNotes("")
 
@@ -202,10 +222,23 @@ export default function MakePIPage({ user }) {
   }, [selectedGroup])
 
   const handleCreatePI = async () => {
-    const totalPiToMake = selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeAmounts[r.id]) || 0), 0)
+    // Each row: qty entered × rate = basic amount; proportional adjustedAmount = tax-inclusive
+    const totalPiQty = selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeQtys[r.id]) || 0), 0)
+    const totalPiBasic = selectedGroup.rows.reduce((sum, r) => {
+      const qty = Number(piToMakeQtys[r.id]) || 0
+      return sum + qty * (r.rate || 0)
+    }, 0)
+    const totalPiTax = selectedGroup.rows.reduce((sum, r) => {
+      const qty = Number(piToMakeQtys[r.id]) || 0
+      const basic = qty * (r.rate || 0)
+      const proportion = r.quantity > 0 ? qty / r.quantity : 0
+      const taxAdj = proportion * (r.adjustedAmount || 0)
+      return sum + basic + taxAdj   // basic + proportional GST adjustment
+    }, 0)
+    const totalPiAmount = piAmountMode === "tax" ? totalPiTax : totalPiBasic
 
-    if (totalPiToMake <= 0) {
-      toast({ title: "No Amount", description: "Please enter at least some PI to make amount.", variant: "destructive" })
+    if (totalPiQty <= 0) {
+      toast({ title: "No Quantity", description: "Please enter quantity (tons) to make PI for at least one DO.", variant: "destructive" })
       return
     }
     if (!manualDueDate) {
@@ -230,9 +263,10 @@ export default function MakePIPage({ user }) {
         firm_name: firmName,
         pi_type: typeOfPI,
         slab_label: "Manual PI",
-        slab_pct: Math.round((totalPiToMake / totalPOValue) * 100),
+        slab_pct: totalPOValue > 0 ? Math.round((totalPiAmount / totalPOValue) * 100) : 0,
         total_po_value: totalPOValue,
-        expected_amount: totalPiToMake,
+        expected_amount: Math.round(totalPiAmount),
+        pi_quantity: totalPiQty,
         due_date: manualDueDate,
         notes: manualNotes,
         status: "Pending",
@@ -244,7 +278,7 @@ export default function MakePIPage({ user }) {
 
       toast({
         title: "PI Created",
-        description: `PI created for PO ${poNumber}`,
+        description: `PI created for ${totalPiQty} tons — PO ${poNumber}`,
         className: "bg-green-50 border-green-200 text-green-800",
       })
       setDialogOpen(false)
@@ -261,18 +295,29 @@ export default function MakePIPage({ user }) {
     const totalAdj = group.rows.reduce((s, r) => s + (r.adjustedAmount || 0), 0)
     const piType = group.rows[0]?.typeOfPI || "—"
     const slabs = parsePIType(piType)
+    const raisedForGroup = piRaisedQuantities[group.poNumber] || 0
+    const totalOrderQty = group.rows.reduce((s, r) => s + (r.quantity || 0), 0)
+    const pendingQtyBalance = Math.max(0, totalOrderQty - raisedForGroup)
+    const isPartial = raisedForGroup > 0 && raisedForGroup < totalOrderQty
 
     return (
       <Fragment key={group.key}>
         <TableRow className="bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => toggleExpand(group.key)}>
           <TableCell onClick={e => e.stopPropagation()}>
             {isPending ? (
-              <Button size="sm" onClick={() => openDialog(group)} className="bg-violet-600 hover:bg-violet-700 h-7 text-xs gap-1">
-                <FilePlus className="w-3 h-3" /> Create PI
-              </Button>
+              <div className="flex flex-col gap-1">
+                <Button size="sm" onClick={() => openDialog(group)} className="bg-violet-600 hover:bg-violet-700 h-7 text-xs gap-1">
+                  <FilePlus className="w-3 h-3" /> Create PI
+                </Button>
+                {isPartial && (
+                  <span className="text-[10px] text-orange-600 font-medium">
+                    Pending: {pendingQtyBalance} tons
+                  </span>
+                )}
+              </div>
             ) : (
               <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                <CheckCircle2 className="w-3 h-3" /> PI Created
+                <CheckCircle2 className="w-3 h-3" /> Fully PI'd
               </span>
             )}
           </TableCell>
@@ -420,18 +465,44 @@ export default function MakePIPage({ user }) {
 
           {selectedGroup && (
             <div className="space-y-6 py-2">
-              <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 flex gap-6">
+              <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 flex flex-wrap gap-6 items-start">
                 <div>
                   <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Type of PI</p>
                   <p className="font-semibold text-violet-900 mt-1">{selectedGroup.rows[0]?.typeOfPI || "—"}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Total PO Amount</p>
+                  <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Total PO Amount (Adj. w/ Tax)</p>
                   <p className="font-semibold text-violet-900 mt-1 tabular-nums">{formatCurrency(totalPOValue)}</p>
                 </div>
                 <div>
                   <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Total PI Raised</p>
                   <p className="font-semibold text-violet-900 mt-1 tabular-nums">{formatCurrency(piRaisedAmounts[selectedGroup.poNumber] || 0)}</p>
+                </div>
+                {/* Basic / With Tax toggle */}
+                <div className="ml-auto">
+                  <p className="text-xs font-medium text-violet-600 uppercase tracking-wider mb-1">PI Amount Mode</p>
+                  <div className="flex bg-white border border-violet-300 rounded-md overflow-hidden text-xs font-semibold">
+                    <button
+                      onClick={() => setPiAmountMode("basic")}
+                      className={`px-3 py-1.5 transition-colors ${
+                        piAmountMode === "basic"
+                          ? "bg-violet-600 text-white"
+                          : "text-violet-700 hover:bg-violet-50"
+                      }`}
+                    >
+                      Basic
+                    </button>
+                    <button
+                      onClick={() => setPiAmountMode("tax")}
+                      className={`px-3 py-1.5 transition-colors ${
+                        piAmountMode === "tax"
+                          ? "bg-violet-600 text-white"
+                          : "text-violet-700 hover:bg-violet-50"
+                      }`}
+                    >
+                      With Tax
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -441,10 +512,12 @@ export default function MakePIPage({ user }) {
                     <TableRow>
                       <TableHead className="min-w-[120px]">DO Number</TableHead>
                       <TableHead className="min-w-[150px]">Product</TableHead>
+                      <TableHead className="text-right">Rate (₹/t)</TableHead>
                       <TableHead className="text-right">Order Qty</TableHead>
                       <TableHead className="text-right">Dispatched Qty</TableHead>
-                      <TableHead className="text-right">Pending Qty</TableHead>
-                      <TableHead className="text-right">PI Raised</TableHead>
+                      <TableHead className="text-right">Pending Dispatched Qty</TableHead>
+                      <TableHead className="text-right">Total PI</TableHead>
+                      <TableHead className="text-right">PI To Be Raised</TableHead>
                       <TableHead className="text-right">Pending to PI</TableHead>
                       <TableHead className="text-right min-w-[120px]">PI to make</TableHead>
                     </TableRow>
@@ -452,29 +525,79 @@ export default function MakePIPage({ user }) {
                   <TableBody>
                     {selectedGroup.rows.map(row => {
                       const dispatchedQty = dispatchedQuantities[row.id] || 0
-                      const pendingQty = Math.max(0, row.quantity - dispatchedQty)
-                      const totalPIRaised = piRaisedAmounts[selectedGroup.poNumber] || 0
-                      // Proportional PI Raised for this DO
-                      const proportionalPIRaised = totalPOValue > 0 ? (row.adjustedAmount / totalPOValue) * totalPIRaised : 0
-                      const pendingToPIRaised = Math.max(0, row.adjustedAmount - proportionalPIRaised)
+                      const pendingDispatchQty = Math.max(0, row.quantity - dispatchedQty)
+                      const totalOrderQtyForPO = selectedGroup.rows.reduce((s, r) => s + (r.quantity || 0), 0)
+                      // Proportional qty raised for this DO based on its share of total order qty
+                      const totalPIQtyRaised = piRaisedQuantities[selectedGroup.poNumber] || 0
+                      const proportionalQtyRaised = totalOrderQtyForPO > 0
+                        ? (row.quantity / totalOrderQtyForPO) * totalPIQtyRaised
+                        : 0
+                      const pendingToPI = Math.max(0, row.quantity - proportionalQtyRaised)
+                      const enteredQty = Number(piToMakeQtys[row.id]) || 0
+                      const calculatedAmount = enteredQty * (row.rate || 0)
 
                       return (
                         <TableRow key={row.id}>
                           <TableCell className="font-medium text-xs">{row.rawData["DO-Delivery Order No."] || "N/A"}</TableCell>
-                          <TableCell className="text-sm">{row.productName}</TableCell>
-                          <TableCell className="text-right">{row.quantity}</TableCell>
-                          <TableCell className="text-right font-medium text-blue-600">{dispatchedQty}</TableCell>
-                          <TableCell className="text-right">{pendingQty}</TableCell>
-                          <TableCell className="text-right tabular-nums text-slate-600">{formatCurrency(proportionalPIRaised)}</TableCell>
-                          <TableCell className="text-right tabular-nums text-orange-600 font-medium">{formatCurrency(pendingToPIRaised)}</TableCell>
+                          <TableCell className="text-sm font-medium">
+                            <div className="flex flex-col">
+                              <span>{row.productName}</span>
+                              {row.rate > 0 && (
+                                <span className="text-[10px] text-violet-500 font-semibold tabular-nums">
+                                  ₹{Number(row.rate).toLocaleString("en-IN")}/t
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-semibold text-emerald-700">
+                            {row.rate > 0 ? formatCurrency(row.rate) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right">{row.quantity} t</TableCell>
+                          <TableCell className="text-right font-medium text-blue-600">{formatQty(dispatchedQty)} t</TableCell>
+                          <TableCell className="text-right">{formatQty(pendingDispatchQty)} t</TableCell>
+                          <TableCell className="text-right font-semibold text-slate-800">{formatQty(row.quantity)} t</TableCell>
+                          <TableCell className="text-right tabular-nums text-slate-600">{formatQty(proportionalQtyRaised)} t</TableCell>
+                          <TableCell className="text-right tabular-nums text-orange-600 font-medium">
+                            {formatQty(Math.max(0, pendingToPI - enteredQty))} t
+                          </TableCell>
                           <TableCell>
-                            <Input 
-                              type="number" 
-                              placeholder="0" 
-                              className="h-8 text-right w-24 ml-auto"
-                              value={piToMakeAmounts[row.id] || ""}
-                              onChange={e => setPiToMakeAmounts(prev => ({ ...prev, [row.id]: e.target.value }))}
-                            />
+                            <div className="flex flex-col items-end gap-0.5">
+                              <Input 
+                                type="number" 
+                                placeholder="0" 
+                                min={0}
+                                max={row.quantity}
+                                className="h-8 text-right w-24"
+                                value={piToMakeQtys[row.id] || ""}
+                                onChange={e => {
+                                  const val = Math.min(Number(e.target.value), row.quantity)
+                                  setPiToMakeQtys(prev => ({ ...prev, [row.id]: val === 0 && e.target.value === "" ? "" : val }))
+                                }}
+                              />
+                              {enteredQty > 0 && (() => {
+                                const basicAmt = Math.round(enteredQty * (row.rate || 0))
+                                const proportion = row.quantity > 0 ? enteredQty / row.quantity : 0
+                                const gstAdj = Math.round(proportion * (row.adjustedAmount || 0))
+                                const withTaxAmt = basicAmt + gstAdj
+                                return (
+                                  <>
+                                    <span className={`text-[10px] font-semibold tabular-nums ${
+                                      piAmountMode === "basic" ? "text-violet-700" : "text-slate-400"
+                                    }`}>
+                                      Basic: {formatCurrency(basicAmt)}
+                                    </span>
+                                    <span className={`text-[10px] font-semibold tabular-nums ${
+                                      piAmountMode === "tax" ? "text-emerald-700" : "text-slate-400"
+                                    }`}>
+                                      With Tax: {formatCurrency(withTaxAmt)}
+                                      {piAmountMode === "tax" && gstAdj > 0 && (
+                                        <span className="text-slate-400 font-normal"> (GST: {formatCurrency(gstAdj)})</span>
+                                      )}
+                                    </span>
+                                  </>
+                                )
+                              })()}
+                            </div>
                           </TableCell>
                         </TableRow>
                       )
@@ -496,10 +619,43 @@ export default function MakePIPage({ user }) {
                   </div>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t mt-4">
-                  <span className="text-sm font-semibold text-slate-700">Total PI to Make:</span>
-                  <span className="text-lg font-bold text-violet-700 tabular-nums">
-                    {formatCurrency(selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeAmounts[r.id]) || 0), 0))}
-                  </span>
+                  <div>
+                    <span className="text-sm font-semibold text-slate-700">Total Qty to PI</span>
+                    <div className="text-lg font-bold text-violet-700">
+                      {selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeQtys[r.id]) || 0), 0).toFixed(2)} tons
+                    </div>
+                  </div>
+                  <div className="text-right space-y-1">
+                    {(() => {
+                      const totalBasic = Math.round(selectedGroup.rows.reduce((sum, r) => {
+                        const qty = Number(piToMakeQtys[r.id]) || 0
+                        return sum + qty * (r.rate || 0)
+                      }, 0))
+                      const totalTax = Math.round(selectedGroup.rows.reduce((sum, r) => {
+                        const qty = Number(piToMakeQtys[r.id]) || 0
+                        const basic = qty * (r.rate || 0)
+                        const prop = r.quantity > 0 ? qty / r.quantity : 0
+                        const gstAdj = prop * (r.adjustedAmount || 0)
+                        return sum + basic + gstAdj
+                      }, 0))
+                      return (
+                        <>
+                          <div className={`text-sm font-semibold tabular-nums ${
+                            piAmountMode === "basic" ? "text-violet-700 text-base" : "text-slate-400"
+                          }`}>
+                            Basic: {formatCurrency(totalBasic)}
+                            {piAmountMode === "basic" && <span className="ml-1 text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">Selected</span>}
+                          </div>
+                          <div className={`text-sm font-semibold tabular-nums ${
+                            piAmountMode === "tax" ? "text-emerald-700 text-base" : "text-slate-400"
+                          }`}>
+                            With Tax: {formatCurrency(totalTax)}
+                            {piAmountMode === "tax" && <span className="ml-1 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">Selected</span>}
+                          </div>
+                        </>
+                      )
+                    })()}
+                  </div>
                 </div>
               </div>
             </div>

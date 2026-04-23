@@ -219,7 +219,7 @@ export default function OrderPage({ user }) {
 
 
     // Apply firm filter
-    if (firmFilter !== "all" && user.role === "master") {
+    if (firmFilter !== "all") {
       filtered = filtered.filter(order => order.firmName === firmFilter)
     }
 
@@ -392,7 +392,7 @@ export default function OrderPage({ user }) {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
-                placeholder="Search orders..."
+                placeholder="Search by PO Number, Party Name or Firm..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10 h-9"
@@ -401,19 +401,17 @@ export default function OrderPage({ user }) {
           </div>
 
           <div className="flex flex-wrap gap-4">
-            {user.role === "master" && (
-              <Select value={firmFilter} onValueChange={setFirmFilter}>
-                <SelectTrigger className="w-[180px] h-9">
-                  <SelectValue placeholder="Firm" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Firms</SelectItem>
-                  {uniqueFirms.map(firm => (
-                    <SelectItem key={firm} value={firm}>{firm}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            <Select value={firmFilter} onValueChange={setFirmFilter}>
+              <SelectTrigger className="w-[180px] h-9">
+                <SelectValue placeholder="All Firms" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Firms</SelectItem>
+                {uniqueFirms.map(firm => (
+                  <SelectItem key={firm} value={firm}>{firm}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[180px] h-9">

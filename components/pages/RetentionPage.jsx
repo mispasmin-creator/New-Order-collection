@@ -33,6 +33,8 @@ export default function RetentionPage({ user }) {
   const [loading, setLoading] = useState(true)
   const [orders, setOrders] = useState([])
   const [retentionRecords, setRetentionRecords] = useState({}) // po_number -> record
+  const [billAmountsMap, setBillAmountsMap] = useState({}) // po_number -> total basic bill amount
+  const [billDatesMap, setBillDatesMap] = useState({}) // po_number -> bill date from POST DELIVERY
   
   // Filters
   const [searchTerm, setSearchTerm] = useState("")
@@ -49,13 +51,14 @@ export default function RetentionPage({ user }) {
     try {
       setLoading(true)
       
-      const [ordersRes, retentionRes] = await Promise.all([
+      const [ordersRes, retentionRes, postDeliveryRes] = await Promise.all([
         supabase.from("ORDER RECEIPT").select("*").eq("Retention Payment", "Yes").order("id", { ascending: false }),
-        supabase.from("po_retention_records").select("*")
+        supabase.from("po_retention_records").select("*"),
+        supabase.from("POST DELIVERY").select(`"Order No.", "Total Bill Amount", "Bill Date"`)
       ])
 
       if (ordersRes.error) throw ordersRes.error
-      if (retentionRes.error && retentionRes.error.code !== '42P01') throw retentionRes.error // ignore table not found if newly created
+      if (retentionRes.error && retentionRes.error.code !== '42P01') throw retentionRes.error
 
       setOrders(ordersRes.data || [])
       
@@ -66,6 +69,45 @@ export default function RetentionPage({ user }) {
         })
       }
       setRetentionRecords(recordsMap)
+
+      // Build a map of DO Number -> total bill amount from POST DELIVERY
+      // We'll aggregate per DO number, then map to PO number later in processedData
+      const doToBillMap = {}
+      const doToBillDateMap = {}
+      if (!postDeliveryRes.error && postDeliveryRes.data) {
+        postDeliveryRes.data.forEach(r => {
+          const doNum = (r["Order No."] || "").trim()
+          if (doNum) {
+            doToBillMap[doNum] = (doToBillMap[doNum] || 0) + (Number(r["Total Bill Amount"]) || 0)
+            // Use earliest bill date per DO (in case of multiple entries)
+            if (r["Bill Date"] && !doToBillDateMap[doNum]) {
+              doToBillDateMap[doNum] = r["Bill Date"]
+            }
+          }
+        })
+      }
+
+      // Now map DO -> PO using orders data
+      // Use a Set to deduplicate: a PO can have multiple ORDER RECEIPT rows with the same DO number
+      const poToBillMap = {}
+      const poToBillDateMap = {}
+      const processedDoKeys = new Set()
+      if (ordersRes.data) {
+        ordersRes.data.forEach(r => {
+          const poNumber = r["PARTY PO NO (As Per Po Exact)"] || "N/A"
+          const doNum = (r["DO-Delivery Order No."] || "").trim()
+          const doKey = `${poNumber}__${doNum}`
+          if (doNum && doToBillMap[doNum] && !processedDoKeys.has(doKey)) {
+            processedDoKeys.add(doKey)
+            poToBillMap[poNumber] = (poToBillMap[poNumber] || 0) + doToBillMap[doNum]
+          }
+          if (doNum && doToBillDateMap[doNum] && !poToBillDateMap[poNumber]) {
+            poToBillDateMap[poNumber] = doToBillDateMap[doNum]
+          }
+        })
+      }
+      setBillAmountsMap(poToBillMap)
+      setBillDatesMap(poToBillDateMap)
 
     } catch (err) {
       toast({ title: "Error loading data", description: err.message, variant: "destructive" })
@@ -89,13 +131,9 @@ export default function RetentionPage({ user }) {
           orderDate: r["Timestamp"],
           retentionPercentage: Number(r["Retention Percentage"]) || 0,
           leadTime: Number(r["Lead Time for Retention"]) || 0,
-          totalOrderAmount: 0,
           rows: []
         }
       }
-      const val = Number(r["Total PO Basic Value"]) || 0
-      const adj = Number(r["Adjusted Amount"]) || 0
-      groups[poNumber].totalOrderAmount += (adj > 0 && adj <= val * 10) ? adj : val
       groups[poNumber].rows.push(r)
     })
 
@@ -104,10 +142,23 @@ export default function RetentionPage({ user }) {
     
     // Calculate fields
     const list = Object.values(groups).map(g => {
-      const retentionAmount = (g.totalOrderAmount * g.retentionPercentage) / 100
+      // Use bill amount from POST DELIVERY if available, otherwise fall back to order value
+      const billAmount = billAmountsMap[g.poNumber] || 0
+      const fallbackAmount = g.rows.reduce((sum, r) => {
+        const val = Number(r["Total PO Basic Value"]) || 0
+        const adj = Number(r["Adjusted Amount"]) || 0
+        return sum + ((adj > 0 && adj <= val * 10) ? adj : val)
+      }, 0)
+      const baseAmount = billAmount > 0 ? billAmount : fallbackAmount
+      const hasBillData = billAmount > 0
+
+      const retentionAmount = (baseAmount * g.retentionPercentage) / 100
       
-      let dueDateObj = new Date(g.orderDate)
-      if (isNaN(dueDateObj.getTime())) dueDateObj = new Date()
+      // Use bill date from POST DELIVERY if available, else fall back to order creation date
+      const billDate = billDatesMap[g.poNumber]
+      let dueDateBase = billDate ? new Date(billDate) : new Date(g.orderDate)
+      if (isNaN(dueDateBase.getTime())) dueDateBase = new Date()
+      let dueDateObj = new Date(dueDateBase)
       dueDateObj.setDate(dueDateObj.getDate() + g.leadTime)
       
       const record = retentionRecords[g.poNumber] || { amount_received: 0, status: "Pending", remarks: "" }
@@ -129,6 +180,9 @@ export default function RetentionPage({ user }) {
 
       return {
         ...g,
+        billAmount: baseAmount,
+        hasBillData,
+        billDate: billDate || null,
         retentionAmount,
         dueDateObj,
         amountReceived,
@@ -140,7 +194,7 @@ export default function RetentionPage({ user }) {
     })
 
     return list.sort((a, b) => a.dueDateObj - b.dueDateObj)
-  }, [orders, retentionRecords])
+  }, [orders, retentionRecords, billAmountsMap, billDatesMap])
 
   // Update Sidebar Notification Count (Pending Cases)
   const pendingCasesCount = useMemo(() => processedData.filter(d => d.paymentStatus !== "Paid").length, [processedData])
@@ -344,7 +398,7 @@ export default function RetentionPage({ user }) {
                 <TableHead className="text-center w-[100px]">Action</TableHead>
                 <TableHead>PO Number</TableHead>
                 <TableHead>Customer Name</TableHead>
-                <TableHead className="text-right">Order Value</TableHead>
+                <TableHead className="text-right">Bill Amount</TableHead>
                 <TableHead className="text-right">Ret. %</TableHead>
                 <TableHead className="text-right">Ret. Amount</TableHead>
                 <TableHead>Due Date</TableHead>
@@ -366,7 +420,12 @@ export default function RetentionPage({ user }) {
                     </TableCell>
                     <TableCell className="font-semibold text-xs">{row.poNumber}</TableCell>
                     <TableCell className="text-sm max-w-[200px] truncate" title={row.partyName}>{row.partyName}</TableCell>
-                    <TableCell className="text-right tabular-nums text-slate-600">{formatCurrency(row.totalOrderAmount)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-slate-600">
+                      {formatCurrency(row.billAmount)}
+                      {!row.hasBillData && (
+                        <span className="block text-[10px] text-amber-500">(order est.)</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right text-xs font-medium bg-slate-50">{row.retentionPercentage}%</TableCell>
                     <TableCell className="text-right font-semibold tabular-nums text-indigo-700">{formatCurrency(row.retentionAmount)}</TableCell>
                     <TableCell>
