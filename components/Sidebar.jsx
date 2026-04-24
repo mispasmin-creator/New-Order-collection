@@ -480,10 +480,10 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
 
       {/* Mobile Sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:hidden ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg flex flex-col overflow-hidden transform transition-transform duration-300 ease-in-out lg:hidden ${sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
       >
-        <div className="flex items-center justify-between p-4 border-b">
+        <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
           <div className="flex items-center gap-3">
             <Image src="/passary.jpeg" alt="PASMIN Logo" width={60} height={60} className="rounded-lg" />
             <h1 className="text-xl font-bold text-gray-800">Order Management System</h1>
@@ -517,7 +517,7 @@ function SidebarContent({ user, pathname, onLogout, userPages, getNotificationCo
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Header - only show on desktop */}
       {!isMobile && (
         <div className="p-6 border-b">
