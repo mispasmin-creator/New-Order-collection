@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Loader2, Search, CheckCircle2, AlertCircle, BadgeCheck, ChevronDown, ChevronRight } from "lucide-react"
+import { Loader2, Search, CheckCircle2, AlertCircle, BadgeCheck, ChevronDown, ChevronRight, FileText, XCircle } from "lucide-react"
 import { useNotification } from "@/components/providers/NotificationProvider"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
@@ -50,6 +50,9 @@ export default function AccountsApprovalPage({ user }) {
   // PO-level form: one payment term decision per PO
   const [paymentTermStatus, setPaymentTermStatus] = useState("")
   const [remarks, setRemarks] = useState("")
+  // PI data for the open modal
+  const [modalPIRecords, setModalPIRecords] = useState([])
+  const [modalPILoading, setModalPILoading] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -149,16 +152,31 @@ export default function AccountsApprovalPage({ user }) {
 
   const groupedRows = useMemo(() => groupRowsByPo(displayRows), [displayRows])
 
-  const handleOpen = (group) => {
+  const handleOpen = async (group) => {
     setSelectedGroup(group)
     setPaymentTermStatus("")
     setRemarks("")
+    setModalPIRecords([])
+    setModalPILoading(true)
+    try {
+      const { data, error } = await supabase
+        .from("po_pi_records")
+        .select("pi_number, slab_label, expected_amount, pi_quantity, status, due_date, product_names, created_at, actual_amount")
+        .eq("po_number", group.poNumber)
+        .order("created_at", { ascending: true })
+      if (!error) setModalPIRecords(data || [])
+    } catch {
+      // non-critical, silently ignore
+    } finally {
+      setModalPILoading(false)
+    }
   }
 
   const handleClose = () => {
     setSelectedGroup(null)
     setPaymentTermStatus("")
     setRemarks("")
+    setModalPIRecords([])
   }
 
   const handleSubmit = async () => {
@@ -473,6 +491,24 @@ export default function AccountsApprovalPage({ user }) {
                   <p className="font-medium">{selectedGroup?.rows[0]?.partyName}</p>
                 </div>
                 <div>
+                  <p className="text-xs text-gray-500">DO Number</p>
+                  <p className="font-mono font-medium">{selectedGroup?.rows[0]?.doNumber || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Party PO Date</p>
+                  <p className="font-medium">{selectedGroup?.rows[0]?.partyPODate ? formatDate(selectedGroup.rows[0].partyPODate) : "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Rate</p>
+                  <p className="font-medium">{selectedGroup?.rows[0]?.poRate ? `₹${selectedGroup.rows[0].poRate}` : "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Total PO Value</p>
+                  <p className="font-medium text-green-700">
+                    {selectedGroup?.rows[0]?.totalValue ? `₹${Number(selectedGroup.rows[0].totalValue).toLocaleString("en-IN")}` : "—"}
+                  </p>
+                </div>
+                <div>
                   <p className="text-xs text-gray-500">Payment To Be Taken</p>
                   <p className="font-medium">{selectedGroup?.rows[0]?.paymentToBeTaken || "—"}</p>
                 </div>
@@ -489,22 +525,115 @@ export default function AccountsApprovalPage({ user }) {
                   <p className="font-medium">{selectedGroup?.rows[0]?.leadTimeFinalPayment || "—"}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500">Specific Concern</p>
-                  <p className="font-medium">{selectedGroup?.rows[0]?.specificConcern || "—"}</p>
+                  <p className="text-xs text-gray-500">Transport Type</p>
+                  <p className="font-medium">{selectedGroup?.rows[0]?.typeOfTransporting || "—"}</p>
                 </div>
+                <div>
+                  <p className="text-xs text-gray-500">GST Number</p>
+                  <p className="font-medium">{selectedGroup?.rows[0]?.gstNumber || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Contact Person</p>
+                  <p className="font-medium">{selectedGroup?.rows[0]?.contactPersonName || "—"}</p>
+                </div>
+                {selectedGroup?.rows[0]?.address && (
+                  <div className="col-span-2">
+                    <p className="text-xs text-gray-500">Address</p>
+                    <p className="font-medium">{selectedGroup.rows[0].address}</p>
+                  </div>
+                )}
+                {selectedGroup?.rows[0]?.specificConcern && (
+                  <div className="col-span-2">
+                    <p className="text-xs text-gray-500">Specific Concern</p>
+                    <p className="font-medium text-orange-700">{selectedGroup.rows[0].specificConcern}</p>
+                  </div>
+                )}
               </div>
+            </div>
 
-              {/* Products/splits */}
-              <div className="pt-2 border-t border-slate-200">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Splits</p>
-                <div className="space-y-1">
-                  {selectedGroup?.rows.map((row) => (
-                    <div key={row.id} className="flex items-center justify-between text-sm bg-white rounded-lg px-3 py-2 border border-slate-100">
-                      <span className="font-medium text-slate-800">{row.productName}</span>
-                      <span className="text-xs text-slate-500">{row.transporterName} · {row.allocatedQty} qty</span>
+            {/* PI Status */}
+            <div className="bg-violet-50 border border-violet-100 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-violet-600" />
+                <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide">PI Status</p>
+              </div>
+              {modalPILoading ? (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading PI records...
+                </div>
+              ) : modalPIRecords.length === 0 ? (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <XCircle className="w-4 h-4 text-slate-400" />
+                  No PI created for this PO yet
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {modalPIRecords.map((pi, idx) => (
+                    <div key={idx} className="bg-white border border-violet-100 rounded-lg px-3 py-2.5">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-semibold text-slate-800">{pi.pi_number}</span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          pi.status === "Received"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}>
+                          {pi.status}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs">
+                        <div>
+                          <span className="text-gray-500">Slab</span>
+                          <p className="font-medium text-gray-800">{pi.slab_label || "—"}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Amount</span>
+                          <p className="font-medium text-violet-700">₹{Number(pi.expected_amount || 0).toLocaleString("en-IN")}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Quantity</span>
+                          <p className="font-medium text-gray-800">{pi.pi_quantity ? `${pi.pi_quantity} tons` : "—"}</p>
+                        </div>
+                        {pi.actual_amount > 0 && (
+                          <div>
+                            <span className="text-gray-500">Received</span>
+                            <p className="font-medium text-green-700">₹{Number(pi.actual_amount).toLocaleString("en-IN")}</p>
+                          </div>
+                        )}
+                        {pi.due_date && (
+                          <div>
+                            <span className="text-gray-500">Due Date</span>
+                            <p className="font-medium text-gray-800">{formatDate(pi.due_date)}</p>
+                          </div>
+                        )}
+                        {Array.isArray(pi.product_names) && pi.product_names.length > 0 && (
+                          <div className="col-span-2">
+                            <span className="text-gray-500">Products</span>
+                            <p className="font-medium text-gray-800">{pi.product_names.join(", ")}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
+                  <div className="flex items-center justify-between pt-1 text-xs text-slate-600 border-t border-violet-100">
+                    <span>{modalPIRecords.length} PI{modalPIRecords.length > 1 ? "s" : ""} created</span>
+                    <span className="font-semibold text-violet-700">
+                      Total: ₹{modalPIRecords.reduce((s, r) => s + (Number(r.expected_amount) || 0), 0).toLocaleString("en-IN")}
+                    </span>
+                  </div>
                 </div>
+              )}
+            </div>
+
+            {/* Products/splits */}
+            <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Splits</p>
+              <div className="space-y-1">
+                {selectedGroup?.rows.map((row) => (
+                  <div key={row.id} className="flex items-center justify-between text-sm bg-white rounded-lg px-3 py-2 border border-slate-100">
+                    <span className="font-medium text-slate-800">{row.productName}</span>
+                    <span className="text-xs text-slate-500">{row.transporterName} · {row.allocatedQty} qty</span>
+                  </div>
+                ))}
               </div>
             </div>
 
