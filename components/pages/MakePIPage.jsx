@@ -550,9 +550,9 @@ export default function MakePIPage({ user }) {
                       // Proportional qty raised for this DO based on its share of total order qty
                       const totalPIQtyRaised = piRaisedQuantities[selectedGroup.poNumber] || 0
                       const proportionalQtyRaised = totalOrderQtyForPO > 0
-                        ? (row.quantity / totalOrderQtyForPO) * totalPIQtyRaised
+                        ? Math.round((row.quantity / totalOrderQtyForPO) * totalPIQtyRaised * 100) / 100
                         : 0
-                      const pendingToPI = Math.max(0, row.quantity - proportionalQtyRaised)
+                      const pendingToPI = Math.max(0, Math.round((row.quantity - proportionalQtyRaised) * 100) / 100)
                       const enteredQty = Number(piToMakeQtys[row.id]) || 0
                       const calculatedAmount = enteredQty * (row.rate || 0)
 
@@ -669,7 +669,7 @@ export default function MakePIPage({ user }) {
                   <div>
                     <span className="text-sm font-semibold text-slate-700">Total Qty to PI</span>
                     <div className="text-lg font-bold text-violet-700">
-                      {selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeQtys[r.id]) || 0), 0).toFixed(2)} tons
+                      {formatQty(selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeQtys[r.id]) || 0), 0))} tons
                     </div>
                   </div>
                   <div className="text-right space-y-1">
