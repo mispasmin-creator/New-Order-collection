@@ -140,7 +140,7 @@ export default function PaymentsAndPIPage({ user }) {
 
   // filter by role
   const roleFiltered = useMemo(() => {
-    if (!user || user.role === "master") return ordersTransformed
+    if (!user || user.role === "ADMIN") return ordersTransformed
     const firms = user.firm ? user.firm.split(",").map(f => f.trim().toLowerCase()) : []
     if (firms.includes("all")) return ordersTransformed
     return ordersTransformed.filter(o => firms.includes((o.firmName || "").toLowerCase()))

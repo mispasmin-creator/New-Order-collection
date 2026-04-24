@@ -274,7 +274,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
         const updates = {};
         if (addressKey && partyRow[addressKey]) updates["Address"] = String(partyRow[addressKey]).trim();
         if (gstNumberKey && partyRow[gstNumberKey]) updates["Gst Number"] = String(partyRow[gstNumberKey]).trim();
-        if (firmNameKey && partyRow[firmNameKey] && user.role === "master") updates["Firm Name"] = String(partyRow[firmNameKey]).trim();
+        if (firmNameKey && partyRow[firmNameKey] && user.role === "ADMIN") updates["Firm Name"] = String(partyRow[firmNameKey]).trim();
 
         setFormData(prev => ({ ...prev, ...updates }));
       }
@@ -544,7 +544,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
         "Party Name": "",
         "Gst Number": "",
         "Address": "",
-        "Firm Name": user.role === "master" ? "" : user.firm,
+        "Firm Name": user.role === "ADMIN" ? "" : user.firm,
         "Type Of Transporting": "",
         "Contact Person Name": "",
         "Contact Person WhatsApp No.": "",
@@ -651,7 +651,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "Party Name": selectedPartyName,
       "Gst Number": partyDetails.gst || `29TEST${Date.now().toString().slice(-10)}`,
       "Address": partyDetails.address || "Sample Industrial Area, Bengaluru",
-      "Firm Name": user.role === "master"
+      "Firm Name": user.role === "ADMIN"
         ? (partyDetails.firm || pickRandom(dropdownData.firmNames, "Test Firm"))
         : user.firm,
       "Type Of Transporting": pickRandom(dropdownData.typeOfTransportings, "FOR"),

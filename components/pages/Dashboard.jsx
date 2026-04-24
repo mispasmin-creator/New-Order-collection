@@ -457,7 +457,7 @@ export default function AnalyticsDashboard({ user }) {
     // First filter by firm
     let filtered = data;
 
-    if (user.role === "master") {
+    if (user.role === "ADMIN") {
       if (selectedFirm !== "all") {
         filtered = data.filter(item => item[firmField] === selectedFirm);
       }
@@ -650,7 +650,7 @@ export default function AnalyticsDashboard({ user }) {
             <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
             {refreshing ? "Refreshing..." : "Refresh"}
           </Button>
-          {user.role === "master" && (
+          {user.role === "ADMIN" && (
             <Select value={selectedFirm} onValueChange={setSelectedFirm}>
               <SelectTrigger className="w-[180px]">
                 <Users className="w-4 h-4 mr-2" />

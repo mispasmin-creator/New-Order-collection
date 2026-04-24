@@ -204,7 +204,7 @@ export default function RetentionPage({ user }) {
   const filteredData = useMemo(() => {
     let result = processedData
 
-    if (user && user.role !== "master") {
+    if (user && user.role !== "ADMIN") {
       const firms = user.firm ? user.firm.split(",").map(f => f.trim().toLowerCase()) : []
       if (!firms.includes("all")) {
         result = result.filter(o => firms.includes((o.firmName || "").toLowerCase()))

@@ -282,7 +282,7 @@ export default function OrderPage({ user }) {
 
   // Calculate stats based on current firm filter (ignoring status/search)
   const statsOrders = orders.filter(order => {
-    if (firmFilter !== "all" && user.role === "master") {
+    if (firmFilter !== "all" && user.role === "ADMIN") {
       return order.firmName === firmFilter
     }
     return true

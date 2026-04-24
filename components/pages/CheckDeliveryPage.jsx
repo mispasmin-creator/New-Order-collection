@@ -70,7 +70,7 @@ export default function CheckDeliveryPage({ user }) {
         .not("Actual 2", "is", null)
         .order("id", { ascending: false })
 
-      if (user.role !== "master") {
+      if (user.role !== "ADMIN") {
         const userFirms = user.firm ? user.firm.split(",").map((f) => f.trim()) : []
         if (!userFirms.includes("all")) {
           query = query.in("Firm Name", userFirms)

@@ -87,7 +87,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
         .order('id', { ascending: false })
 
       // Filter by user firm if not master
-      if (user.role !== "master") {
+      if (user.role !== "ADMIN") {
         const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
         if (!userFirms.includes('all')) {
           query = query.in('Firm Name', userFirms)
@@ -236,7 +236,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
 
   // Filter orders based on user role
   const getFilteredOrders = () => {
-    if (!user || user.role === "master") return orders
+    if (!user || user.role === "ADMIN") return orders
 
     // Handle multiple firms (comma separated)
     const userFirms = user.firm ? user.firm.split(',').map(f => f.trim().toLowerCase()) : []

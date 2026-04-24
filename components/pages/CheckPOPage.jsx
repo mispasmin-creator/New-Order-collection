@@ -175,7 +175,7 @@ export default function CheckPOPage({ user, onNavigate }) {
   const baseFilteredOrders = useMemo(() => {
     let filtered = orders
 
-    if (user.role !== "master") {
+    if (user.role !== "ADMIN") {
       const userFirms = user.firm ? user.firm.split(',').map(f => f.trim().toLowerCase()) : []
       filtered = filtered.filter(order => {
         if (userFirms.includes('all')) return true

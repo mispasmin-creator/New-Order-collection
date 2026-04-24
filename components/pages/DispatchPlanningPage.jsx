@@ -101,7 +101,7 @@ export default function DispatchPlanningPage({ user }) {
       setLoading(true)
 
       let orderQuery = supabase.from("ORDER RECEIPT").select("*").order("id", { ascending: false })
-      if (user.role !== "master") {
+      if (user.role !== "ADMIN") {
         const userFirms = user.firm ? user.firm.split(",").map((f) => f.trim()) : []
         if (!userFirms.includes("all")) orderQuery = orderQuery.in("Firm Name", userFirms)
       }

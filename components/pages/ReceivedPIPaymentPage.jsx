@@ -185,7 +185,7 @@ export default function ReceivedPIPaymentPage({ user }) {
       setLoading(true)
       let query = supabase.from("po_pi_records").select("*").order("created_at", { ascending: false })
 
-      if (user?.role !== "master") {
+      if (user?.role !== "ADMIN") {
         const firms = user?.firm ? user.firm.split(",").map(f => f.trim()) : []
         if (!firms.includes("all") && firms.length > 0) query = query.in("firm_name", firms)
       }

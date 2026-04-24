@@ -26,6 +26,7 @@ import {
   PackageCheck,
   BadgeCheck,
   ShieldCheck,
+  Users,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -51,6 +52,7 @@ const pageIcons = {
   "Management Approval": ShieldCheck,
   "Debit Note": FileText,
   "Bilty Update": PackageCheck,
+  "Manage Users": Users,
 }
 
 const pageRoutes = {
@@ -78,6 +80,7 @@ const pageRoutes = {
   "Management Approval": "/management-approval",
   "Debit Note": "/debit-note",
   "Bilty Update": "/logistics-fulfillment",
+  "Manage Users": "/manage-users",
 }
 
 const defaultPageOrder = [
@@ -139,7 +142,7 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         .from('ORDER RECEIPT')
         .select('id, "Firm Name"', { count: 'exact' })
 
-      if (user.role !== "master") {
+      if (user.role !== "ADMIN") {
         const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
         if (!userFirms.includes('all')) {
           orderCountQuery = orderCountQuery.in('Firm Name', userFirms)
@@ -160,7 +163,7 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         .select('"Planned 1", "Actual 1", "Firm Name"')
         .not('Planned 1', 'is', null)
 
-      if (user.role !== "master") {
+      if (user.role !== "ADMIN") {
         const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
         if (!userFirms.includes('all')) {
           checkPOQuery = checkPOQuery.in('Firm Name', userFirms)
@@ -185,7 +188,7 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         .select('"Planned 2", "Actual 2", "Firm Name"')
         .not('Planned 2', 'is', null)
 
-      if (user.role !== "master") {
+      if (user.role !== "ADMIN") {
         const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
         if (!userFirms.includes('all')) {
           receivedAccQuery = receivedAccQuery.in('Firm Name', userFirms)
@@ -209,7 +212,7 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         .select('"PARTY PO NO (As Per Po Exact)", "Actual 2", "Firm Name"')
         .not('Actual 2', 'is', null)
 
-      if (user.role !== "master") {
+      if (user.role !== "ADMIN") {
         const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
         if (!userFirms.includes('all')) {
           makePIQuery = makePIQuery.in('Firm Name', userFirms)
@@ -276,7 +279,7 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
       }
 
       // Fetch real-time count for "Logistic" from Supabase
-      if (user.role !== "master" && accessibleOrderIds.length === 0) {
+      if (user.role !== "ADMIN" && accessibleOrderIds.length === 0) {
         counts["Logistic"] = 0
       } else {
         let logisticQuery = supabase
@@ -430,16 +433,22 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
 
   // Get user's accessible pages and sort them
   const hasAllAccess = user.pageAccess && user.pageAccess.some(p => p.toLowerCase().trim() === "all");
+  const isAdmin = user.role === "ADMIN";
 
-  const userPages = hasAllAccess
-    ? [...defaultPageOrder] // Show all pages if access is 'All'
-    : (user.pageAccess || [])
-      .filter(page => pageIcons[page]) // Only show pages with icons
-      .sort((a, b) => {
-        const indexA = defaultPageOrder.indexOf(a);
-        const indexB = defaultPageOrder.indexOf(b);
-        return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-      });
+  const userPages = (() => {
+    const pages = hasAllAccess
+      ? [...defaultPageOrder]
+      : (user.pageAccess || [])
+          .filter(page => pageIcons[page])
+          .sort((a, b) => {
+            const indexA = defaultPageOrder.indexOf(a);
+            const indexB = defaultPageOrder.indexOf(b);
+            return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+          });
+    // Always show Manage Users for master role
+    if (isAdmin && !pages.includes("Manage Users")) pages.push("Manage Users");
+    return pages;
+  })();
 
   // Get notification count for a specific page
   const getNotificationCount = (pageName) => {
@@ -477,7 +486,7 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-3">
             <Image src="/passary.jpeg" alt="PASMIN Logo" width={60} height={60} className="rounded-lg" />
-            <h1 className="text-xl font-bold text-gray-800">Order 2 Delivery</h1>
+            <h1 className="text-xl font-bold text-gray-800">Order Management System</h1>
           </div>
           <button onClick={() => setSidebarOpen(false)} className="p-2 rounded-md text-gray-600 hover:bg-gray-100">
             <X className="w-5 h-5" />
@@ -514,7 +523,7 @@ function SidebarContent({ user, pathname, onLogout, userPages, getNotificationCo
         <div className="p-6 border-b">
           <div className="flex items-center gap-3 mb-3">
             <Image src="/passary.jpeg" alt="PASMIN Logo" width={80} height={80} className="rounded-lg" />
-            <h1 className="text-xl font-bold text-gray-800">Order 2 Delivery</h1>
+            <h1 className="text-xl font-bold text-gray-800">Order Management System</h1>
             <button
               onClick={onRefreshCounts}
               className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700"

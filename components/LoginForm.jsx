@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
 import { supabase } from "@/lib/supabaseClient"
+import Image from "next/image"
 
 export default function LoginForm({ onLogin }) {
   const [credentials, setCredentials] = useState({ username: "", password: "" })
@@ -67,7 +68,10 @@ export default function LoginForm({ onLogin }) {
       <div className="w-full max-w-sm sm:max-w-md">
         <Card className="shadow-xl border-0">
           <CardHeader className="text-center space-y-2 pb-6">
-            <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800">Order 2 Delivery</CardTitle>
+            <div className="flex justify-center mb-2">
+              <Image src="/passary.jpeg" alt="Logo" width={70} height={70} className="rounded-lg" />
+            </div>
+            <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800">Order Management System</CardTitle>
             <CardDescription className="text-gray-600 text-sm sm:text-base">
               Sign in to your account to continue
             </CardDescription>
