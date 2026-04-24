@@ -14,7 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import {
   Search, Loader2, CheckCircle2, Clock, IndianRupee, AlertCircle,
   ChevronDown, ChevronRight, RefreshCw, CalendarClock, History,
-  AlertTriangle, BadgeCheck, CircleDollarSign,
+  AlertTriangle, BadgeCheck, CircleDollarSign, FileText, Package,
+  ExternalLink,
 } from "lucide-react"
 import { formatCurrency } from "./MakePIPage"
 
@@ -50,6 +51,95 @@ const StatusPill = ({ slab }) => {
   if (s === "partial")
     return <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full"><CircleDollarSign className="w-3 h-3" />Partial · {formatCurrency(remaining)} rem.</span>
   return <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full"><Clock className="w-3 h-3" />Pending</span>
+}
+
+const parsePiCopy = (piCopy) => {
+  if (!piCopy) return []
+  try {
+    const parsed = typeof piCopy === "string" ? JSON.parse(piCopy) : piCopy
+    return Object.values(parsed).filter(Boolean)
+  } catch { return [] }
+}
+
+// Shared block shown inside action modals
+const SlabDetailsBlock = ({ slab }) => {
+  const piCopyUrls = parsePiCopy(slab.pi_copy)
+  const products = Array.isArray(slab.product_names) ? slab.product_names : []
+
+  return (
+    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2 text-sm">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+        {slab.party_name && (
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase font-semibold">Party</p>
+            <p className="font-medium text-gray-800 text-xs">{slab.party_name}</p>
+          </div>
+        )}
+        {slab.firm_name && (
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase font-semibold">Firm</p>
+            <p className="font-medium text-gray-800 text-xs">{slab.firm_name}</p>
+          </div>
+        )}
+        {slab.pi_type && (
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase font-semibold">PI Type</p>
+            <p className="font-medium text-gray-800 text-xs">{slab.pi_type}</p>
+          </div>
+        )}
+        {slab.pi_quantity > 0 && (
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase font-semibold">Quantity</p>
+            <p className="font-medium text-gray-800 text-xs">{slab.pi_quantity} t</p>
+          </div>
+        )}
+        {slab.total_po_value > 0 && (
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase font-semibold">Total PO Value</p>
+            <p className="font-medium text-gray-800 text-xs tabular-nums">{formatCurrency(slab.total_po_value)}</p>
+          </div>
+        )}
+        {slab.slab_pct > 0 && (
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase font-semibold">Slab %</p>
+            <p className="font-medium text-gray-800 text-xs">{slab.slab_pct}%</p>
+          </div>
+        )}
+      </div>
+
+      {products.length > 0 && (
+        <div>
+          <p className="text-[10px] text-gray-400 uppercase font-semibold flex items-center gap-1"><Package className="w-3 h-3" />Products</p>
+          <div className="flex flex-wrap gap-1 mt-0.5">
+            {products.map((p, i) => (
+              <span key={i} className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded">{p}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {slab.notes && (
+        <div>
+          <p className="text-[10px] text-gray-400 uppercase font-semibold">Notes</p>
+          <p className="text-xs text-gray-600 italic">"{slab.notes}"</p>
+        </div>
+      )}
+
+      {piCopyUrls.length > 0 && (
+        <div>
+          <p className="text-[10px] text-gray-400 uppercase font-semibold flex items-center gap-1"><FileText className="w-3 h-3" />PI Copy</p>
+          <div className="flex flex-col gap-1 mt-0.5">
+            {piCopyUrls.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                className="text-xs text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1 truncate">
+                <ExternalLink className="w-3 h-3 shrink-0" />PI Copy {piCopyUrls.length > 1 ? i + 1 : ""}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function ReceivedPIPaymentPage({ user }) {
@@ -242,6 +332,8 @@ export default function ReceivedPIPaymentPage({ user }) {
     const remaining = (slab.expected_amount || 0) - received
     const payLog = Array.isArray(slab.payment_log) ? slab.payment_log : []
     const reschedLog = Array.isArray(slab.reschedule_log) ? slab.reschedule_log : []
+    const piCopyUrls = parsePiCopy(slab.pi_copy)
+    const products = Array.isArray(slab.product_names) ? slab.product_names : []
 
     return (
       <div key={slab.id} className={`rounded-xl border p-4 space-y-3 ${st === "overdue" ? "border-red-200 bg-red-50/40" : st === "received" ? "border-green-200 bg-green-50/30" : st === "partial" ? "border-blue-200 bg-blue-50/30" : "border-gray-200 bg-white"}`}>
@@ -260,8 +352,31 @@ export default function ReceivedPIPaymentPage({ user }) {
           </div>
         </div>
 
+        {/* Products */}
+        {products.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {products.map((p, i) => (
+              <span key={i} className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded flex items-center gap-1">
+                <Package className="w-3 h-3" />{p}
+              </span>
+            ))}
+          </div>
+        )}
+
         {/* Dates & amounts grid */}
         <div className="flex flex-wrap gap-4 text-sm">
+          {slab.pi_type && (
+            <div>
+              <p className="text-xs text-gray-400">PI Type</p>
+              <p className="font-medium text-gray-700">{slab.pi_type}</p>
+            </div>
+          )}
+          {slab.pi_quantity > 0 && (
+            <div>
+              <p className="text-xs text-gray-400">Quantity</p>
+              <p className="font-medium text-gray-700">{slab.pi_quantity} t</p>
+            </div>
+          )}
           <div>
             <p className="text-xs text-gray-400">Due Date</p>
             <p className={`font-medium ${st === "overdue" ? "text-red-600" : "text-gray-700"}`}>
@@ -281,6 +396,12 @@ export default function ReceivedPIPaymentPage({ user }) {
               <p className="font-semibold text-amber-700 tabular-nums">{formatCurrency(remaining)}</p>
             </div>
           )}
+          {slab.total_po_value > 0 && (
+            <div>
+              <p className="text-xs text-gray-400">Total PO Value</p>
+              <p className="font-medium text-gray-700 tabular-nums">{formatCurrency(slab.total_po_value)}</p>
+            </div>
+          )}
           {slab.received_date && st === "received" && (
             <div>
               <p className="text-xs text-gray-400">Settled On</p>
@@ -288,6 +409,24 @@ export default function ReceivedPIPaymentPage({ user }) {
             </div>
           )}
         </div>
+
+        {/* Notes */}
+        {slab.notes && (
+          <p className="text-xs text-gray-500 italic border-l-2 border-gray-200 pl-2">"{slab.notes}"</p>
+        )}
+
+        {/* PI Copy links */}
+        {piCopyUrls.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {piCopyUrls.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 underline bg-indigo-50 border border-indigo-100 px-2 py-1 rounded">
+                <FileText className="w-3 h-3" />PI Copy{piCopyUrls.length > 1 ? ` ${i + 1}` : ""}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ))}
+          </div>
+        )}
 
         {/* Payment log */}
         {payLog.length > 0 && (
@@ -475,6 +614,7 @@ export default function ReceivedPIPaymentPage({ user }) {
           </DialogHeader>
           {selectedSlab && (
             <div className="space-y-4 py-2">
+              <SlabDetailsBlock slab={selectedSlab} />
               <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                 <p className="text-xs text-green-500">Remaining to Receive</p>
                 <p className="text-lg font-bold text-green-800 tabular-nums">{formatCurrency((selectedSlab.expected_amount || 0) - (selectedSlab.actual_amount || 0))}</p>
@@ -513,6 +653,7 @@ export default function ReceivedPIPaymentPage({ user }) {
           </DialogHeader>
           {selectedSlab && (
             <div className="space-y-4 py-2">
+              <SlabDetailsBlock slab={selectedSlab} />
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
                   <p className="text-xs text-indigo-400">Expected Total</p>
@@ -562,6 +703,7 @@ export default function ReceivedPIPaymentPage({ user }) {
           </DialogHeader>
           {selectedSlab && (
             <div className="space-y-4 py-2">
+              <SlabDetailsBlock slab={selectedSlab} />
               <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
                 <p className="text-xs text-orange-500">Current Due Date</p>
                 <p className="font-bold text-orange-800">{formatDate(selectedSlab.due_date)}</p>

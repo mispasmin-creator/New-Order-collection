@@ -270,6 +270,7 @@ export default function MakePIPage({ user }) {
       const firmName = selectedGroup.rows[0]?.firmName || ""
       const typeOfPI = selectedGroup.rows[0]?.typeOfPI || ""
       const poIds = selectedGroup.rows.map(r => r.id)
+      const productNames = [...new Set(selectedGroup.rows.map(r => r.productName).filter(Boolean))]
 
       const record = {
         po_number: poNumber,
@@ -278,6 +279,7 @@ export default function MakePIPage({ user }) {
         party_name: partyName,
         firm_name: firmName,
         pi_type: typeOfPI,
+        product_names: productNames,
         slab_label: "Manual PI",
         slab_pct: totalPOValue > 0 ? Math.round((totalPiAmount / totalPOValue) * 100) : 0,
         total_po_value: totalPOValue,
@@ -533,10 +535,10 @@ export default function MakePIPage({ user }) {
                       <TableHead className="text-right">Order Qty</TableHead>
                       <TableHead className="text-right">Dispatched Qty</TableHead>
                       <TableHead className="text-right">Pending Dispatched Qty</TableHead>
-                      <TableHead className="text-right">Total PI</TableHead>
-                      <TableHead className="text-right">PI To Be Raised</TableHead>
-                      <TableHead className="text-right">Pending to PI</TableHead>
-                      <TableHead className="text-right min-w-[120px]">PI to make</TableHead>
+                      <TableHead className="text-right">Total PI Qty</TableHead>
+                      <TableHead className="text-right">Total PI Made</TableHead>
+                      <TableHead className="text-right">Total Pending PI</TableHead>
+                      <TableHead className="text-right min-w-[120px]">PI Making Qty</TableHead>
                       <TableHead className="text-center min-w-[100px]">PI Copy</TableHead>
                     </TableRow>
                   </TableHeader>
