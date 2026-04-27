@@ -108,8 +108,8 @@ export default function DispatchPlanningPage({ user }) {
 
       const [
         { data: orderData, error: orderError },
-        { data: splitData, error: splitError },
-        { data: allSplitsData },
+        { data: splitDataInit, error: splitError },
+        { data: allSplitsDataInit },
         { data: dispatchData, error: dispatchError },
       ] = await Promise.all([
         orderQuery,
@@ -121,6 +121,53 @@ export default function DispatchPlanningPage({ user }) {
       if (orderError) throw orderError
       if (splitError) throw splitError
       if (dispatchError) throw dispatchError
+
+      // Auto-bypass: Ex Factory orders skip Arrange Logistics + Logistics Approval
+      // and go directly to Dispatch Planning by auto-creating a Checked split.
+      const splitPoIds = new Set((splitDataInit || []).map((s) => s.po_id))
+      const exFactoryToBypass = (orderData || []).filter(
+        (order) =>
+          order["Type Of Transporting"] === "Ex Factory" &&
+          order["Actual 2"] &&
+          order.check_delivery_actual &&
+          (!order.logistics_status || order.logistics_status === "Pending Arrangement") &&
+          !splitPoIds.has(order.id)
+      )
+      let splitData = splitDataInit
+      let allSplitsData = allSplitsDataInit
+      if (exFactoryToBypass.length > 0) {
+        for (const order of exFactoryToBypass) {
+          const { data: plan, error: planErr } = await supabase
+            .from("po_logistics_plans")
+            .insert([{ po_id: order.id, mode: "single", status: "Approved", created_by: "Ex Factory Auto" }])
+            .select("id")
+            .single()
+          if (!planErr && plan) {
+            await supabase.from("po_logistics_splits").insert([{
+              plan_id: plan.id,
+              po_id: order.id,
+              transporter_name: "Ex Factory",
+              allocated_qty: parseFloat(order.Quantity) || 0,
+              status: STATUS_CHECKED,
+              sort_order: 0,
+            }])
+            await supabase
+              .from("ORDER RECEIPT")
+              .update({ logistics_status: "Approved", approved_logistics_plan_id: plan.id })
+              .eq("id", order.id)
+            // Mutate local copy so dashboard stage computes correctly this cycle
+            order.logistics_status = "Approved"
+            order.approved_logistics_plan_id = plan.id
+          }
+        }
+        // Re-fetch splits to include the newly created ones
+        const [{ data: refreshedSplits }, { data: refreshedAllSplits }] = await Promise.all([
+          supabase.from("po_logistics_splits").select("*").in("status", [STATUS_CHECKED, STATUS_DISPATCHED, "Logistic Completed"]).order("id", { ascending: false }),
+          supabase.from("po_logistics_splits").select("po_id, status, allocated_qty, transporter_name, dispatch_record_id"),
+        ])
+        splitData = refreshedSplits || splitDataInit
+        allSplitsData = refreshedAllSplits || allSplitsDataInit
+      }
 
       const orderMap = new Map()
       ;(orderData || []).forEach((row) => orderMap.set(row.id, row))
