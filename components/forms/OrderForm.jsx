@@ -34,6 +34,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     "Timestamp": "",
     "DO-Delivery Order No.": "",
     "PARTY PO NO (As Per Po Exact)": "",
+    "Party PO Date": "",
     "Expected Delivery Date": "",
     "Party Name": "",
     "Gst Number": "",
@@ -375,6 +376,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "Timestamp": timestamp,
       "DO-Delivery Order No.": doNumber,
       "PARTY PO NO (As Per Po Exact)": formData["PARTY PO NO (As Per Po Exact)"],
+      "Party PO Date": formData["Party PO Date"] || null,
       "Expected Delivery Date": formData["Expected Delivery Date"],
       "Party Names": formData["Party Name"],
       "Product Name": "",
@@ -799,6 +801,20 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                   onChange={(e) => handleInputChange("PARTY PO NO (As Per Po Exact)", e.target.value)}
                   className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                   placeholder="Enter PO number"
+                  required
+                />
+              </div>
+
+              {/* Party PO Date */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">
+                  Party PO Date <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  type="date"
+                  value={formData["Party PO Date"]}
+                  onChange={(e) => handleInputChange("Party PO Date", e.target.value)}
+                  className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                   required
                 />
               </div>
