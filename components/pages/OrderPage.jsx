@@ -594,7 +594,6 @@ export default function OrderPage({ user }) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <DetailField label="DO Number" value={selectedOrder.doNumber} />
                   <DetailField label="Party PO Number" value={selectedOrder.partyPONumber} />
-                  <DetailField label="Expected Delivery Date" value={selectedOrder.partyPODate} />
                   <DetailField label="Firm Name" value={selectedOrder.firmName} />
                   <DetailField label="Party Name" value={selectedOrder.partyName} />
                   <DetailField label="GST Number" value={selectedOrder.gstNumber} />
