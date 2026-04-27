@@ -35,7 +35,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     "DO-Delivery Order No.": "",
     "PARTY PO NO (As Per Po Exact)": "",
     "Party PO Date": "",
-    "Expected Delivery Date": "",
     "Party Name": "",
     "Gst Number": "",
     "Address": "",
@@ -377,7 +376,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "DO-Delivery Order No.": doNumber,
       "PARTY PO NO (As Per Po Exact)": formData["PARTY PO NO (As Per Po Exact)"],
       "Party PO Date": formData["Party PO Date"] || null,
-      "Expected Delivery Date": formData["Expected Delivery Date"],
       "Party Names": formData["Party Name"],
       "Product Name": "",
       "Quantity": 0,
@@ -441,7 +439,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     const mandatoryFields = [
       { key: "Firm Name", label: "Firm Name" },
       { key: "PARTY PO NO (As Per Po Exact)", label: "PARTY PO NO" },
-      { key: "Expected Delivery Date", label: "Expected Delivery Date" },
       { key: "Party Name", label: "Party Name" },
       { key: "Contact Person Name", label: "Contact Person Name" },
       { key: "Contact Person WhatsApp No.", label: "Contact Person WhatsApp No." }
@@ -542,7 +539,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
         "Timestamp": timestamp,
         "DO-Delivery Order No.": "",
         "PARTY PO NO (As Per Po Exact)": "",
-        "Expected Delivery Date": "",
         "Party Name": "",
         "Gst Number": "",
         "Address": "",
@@ -649,7 +645,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       ...prev,
       "Timestamp": generateTimestamp(),
       "PARTY PO NO (As Per Po Exact)": `TEST-PO-${Date.now().toString().slice(-6)}`,
-      "Expected Delivery Date": poDate,
       "Party Name": selectedPartyName,
       "Gst Number": partyDetails.gst || `29TEST${Date.now().toString().slice(-10)}`,
       "Address": partyDetails.address || "Sample Industrial Area, Bengaluru",
@@ -819,19 +814,6 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                 />
               </div>
 
-              {/* Expected Delivery Date */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-gray-700">
-                  Expected Delivery Date <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  type="date"
-                  value={formData["Expected Delivery Date"]}
-                  onChange={(e) => handleInputChange("Expected Delivery Date", e.target.value)}
-                  className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-                  required
-                />
-              </div>
 
               {/* Party Name Dropdown */}
               <div className="space-y-2">
