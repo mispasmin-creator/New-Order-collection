@@ -516,16 +516,9 @@ export default function MakeInvoicePage({ user }) {
                             />
                           </td>
                           <td className="px-3 py-2 text-right">
-                            <Input
-                              type="number"
-                              step="0.5"
-                              min="0"
-                              max="100"
-                              value={productLines[i].gstPct}
-                              onChange={(e) => updateLine(i, "gstPct", e.target.value)}
-                              className="h-8 w-16 text-right ml-auto"
-                              disabled={submitting}
-                            />
+                            <div className="h-8 flex items-center justify-end font-medium text-gray-600">
+                              18%
+                            </div>
                           </td>
                           <td className="px-3 py-2 text-right text-gray-700">{fmt(line.total)}</td>
                           <td className="px-3 py-2 text-right text-gray-500 text-xs">{fmt(line.taxAmt)}</td>
