@@ -71,10 +71,19 @@ export default function OrderPage({ user }) {
 
       console.log("Fetching orders from Supabase...")
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('ORDER RECEIPT')
         .select('*')
-        .order('id', { ascending: false }) // Newest first
+        .order('id', { ascending: false })
+
+      if (user.role !== "ADMIN") {
+        const userFirms = user.firm ? user.firm.split(",").map(f => f.trim()) : []
+        if (!userFirms.includes("all")) {
+          query = query.in("Firm Name", userFirms)
+        }
+      }
+
+      const { data, error } = await query
 
       if (error) {
         throw error
