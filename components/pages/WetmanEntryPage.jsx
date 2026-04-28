@@ -270,7 +270,7 @@ export default function WeighmentEntryPage({ user }) {
       const updatePromises = selectedGroup.rows.map(order => {
         const rowPayload = {
           ...commonPayload,
-          "Actual Truck Qty": formData.actualQtyLoadedInTruck ? parseFloat(formData.actualQtyLoadedInTruck) : order.actualTruckQty,
+          "Actual Truck Qty": order.actualTruckQty,
           "Actual Qty As Per Weighment Slip": formData.actualQtyAsPerWeighmentSlip ? parseFloat(formData.actualQtyAsPerWeighmentSlip) : null,
         }
         return supabase
