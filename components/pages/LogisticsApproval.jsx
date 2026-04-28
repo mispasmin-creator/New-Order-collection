@@ -194,28 +194,50 @@ export default function LogisticsApproval() {
         .eq("plan_id", plan.id)
       if (deleteError) throw deleteError
 
-      // Build final splits attached to the FIRST order of the PO
+      // Build Checked splits — one per product per transporter,
+      // qty distributed proportionally based on each product's share of total PO qty
       const finalSplits = []
       let subIdx = 0
-      transporterOptions.forEach((opt) => {
-        const qty = parseFloat(finalAllocations[opt.id] || "0") || 0
-        if (qty <= 0) return
-        finalSplits.push({
-          plan_id: plan.id,
-          po_id: selectedGroup.rows[0].id,
-          transporter_name: opt.transporter_name,
-          contact_number: opt.contact_number || "",
-          rate: parseFloat(opt.rate) || 0,
-          availability: opt.availability || "",
-          remarks: opt.remarks || "",
-          vehicle_details: opt.vehicle_details || "",
-          status: "Approved",
-          allocated_qty: qty,
-          sort_order: subIdx,
-          status: "Checked",
-        })
-        subIdx++
-      })
+      const productRows = selectedGroup.rows
+
+      for (const opt of transporterOptions) {
+        const totalAllocQty = parseFloat(finalAllocations[opt.id] || "0") || 0
+        if (totalAllocQty <= 0) continue
+
+        let remainingQty = totalAllocQty
+        for (let i = 0; i < productRows.length; i++) {
+          const orderRow = productRows[i]
+          const isLast = i === productRows.length - 1
+
+          let productAllocQty
+          if (isLast) {
+            // Last product gets the remainder to avoid rounding drift
+            productAllocQty = Math.round(remainingQty * 1000) / 1000
+          } else {
+            const productQty = parseFloat(orderRow.Quantity) || 0
+            const share = poTotalQty > 0 ? productQty / poTotalQty : 1 / productRows.length
+            productAllocQty = Math.round(totalAllocQty * share * 1000) / 1000
+            remainingQty -= productAllocQty
+          }
+
+          if (productAllocQty <= 0) continue
+
+          finalSplits.push({
+            plan_id: plan.id,
+            po_id: orderRow.id,
+            transporter_name: opt.transporter_name,
+            contact_number: opt.contact_number || "",
+            rate: parseFloat(opt.rate) || 0,
+            availability: opt.availability || "",
+            remarks: opt.remarks || "",
+            vehicle_details: opt.vehicle_details || "",
+            status: "Checked",
+            allocated_qty: productAllocQty,
+            sort_order: subIdx,
+          })
+          subIdx++
+        }
+      }
 
       const { error: insertError } = await supabase.from("po_logistics_splits").insert(finalSplits)
       if (insertError) throw insertError

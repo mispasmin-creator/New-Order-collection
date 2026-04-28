@@ -620,20 +620,48 @@ export default function OrderPage({ user }) {
 
               {/* Product */}
               <section>
-                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b">Product</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <DetailField label="Product Name" value={selectedOrder.productName} />
-                  <DetailField
-                    label="Quantity"
-                    value={selectedOrder.quantity != null ? `${selectedOrder.quantity}${selectedOrder.typeOfMeasurement ? ` ${selectedOrder.typeOfMeasurement}` : ""}` : null}
-                  />
-                  <DetailField label="Rate" value={selectedOrder.rate ? `₹${Number(selectedOrder.rate).toLocaleString("en-IN")}` : null} />
-                  <DetailField label="Total Value" value={selectedOrder.totalValue ? `₹${Number(selectedOrder.totalValue).toLocaleString("en-IN")}` : null} />
-                  <DetailField label="Alumina %" value={selectedOrder.alumina != null && selectedOrder.alumina !== 0 ? `${selectedOrder.alumina}%` : null} />
-                  <DetailField label="Iron %" value={selectedOrder.iron != null && selectedOrder.iron !== 0 ? `${selectedOrder.iron}%` : null} />
-                  <DetailField label="Advance %" value={selectedOrder.advance != null && selectedOrder.advance !== 0 ? `${selectedOrder.advance}%` : null} />
-                  <DetailField label="Basic %" value={selectedOrder.basic != null && selectedOrder.basic !== 0 ? `${selectedOrder.basic}%` : null} />
-                </div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b">Products</h3>
+                {(() => {
+                  const poItems = orders.filter(o => o.partyPONumber === selectedOrder.partyPONumber)
+                  const showAlumina = poItems.some(o => o.alumina != null && o.alumina !== 0)
+                  const showIron = poItems.some(o => o.iron != null && o.iron !== 0)
+                  const showAdvance = poItems.some(o => o.advance != null && o.advance !== 0)
+                  const showBasic = poItems.some(o => o.basic != null && o.basic !== 0)
+                  return (
+                    <div className="overflow-x-auto rounded-md border">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 border-b">
+                            <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">DO No.</th>
+                            <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Product</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Qty</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Rate</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Total Value</th>
+                            {showAlumina && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Alumina %</th>}
+                            {showIron && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Iron %</th>}
+                            {showAdvance && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Advance %</th>}
+                            {showBasic && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Basic %</th>}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {poItems.map((item) => (
+                            <tr key={item.id} className={`border-b last:border-0 ${item.id === selectedOrder.id ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                              <td className="py-2 px-3 text-gray-600 whitespace-nowrap">{item.doNumber || "—"}</td>
+                              <td className="py-2 px-3 font-medium">{item.productName || "—"}</td>
+                              <td className="py-2 px-3 text-right whitespace-nowrap">{item.quantity != null ? `${item.quantity}${item.typeOfMeasurement ? ` ${item.typeOfMeasurement}` : ""}` : "—"}</td>
+                              <td className="py-2 px-3 text-right whitespace-nowrap">{item.rate ? `₹${Number(item.rate).toLocaleString("en-IN")}` : "—"}</td>
+                              <td className="py-2 px-3 text-right font-semibold whitespace-nowrap">{item.totalValue ? `₹${Number(item.totalValue).toLocaleString("en-IN")}` : "—"}</td>
+                              {showAlumina && <td className="py-2 px-3 text-right whitespace-nowrap">{item.alumina != null && item.alumina !== 0 ? `${item.alumina}%` : "—"}</td>}
+                              {showIron && <td className="py-2 px-3 text-right whitespace-nowrap">{item.iron != null && item.iron !== 0 ? `${item.iron}%` : "—"}</td>}
+                              {showAdvance && <td className="py-2 px-3 text-right whitespace-nowrap">{item.advance != null && item.advance !== 0 ? `${item.advance}%` : "—"}</td>}
+                              {showBasic && <td className="py-2 px-3 text-right whitespace-nowrap">{item.basic != null && item.basic !== 0 ? `${item.basic}%` : "—"}</td>}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                })()}
               </section>
 
               {/* Logistics */}

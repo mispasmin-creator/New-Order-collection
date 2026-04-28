@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
@@ -80,6 +80,7 @@ export default function DispatchPlanningPage({ user }) {
   const [dashboardGroups, setDashboardGroups] = useState([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const fetchInProgress = useRef(false)
 
   // Tab + search
   const [activeTab, setActiveTab] = useState("overview")
@@ -97,6 +98,8 @@ export default function DispatchPlanningPage({ user }) {
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
+    if (fetchInProgress.current) return
+    fetchInProgress.current = true
     try {
       setLoading(true)
 
@@ -137,6 +140,15 @@ export default function DispatchPlanningPage({ user }) {
       let allSplitsData = allSplitsDataInit
       if (exFactoryToBypass.length > 0) {
         for (const order of exFactoryToBypass) {
+          // Guard against race condition: verify no Checked split already exists before inserting
+          const { data: existingSplit } = await supabase
+            .from("po_logistics_splits")
+            .select("id")
+            .eq("po_id", order.id)
+            .in("status", [STATUS_CHECKED, STATUS_DISPATCHED, "Logistic Completed"])
+            .limit(1)
+          if (existingSplit?.length > 0) continue
+
           const { data: plan, error: planErr } = await supabase
             .from("po_logistics_plans")
             .insert([{ po_id: order.id, mode: "single", status: "Approved", created_by: "Ex Factory Auto" }])
@@ -261,6 +273,7 @@ export default function DispatchPlanningPage({ user }) {
       toast({ title: "Error loading data", description: error.message, variant: "destructive" })
     } finally {
       setLoading(false)
+      fetchInProgress.current = false
     }
   }, [toast, user])
 
