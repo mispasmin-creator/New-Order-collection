@@ -14,10 +14,11 @@ import { supabase } from "@/lib/supabaseClient"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 const TRANSPORT_TYPES = [
+  "FOR",
   "Ex Factory",
-  "For",
-  "Ex Factory but paid by us",
-  "Direct supply dont submit the delay",
+  "Ex Factory But paid by Us",
+  "Owned Truck",
+  "Direct Supply",
 ]
 
 const DB_COLUMNS = {
@@ -210,6 +211,8 @@ export default function LogisticPage() {
 
   const handleOpen = (group) => {
     const firstRow = group.rows[0]
+    const types = [...new Set(group.rows.map(r => r.typeOfTransporting).filter(Boolean))]
+    const sharedType = types.length === 1 ? types[0] : ""
     setSelectedGroup(group)
     setFormData({
       transporterName: firstRow.transporterName || "",
@@ -217,7 +220,7 @@ export default function LogisticPage() {
       driverMobileNo: "",
       vehicleNoPlateImage: null,
       biltyNo: "",
-      typeOfTransporting: firstRow.typeOfTransporting || "",
+      typeOfTransporting: sharedType,
       typeOfRate: "",
       transportRatePerTon: "",
       fixedAmount: "",
@@ -239,7 +242,7 @@ export default function LogisticPage() {
     })
   }
 
-  const isFor = formData.typeOfTransporting === "For"
+  const isFor = formData.typeOfTransporting === "FOR"
 
   const handleSubmit = async () => {
     if (!selectedGroup) return
@@ -586,24 +589,43 @@ export default function LogisticPage() {
                 </div>
                 <p className="text-gray-600">Party: {selectedGroup.partyName}</p>
                 <div className="border rounded-md overflow-hidden mt-1">
-                  <table className="w-full text-xs">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="text-left px-2 py-1 font-medium text-gray-600">D-Sr</th>
-                        <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
-                        <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {selectedGroup.rows.map((row) => (
-                        <tr key={row.id} className="bg-white">
-                          <td className="px-2 py-1 text-gray-700">{row.dSrNumber}</td>
-                          <td className="px-2 py-1 text-gray-700">{row.productName}</td>
-                          <td className="px-2 py-1 text-gray-700 text-right">{row.qtyToBeDispatched}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {(() => {
+                    const types = [...new Set(selectedGroup.rows.map(r => r.typeOfTransporting).filter(Boolean))]
+                    const isMixed = types.length > 1
+                    return (
+                      <>
+                        {isMixed && (
+                          <div className="mb-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+                            Mixed transport types in this PO. Select the type that applies to this logistic submission.
+                          </div>
+                        )}
+                        <table className="w-full text-xs">
+                          <thead className="bg-gray-100">
+                            <tr>
+                              <th className="text-left px-2 py-1 font-medium text-gray-600">D-Sr</th>
+                              <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
+                              <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
+                              <th className="text-left px-2 py-1 font-medium text-gray-600">Transport</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {selectedGroup.rows.map((row) => (
+                              <tr key={row.id} className="bg-white">
+                                <td className="px-2 py-1 text-gray-700">{row.dSrNumber}</td>
+                                <td className="px-2 py-1 text-gray-700">{row.productName}</td>
+                                <td className="px-2 py-1 text-gray-700 text-right">{row.qtyToBeDispatched}</td>
+                                <td className="px-2 py-1">
+                                  <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${row.typeOfTransporting === "FOR" ? "bg-blue-100 text-blue-700" : row.typeOfTransporting === "Direct Supply" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                                    {row.typeOfTransporting || "—"}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
 

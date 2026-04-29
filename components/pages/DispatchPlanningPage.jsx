@@ -93,7 +93,7 @@ export default function DispatchPlanningPage({ user }) {
   const [commonForm, setCommonForm] = useState({             // shared across all splits
     typeOfTransporting: "",
     dateOfDispatch: "",
-    testCertificateMade: "No",
+    testCertificateMade: "Yes",
   })
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
@@ -342,7 +342,7 @@ export default function DispatchPlanningPage({ user }) {
     setCommonForm({
       typeOfTransporting: group.rows[0]?.typeOfTransporting || "",
       dateOfDispatch: "",
-      testCertificateMade: "No",
+      testCertificateMade: "Yes",
       testCertificateFile: null,
     })
   }
@@ -350,7 +350,7 @@ export default function DispatchPlanningPage({ user }) {
   const handleClose = () => {
     setSelectedGroup(null)
     setDispatchLines([])
-    setCommonForm({ typeOfTransporting: "", dateOfDispatch: "", testCertificateMade: "No", testCertificateFile: null })
+    setCommonForm({ typeOfTransporting: "", dateOfDispatch: "", testCertificateMade: "Yes", testCertificateFile: null })
   }
 
   const updateLineQty = (idx, value) =>
@@ -1026,11 +1026,11 @@ export default function DispatchPlanningPage({ user }) {
                     <Select value={commonForm.typeOfTransporting} onValueChange={(v) => setCommonForm((p) => ({ ...p, typeOfTransporting: v }))} disabled={submitting}>
                       <SelectTrigger className="h-10"><SelectValue placeholder="Select Type" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="For">For</SelectItem>
+                        <SelectItem value="FOR">FOR</SelectItem>
                         <SelectItem value="Ex Factory">Ex Factory</SelectItem>
-                        <SelectItem value="Ex Factory But Paid By US">Ex Factory But Paid By US</SelectItem>
-                        <SelectItem value="direct Suply">direct Suply</SelectItem>
+                        <SelectItem value="Ex Factory But paid by Us">Ex Factory But paid by Us</SelectItem>
                         <SelectItem value="Owned Truck">Owned Truck</SelectItem>
+                        <SelectItem value="Direct Supply">Direct Supply</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1041,7 +1041,7 @@ export default function DispatchPlanningPage({ user }) {
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="text-sm">Test Certificate Made <span className="text-red-500">*</span></Label>
+                    <Label className="text-sm">Test Certificate Made</Label>
                     <Select value={commonForm.testCertificateMade} onValueChange={(v) => setCommonForm((p) => ({ ...p, testCertificateMade: v }))} disabled={submitting}>
                       <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent>

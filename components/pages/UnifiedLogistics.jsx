@@ -16,13 +16,14 @@ import { Label } from "@/components/ui/label"
 import {
   X, Search, Loader2, Upload, FileText,
   CheckCircle2, Clock, Truck, Eye, ArrowRight,
-  PackageCheck, ListFilter
+  PackageCheck, ListFilter, ChevronDown, ChevronRight
 } from "lucide-react"
 import { format } from "date-fns"
 
 export default function UnifiedLogistics({ user }) {
   const [deliveryData, setDeliveryData] = useState([])
   const [postDeliveryData, setPostDeliveryData] = useState([])
+  const [dispatchTCMap, setDispatchTCMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
@@ -31,7 +32,9 @@ export default function UnifiedLogistics({ user }) {
   const { updateCount } = useNotification()
 
   // Single modal for combined Documentation + Receipt entry
-  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [selectedGroup, setSelectedGroup] = useState(null) // { billNo, rows[] }
+  const [expandedGroups, setExpandedGroups] = useState({})
+  const [selectedOrder, setSelectedOrder] = useState(null) // kept for compat reference inside modal
   const [combinedForm, setCombinedForm] = useState({
     biltyNo: "",
     biltyCopy: null,
@@ -48,9 +51,10 @@ export default function UnifiedLogistics({ user }) {
   const fetchEverything = async () => {
     try {
       setLoading(true)
-      const [deliveryRes, postDeliveryRes] = await Promise.all([
+      const [deliveryRes, postDeliveryRes, dispatchRes] = await Promise.all([
         supabase.from('DELIVERY').select('*').not('Planned 3', 'is', null),
-        supabase.from('POST DELIVERY').select('*')
+        supabase.from('POST DELIVERY').select('*'),
+        supabase.from('DISPATCH').select('"D-Sr Number", "Trust Certificate Made"')
       ])
 
       if (deliveryRes.error) throw deliveryRes.error
@@ -58,6 +62,13 @@ export default function UnifiedLogistics({ user }) {
 
       setDeliveryData(deliveryRes.data || [])
       setPostDeliveryData(postDeliveryRes.data || [])
+
+      const tcMap = {}
+      dispatchRes.data?.forEach(row => {
+        const key = row["D-Sr Number"]
+        if (key) tcMap[key] = row["Trust Certificate Made"] || ""
+      })
+      setDispatchTCMap(tcMap)
 
       // Update notifications
       const pending = (deliveryRes.data || []).filter(d => !d.Actual3).length
@@ -84,6 +95,8 @@ export default function UnifiedLogistics({ user }) {
         (pd["Order No."] && pd["Order No."] === del["Delivery Order No."])
       )
 
+      const dSrNumber = del["D-Sr Number"] || del["Losgistic no."] || ""
+
       return {
         ...del,
         id: del.id,
@@ -101,10 +114,11 @@ export default function UnifiedLogistics({ user }) {
         grnNumber: receipt?.["Grn Number"],
         receiptCopy: receipt?.["Image Of Received Bill / Audio"],
         receiptId: receipt?.id,
-        isReceiptDone: !!receipt?.["Actual"]
+        isReceiptDone: !!receipt?.["Actual"],
+        tcFileUrl: dSrNumber ? (dispatchTCMap[dSrNumber] || "") : "",
       }
     })
-  }, [deliveryData, postDeliveryData])
+  }, [deliveryData, postDeliveryData, dispatchTCMap])
 
   // Formatting helpers
   const formatDate = (dateStr) => {
@@ -134,25 +148,47 @@ export default function UnifiedLogistics({ user }) {
     )
   }, [shipments, activeTab, searchTerm])
 
+  // Group by billNo — rows without billNo are individual strays
+  const groupedShipments = useMemo(() => {
+    const groups = []
+    const invoiceMap = {}
+    filteredShipments.forEach(s => {
+      if (s.billNo) {
+        if (!invoiceMap[s.billNo]) {
+          invoiceMap[s.billNo] = { billNo: s.billNo, partyName: s.partyName, rows: [] }
+          groups.push(invoiceMap[s.billNo])
+        }
+        invoiceMap[s.billNo].rows.push(s)
+      } else {
+        groups.push({ billNo: "", partyName: s.partyName, rows: [s], stray: true })
+      }
+    })
+    return groups
+  }, [filteredShipments])
+
+  const toggleGroup = (key) => setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }))
+
   // Open the combined modal
-  const openModal = (order) => {
-    setSelectedOrder(order)
+  const openModal = (group) => {
+    setSelectedGroup(group)
+    setSelectedOrder(group.rows[0]) // for backward compat in form
     setCombinedForm({
-      biltyNo: order.biltyNo || "",
+      biltyNo: group.rows[0]?.biltyNo || "",
       biltyCopy: null,
       materialReceivedDate: "",
-      grnNumber: order.grnNumber || "",
+      grnNumber: group.rows[0]?.grnNumber || "",
       receiptFile: null,
       receiptPreviewUrl: "",
     })
   }
 
   const closeModal = () => {
+    setSelectedGroup(null)
     setSelectedOrder(null)
     setCombinedForm({ biltyNo: "", biltyCopy: null, materialReceivedDate: "", grnNumber: "", receiptFile: null, receiptPreviewUrl: "" })
   }
 
-  // Single submit: Documentation + Receipt in one go
+  // Single submit: Documentation + Receipt in one go (handles group of rows)
   const handleCombinedSubmit = async () => {
     if (!combinedForm.biltyNo.trim()) {
       toast({ variant: "destructive", title: "Validation", description: "Bilty number is required." }); return
@@ -164,58 +200,58 @@ export default function UnifiedLogistics({ user }) {
       toast({ variant: "destructive", title: "Validation", description: "GRN number is required." }); return
     }
 
+    const rows = selectedGroup.rows
     try {
       setSubmitting(true)
       const now = getISTTimestamp()
 
-      // Upload bilty copy
-      let biltyUrl = selectedOrder.biltyCopy || ""
+      // Upload bilty copy once for the whole group
+      let biltyUrl = rows[0]?.biltyCopy || ""
       if (combinedForm.biltyCopy) {
-        const path = `bilty/${selectedOrder.id}_${Date.now()}_${combinedForm.biltyCopy.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
+        const path = `bilty/invoice_${(selectedGroup.billNo || rows[0]?.id).toString().replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${combinedForm.biltyCopy.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
         const { error: upErr } = await supabase.storage.from('images').upload(path, combinedForm.biltyCopy)
         if (upErr) throw upErr
         biltyUrl = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
       }
 
-      // Upload receipt copy
-      let receiptUrl = selectedOrder.receiptCopy || ""
+      // Upload receipt copy once for the whole group
+      let receiptUrl = rows[0]?.receiptCopy || ""
       if (combinedForm.receiptFile) {
-        const path = `material_receipt/${selectedOrder.id}_${Date.now()}_${combinedForm.receiptFile.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
+        const path = `material_receipt/invoice_${(selectedGroup.billNo || rows[0]?.id).toString().replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${combinedForm.receiptFile.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
         const { error: upErr } = await supabase.storage.from('images').upload(path, combinedForm.receiptFile)
         if (upErr) throw upErr
         receiptUrl = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
       }
 
-      // 1. Update DELIVERY (Bilty + Actual3)
-      const { error: deliveryErr } = await supabase
-        .from('DELIVERY')
-        .update({ "Actual3": now, "Bilty No.": combinedForm.biltyNo, "Bilty Copy": biltyUrl })
-        .eq('id', selectedOrder.id)
-      if (deliveryErr) throw deliveryErr
+      // 1. Update all DELIVERY rows in the group
+      await Promise.all(rows.map(row =>
+        supabase.from('DELIVERY')
+          .update({ "Actual3": now, "Bilty No.": combinedForm.biltyNo, "Bilty Copy": biltyUrl })
+          .eq('id', row.id)
+      ))
 
-      // 2. Upsert POST DELIVERY (Receipt)
-      const receiptPayload = {
-        "Order No.": selectedOrder.orderNo,
-        "Bill No.": selectedOrder.billNo,
-        "Party Name": selectedOrder.partyName,
-        "Bill Date": selectedOrder.billDate,
-        "Total Bill Amount": selectedOrder.amount || (selectedOrder["Rate Of Material"] || 0) * (selectedOrder["Quantity Delivered."] || 0),
-        "Actual": now,
-        "Planned": now,
-        "Material Received Date": combinedForm.materialReceivedDate,
-        "Grn Number": combinedForm.grnNumber,
-        "Image Of Received Bill / Audio": receiptUrl,
-      }
+      // 2. Upsert POST DELIVERY for each row
+      await Promise.all(rows.map(row => {
+        const receiptPayload = {
+          "Order No.": row.orderNo,
+          "Bill No.": row.billNo,
+          "Party Name": row.partyName,
+          "Bill Date": row.billDate,
+          "Total Bill Amount": row.amount || 0,
+          "Actual": now,
+          "Planned": now,
+          "Material Received Date": combinedForm.materialReceivedDate,
+          "Grn Number": combinedForm.grnNumber,
+          "Image Of Received Bill / Audio": receiptUrl,
+        }
+        if (row.receiptId) {
+          return supabase.from('POST DELIVERY').update(receiptPayload).eq('id', row.receiptId)
+        } else {
+          return supabase.from('POST DELIVERY').insert([receiptPayload])
+        }
+      }))
 
-      let receiptRes
-      if (selectedOrder.receiptId) {
-        receiptRes = await supabase.from('POST DELIVERY').update(receiptPayload).eq('id', selectedOrder.receiptId)
-      } else {
-        receiptRes = await supabase.from('POST DELIVERY').insert([receiptPayload])
-      }
-      if (receiptRes.error) throw receiptRes.error
-
-      toast({ title: "Submitted", description: "Documentation and receipt recorded successfully." })
+      toast({ title: "Submitted", description: `Documentation and receipt recorded for ${rows.length} row${rows.length > 1 ? "s" : ""}.` })
       closeModal()
       fetchEverything()
       window.dispatchEvent(new Event('refresh-sidebar-counts'))
@@ -300,75 +336,124 @@ export default function UnifiedLogistics({ user }) {
         <Table>
           <TableHeader>
             <TableRow className="bg-gray-50/50">
+              <TableHead className="w-8" />
               <TableHead>Action</TableHead>
-              <TableHead className="w-[150px]">Shipment Details</TableHead>
-              <TableHead>Party Name</TableHead>
-              <TableHead>Product</TableHead>
+              <TableHead>Invoice / Shipment</TableHead>
+              <TableHead>Party</TableHead>
               <TableHead>Bilty Stage</TableHead>
               <TableHead>Receipt Stage</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredShipments.length === 0 ? (
+            {groupedShipments.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
               </TableRow>
             ) : (
-              filteredShipments.map(s => (
-                <TableRow key={s.id} className="hover:bg-gray-50/80 transition-colors">
-                  <TableCell>
-                    {!s.isReceiptDone ? (
-                      <Button size="sm" onClick={() => openModal(s)} className="bg-blue-600 hover:bg-blue-700 h-8">
-                        Fill Details
-                      </Button>
-                    ) : (
-                      <Button variant="ghost" size="sm" className="text-green-600" disabled>
-                        <CheckCircle2 className="w-4 h-4 mr-1" /> Done
-                      </Button>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="text-xs text-gray-400 font-mono">{s.orderNo}</span>
-                      <span className="font-semibold text-gray-900">{s.billNo || "No Bill"}</span>
-                      {s.billDate && <span className="text-[10px] text-gray-500">{format(new Date(s.billDate), "dd MMM yyyy")}</span>}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm font-medium">{s.partyName}</TableCell>
-                  <TableCell className="text-sm text-gray-600">{s.productName}</TableCell>
-                  <TableCell>
-                    {s.isBiltyDone ? (
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-green-500" />
-                        <span className="text-xs font-medium text-green-700">{s.biltyNo}</span>
-                        {s.biltyCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(s.biltyCopy)}><Eye className="h-3 w-3" /></Button>}
-                      </div>
-                    ) : (
-                      <Badge variant="outline" className="text-amber-600 bg-amber-50 border-amber-200">Pending Docs</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {s.isReceiptDone ? (
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-green-500" />
-                        <span className="text-xs font-medium text-green-700">{s.grnNumber}</span>
-                        {s.receiptCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(s.receiptCopy)}><Eye className="h-3 w-3" /></Button>}
-                      </div>
-                    ) : (
-                      <Badge variant="outline" className="text-gray-400 bg-gray-50 border-gray-200 font-normal">
-                        {s.isBiltyDone ? "Awaiting GRN" : "Waiting for Bilty"}
-                      </Badge>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
+              groupedShipments.map((group, gi) => {
+                const groupKey = group.billNo || `stray-${gi}`
+                const isExpanded = !!expandedGroups[groupKey]
+                const isStray = group.stray
+                const allDone = group.rows.every(r => r.isReceiptDone)
+                const biltyDone = group.rows.every(r => r.isBiltyDone)
+
+                return (
+                  <>
+                    {/* Group / stray header row */}
+                    <TableRow
+                      key={`group-${groupKey}`}
+                      className={`transition-colors cursor-pointer ${isStray ? "bg-white hover:bg-gray-50/80" : "bg-slate-50 hover:bg-slate-100"}`}
+                      onClick={() => !isStray && toggleGroup(groupKey)}
+                    >
+                      <TableCell className="pl-3 text-gray-400">
+                        {!isStray && (isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />)}
+                      </TableCell>
+                      <TableCell onClick={e => e.stopPropagation()}>
+                        {!allDone ? (
+                          <Button size="sm" onClick={() => openModal(group)} className="bg-blue-600 hover:bg-blue-700 h-8">
+                            Fill Details
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="sm" className="text-green-600" disabled>
+                            <CheckCircle2 className="w-4 h-4 mr-1" /> Done
+                          </Button>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-0.5">
+                          {group.billNo ? (
+                            <Badge className="bg-indigo-500 text-white text-xs w-fit">{group.billNo}</Badge>
+                          ) : (
+                            <span className="text-gray-400 text-xs italic">No Invoice</span>
+                          )}
+                          {!isStray && (
+                            <span className="text-[10px] text-slate-500">{group.rows.length} product{group.rows.length > 1 ? "s" : ""}</span>
+                          )}
+                          {isStray && (
+                            <span className="text-xs text-gray-500">{group.rows[0]?.orderNo}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm font-medium">{group.partyName}</TableCell>
+                      <TableCell>
+                        {biltyDone ? (
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-green-500" />
+                            <span className="text-xs font-medium text-green-700">{group.rows[0]?.biltyNo}</span>
+                            {group.rows[0]?.biltyCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(group.rows[0].biltyCopy)}><Eye className="h-3 w-3" /></Button>}
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="text-amber-600 bg-amber-50 border-amber-200">Pending Docs</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {allDone ? (
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-green-500" />
+                            <span className="text-xs font-medium text-green-700">{group.rows[0]?.grnNumber}</span>
+                            {group.rows[0]?.receiptCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(group.rows[0].receiptCopy)}><Eye className="h-3 w-3" /></Button>}
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="text-gray-400 bg-gray-50 border-gray-200 font-normal">
+                            {biltyDone ? "Awaiting GRN" : "Waiting for Bilty"}
+                          </Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+
+                    {/* Expanded product rows (only for invoice groups) */}
+                    {!isStray && isExpanded && group.rows.map(s => (
+                      <TableRow key={s.id} className="bg-white hover:bg-gray-50/50 border-b border-gray-100">
+                        <TableCell />
+                        <TableCell />
+                        <TableCell className="py-2 text-xs text-gray-500 font-mono">{s.orderNo}</TableCell>
+                        <TableCell className="py-2 text-sm text-gray-700">{s.productName}</TableCell>
+                        <TableCell className="py-2">
+                          {s.isBiltyDone ? (
+                            <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{s.biltyNo}</span>
+                          ) : (
+                            <span className="text-xs text-amber-500">Pending</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2">
+                          {s.isReceiptDone ? (
+                            <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{s.grnNumber}</span>
+                          ) : (
+                            <span className="text-xs text-gray-400">Pending</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </>
+                )
+              })
             )}
           </TableBody>
         </Table>
       </div>
 
       {/* Combined Documentation + Receipt Modal */}
-      {selectedOrder && (
+      {selectedGroup && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-lg shadow-2xl max-h-[92vh] flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50 rounded-t-xl shrink-0">
@@ -378,12 +463,40 @@ export default function UnifiedLogistics({ user }) {
             <CardContent className="p-6 space-y-6 overflow-y-auto flex-1">
 
               {/* Shipment info */}
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm grid grid-cols-2 gap-x-6 gap-y-2">
-                <div><span className="text-gray-500">Order No:</span> <span className="font-bold">{selectedOrder.orderNo}</span></div>
-                <div><span className="text-gray-500">Bill No:</span> <span className="font-bold">{selectedOrder.billNo}</span></div>
-                <div className="col-span-2"><span className="text-gray-500">Party:</span> <span className="text-gray-900">{selectedOrder.partyName}</span></div>
-                <div className="col-span-2"><span className="text-gray-500">Product:</span> <span className="text-gray-900">{selectedOrder.productName}</span></div>
-                {selectedOrder.billDate && <div><span className="text-gray-500">Bill Date:</span> <span>{formatDate(selectedOrder.billDate)}</span></div>}
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-gray-900">{selectedGroup.partyName}</span>
+                  {selectedGroup.billNo && <Badge className="bg-indigo-500 text-white text-xs">{selectedGroup.billNo}</Badge>}
+                </div>
+                <table className="w-full text-xs mt-1">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="text-left px-2 py-1 font-medium text-gray-600">Order No</th>
+                      <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
+                      <th className="text-left px-2 py-1 font-medium text-gray-600">Test Certificate</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {selectedGroup.rows.map(row => (
+                      <tr key={row.id} className="bg-white">
+                        <td className="px-2 py-1 font-mono text-gray-600">{row.orderNo}</td>
+                        <td className="px-2 py-1 text-gray-700">{row.productName}</td>
+                        <td className="px-2 py-1">
+                          {row.tcFileUrl ? (
+                            <button
+                              onClick={() => handleViewFile(row.tcFileUrl)}
+                              className="text-blue-600 hover:text-blue-800 underline flex items-center gap-0.5"
+                            >
+                              <Eye className="w-3 h-3" /> View TC
+                            </button>
+                          ) : (
+                            <span className="text-gray-400 italic">No TC uploaded</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
               {/* Section 1: Documentation */}

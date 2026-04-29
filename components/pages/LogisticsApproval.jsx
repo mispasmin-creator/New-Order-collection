@@ -548,7 +548,11 @@ export default function LogisticsApproval() {
 
                 {/* Transport option allocation cards */}
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {transporterOptions.map((split) => {
+                  {(() => {
+                    const rates = transporterOptions.map(s => parseFloat(s.rate)).filter(r => !isNaN(r) && r > 0)
+                    const minRate = rates.length > 0 ? Math.min(...rates) : null
+                    return transporterOptions.map((split) => {
+                    const isLowestCost = minRate !== null && parseFloat(split.rate) === minRate
                     // Logic based on mode
                     const isSelectedSingle = !isSplitMode && selectedTransporterId === split.id
                     const allocVal = allocations[split.id] || "0"
@@ -566,7 +570,9 @@ export default function LogisticsApproval() {
                         key={split.id}
                         onClick={() => { if (!isSplitMode) setSelectedTransporterId(split.id) }}
                         className={`p-4 border rounded-xl space-y-3 transition-all ${!isSplitMode && "cursor-pointer hover:border-purple-300"} ${
-                          isActive
+                          isLowestCost
+                            ? "border-green-500 bg-green-50/40 shadow-sm ring-1 ring-green-500/20"
+                            : isActive
                             ? "border-purple-500 bg-purple-50/50 shadow-sm ring-1 ring-purple-500/20"
                             : "border-gray-200 bg-white opacity-80 hover:opacity-100"
                         }`}
@@ -584,9 +590,14 @@ export default function LogisticsApproval() {
                               {split.availability && <p className="text-[10px] text-gray-500 mt-0.5">{split.availability}</p>}
                             </div>
                           </div>
-                          {isSplitMode && isActive && (
-                            <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-600 text-white">Active</span>
-                          )}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {isLowestCost && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-600 text-white">Lowest Cost</span>
+                            )}
+                            {isSplitMode && isActive && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-600 text-white">Active</span>
+                            )}
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 bg-white/60 p-2 rounded-lg border border-gray-100">
@@ -622,14 +633,15 @@ export default function LogisticsApproval() {
                         )}
 
                         {estTotal !== null && (
-                          <div className="flex justify-between items-center px-2 py-1.5 rounded bg-purple-100/50">
-                            <span className="text-[10px] font-semibold text-purple-700 uppercase tracking-wide">Est. Cost</span>
-                            <span className="text-xs font-bold text-purple-700">₹{(isFixed ? estTotal / poTotalQty * allocNum : estTotal).toLocaleString("en-IN", {maximumFractionDigits:2})}</span>
+                          <div className={`flex justify-between items-center px-2 py-1.5 rounded ${isLowestCost ? "bg-green-100/70" : "bg-purple-100/50"}`}>
+                            <span className={`text-[10px] font-semibold uppercase tracking-wide ${isLowestCost ? "text-green-700" : "text-purple-700"}`}>Est. Cost</span>
+                            <span className={`text-xs font-bold ${isLowestCost ? "text-green-700" : "text-purple-700"}`}>₹{(isFixed ? estTotal / poTotalQty * allocNum : estTotal).toLocaleString("en-IN", {maximumFractionDigits:2})}</span>
                           </div>
                         )}
                       </div>
                     )
-                  })}
+                  })
+                  })()}
                 </div>
 
                 {/* Grand total for the PO (ONLY IN SPLIT MODE) */}

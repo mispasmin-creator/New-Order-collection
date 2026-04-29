@@ -44,7 +44,7 @@ export default function MakeInvoicePage({ user }) {
         supabase.from("DISPATCH").select("*").not("Planned4", "is", null),
         supabase
           .from("ORDER RECEIPT")
-          .select('id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Gst Number", "Address", "Rate Of Material"'),
+          .select('id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Gst Number", "Address", "Rate Of Material", "Upload SO"'),
       ])
 
       if (dispatchError) throw dispatchError
@@ -79,6 +79,7 @@ export default function MakeInvoicePage({ user }) {
           gstNumber: or["Gst Number"] || "",
           address: or["Address"] || "",
           rateOfMaterial: Number(or["Rate Of Material"]) || 0,
+          uploadSO: or["Upload SO"] || "",
           planned4: row["Planned4"],
           actual4: row["Actual4"],
           billNumber: row["Bill Number"] || "",
@@ -472,6 +473,17 @@ export default function MakeInvoicePage({ user }) {
                     )}
                     {selectedGroup.rows[0]?.address && (
                       <p className="text-gray-500 text-xs">Address: {selectedGroup.rows[0].address}</p>
+                    )}
+                    {selectedGroup.rows[0]?.uploadSO && (
+                      <a
+                        href={selectedGroup.rows[0].uploadSO}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 underline underline-offset-2 mt-1"
+                      >
+                        <FileText className="w-3 h-3" />
+                        View PO Copy
+                      </a>
                     )}
                   </div>
                   <div className="text-right text-xs text-slate-500 shrink-0">

@@ -16,8 +16,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog"
 import {
-  Loader2, Search, CheckCircle2, AlertCircle, ShieldCheck, ChevronDown, ChevronRight, XCircle,
+  Loader2, Search, CheckCircle2, AlertCircle, ShieldCheck, ChevronDown, ChevronRight, XCircle, Eye,
 } from "lucide-react"
+import { getSignedUrl } from "@/lib/storageUtils"
 
 const formatDate = (val) => {
   if (!val) return "—"
@@ -95,6 +96,12 @@ export default function ManagementApprovalPage({ user }) {
   const handleClose = () => {
     setSelectedEntry(null)
     setRemarks("")
+  }
+
+  const handleViewFile = async (url) => {
+    if (!url) return
+    const signed = await getSignedUrl(url)
+    window.open(signed, "_blank")
   }
 
   const handleApprove = async () => {
@@ -387,6 +394,22 @@ export default function ManagementApprovalPage({ user }) {
                     <p className="font-medium text-gray-700">{selectedEntry["Remarks"]}</p>
                   </div>
                 )}
+                <div className="col-span-2">
+                  <p className="text-xs text-gray-500 mb-1">Debit Note</p>
+                  {selectedEntry["Debit Note Copy"] ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                      onClick={() => handleViewFile(selectedEntry["Debit Note Copy"])}
+                    >
+                      <Eye className="w-3.5 h-3.5 mr-1" /> View Debit Note
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-gray-400 italic">Not uploaded</span>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2">

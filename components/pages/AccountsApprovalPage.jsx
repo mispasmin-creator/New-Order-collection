@@ -499,16 +499,6 @@ export default function AccountsApprovalPage({ user }) {
                   <p className="font-medium">{selectedGroup?.rows[0]?.partyPODate ? formatDate(selectedGroup.rows[0].partyPODate) : "—"}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500">Rate</p>
-                  <p className="font-medium">{selectedGroup?.rows[0]?.poRate ? `₹${selectedGroup.rows[0].poRate}` : "—"}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500">Total PO Value</p>
-                  <p className="font-medium text-green-700">
-                    {selectedGroup?.rows[0]?.totalValue ? `₹${Number(selectedGroup.rows[0].totalValue).toLocaleString("en-IN")}` : "—"}
-                  </p>
-                </div>
-                <div>
                   <p className="text-xs text-gray-500">Payment To Be Taken</p>
                   <p className="font-medium">{selectedGroup?.rows[0]?.paymentToBeTaken || "—"}</p>
                 </div>
@@ -627,11 +617,21 @@ export default function AccountsApprovalPage({ user }) {
             {/* Products/splits */}
             <div className="bg-slate-50 rounded-xl p-4 space-y-3">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Splits</p>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {selectedGroup?.rows.map((row) => (
-                  <div key={row.id} className="flex items-center justify-between text-sm bg-white rounded-lg px-3 py-2 border border-slate-100">
-                    <span className="font-medium text-slate-800">{row.productName}</span>
-                    <span className="text-xs text-slate-500">{row.transporterName} · {row.allocatedQty} qty</span>
+                  <div key={row.id} className="bg-white rounded-lg px-3 py-2.5 border border-slate-100 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-slate-800 text-sm">{row.productName || "—"}</span>
+                      <span className="text-xs text-slate-500">{row.transporterName} · {row.allocatedQty} qty</span>
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-slate-600">
+                      {row.poRate && (
+                        <span>Rate: <span className="font-medium text-slate-800">₹{row.poRate}</span></span>
+                      )}
+                      {row.totalValue > 0 && (
+                        <span>Total Value: <span className="font-medium text-green-700">₹{Number(row.totalValue).toLocaleString("en-IN")}</span></span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

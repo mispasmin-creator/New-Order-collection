@@ -144,19 +144,51 @@ export default function MaterialReturnPage({ user }) {
         if (orData) partyName = orData["Party Names"] || ""
       }
 
+      // Fetch already-returned qty for this invoice from Material Return table
+      const { data: existingReturns } = await supabase
+        .from("Material Return")
+        .select("\"Product Name\", \"Qty\"")
+        .eq("Invoice Number", invoiceLookupNo.trim())
+
+      // Sum already-returned qty per product name
+      const alreadyReturnedMap = {}
+      if (existingReturns) {
+        for (const r of existingReturns) {
+          const key = r["Product Name"] || ""
+          alreadyReturnedMap[key] = (alreadyReturnedMap[key] || 0) + (Number(r["Qty"]) || 0)
+        }
+      }
+
       setInvoicePartyName(partyName)
       setInvoiceProducts(data)
-      setReturnProductLines(
-        data.map((row) => ({
+
+      const lines = data.map((row) => {
+        const dispatchedQty = Number(row["Actual Truck Qty"]) || Number(row["Qty To Be Dispatched"]) || 0
+        const alreadyReturned = alreadyReturnedMap[row["Product Name"] || ""] || 0
+        const availableQty = Math.max(0, dispatchedQty - alreadyReturned)
+        return {
           dispatchId: row.id,
           productName: row["Product Name"] || "",
-          qty: Number(row["Actual Truck Qty"]) || Number(row["Qty To Be Dispatched"]) || 0,
+          originalQty: dispatchedQty,
+          alreadyReturned,
+          availableQty,
+          returnQty: "",
           doNumber: row["Delivery Order No."] || "",
-          removed: false,
+          removed: availableQty === 0, // auto-remove if nothing left to return
           reason: "",
           remarks: "",
-        }))
-      )
+          debitNoteFile: null,
+        }
+      })
+
+      setReturnProductLines(lines)
+
+      const fullyReturned = lines.filter((l) => l.availableQty === 0)
+      if (fullyReturned.length > 0 && fullyReturned.length === lines.length) {
+        toast({ title: "Fully Returned", description: "All quantities for this invoice have already been returned." })
+      } else if (fullyReturned.length > 0) {
+        toast({ title: "Note", description: `${fullyReturned.length} product(s) already fully returned and have been greyed out.` })
+      }
     } catch (err) {
       console.error("Invoice lookup error:", err)
       toast({ variant: "destructive", title: "Error", description: err.message })
@@ -231,15 +263,40 @@ export default function MaterialReturnPage({ user }) {
       toast({ variant: "destructive", title: "No Products", description: "All products were marked as good. Nothing to return." })
       return
     }
+    const invalidQty = toReturn.filter((l) => {
+      const rq = parseFloat(l.returnQty)
+      return !rq || rq <= 0 || rq > l.availableQty
+    })
+    if (invalidQty.length > 0) {
+      toast({ variant: "destructive", title: "Invalid Quantity", description: "Enter a valid return quantity (must be > 0 and ≤ original qty) for each product." })
+      return
+    }
     const missing = toReturn.filter((l) => !l.reason)
     if (missing.length > 0) {
       toast({ variant: "destructive", title: "Reason Required", description: "Please select a reason for each product being returned." })
+      return
+    }
+    const missingNote = toReturn.filter((l) => !l.debitNoteFile)
+    if (missingNote.length > 0) {
+      toast({ variant: "destructive", title: "Debit Note Required", description: "Please upload a debit note for each product being returned." })
       return
     }
 
     try {
       setSubmitting(true)
       const timestamp = getISTTimestamp()
+
+      // Upload debit note files per row
+      const debitNoteUrls = await Promise.all(
+        toReturn.map(async (line) => {
+          const file = line.debitNoteFile
+          const ext = file.name.split(".").pop()
+          const path = `material_return/debit_note_${line.dispatchId}_${Date.now()}.${ext}`
+          const { error: uploadErr } = await supabase.storage.from("images").upload(path, file, { cacheControl: "3600", upsert: false })
+          if (uploadErr) throw uploadErr
+          return supabase.storage.from("images").getPublicUrl(path).data.publicUrl
+        })
+      )
 
       // Build base return number and increment per row
       const baseNo = parseInt(formData.returnNo) || 1
@@ -249,10 +306,11 @@ export default function MaterialReturnPage({ user }) {
         "D.O Number": line.doNumber,
         "Party Name": invoicePartyName,
         "Product Name": line.productName,
-        "Qty": line.qty,
+        "Qty": parseFloat(line.returnQty),
         "Reason Of Material Return": line.reason,
         "Remarks": line.remarks || "",
         "Return No.": (baseNo + idx).toString().padStart(4, "0"),
+        "Debit Note Copy": debitNoteUrls[idx] || "",
       }))
 
       const { error } = await supabase.from("Material Return").insert(inserts)
@@ -691,14 +749,19 @@ export default function MaterialReturnPage({ user }) {
                 <span className="ml-2 text-xs font-normal text-gray-500">(remove products that are in good condition using the trash icon)</span>
               </p>
 
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
+              <div className="border rounded-lg overflow-x-auto">
+                <table className="w-full text-sm min-w-[900px]">
                   <thead className="bg-gray-100 text-xs">
                     <tr>
                       <th className="text-left px-3 py-2 font-semibold text-gray-600">Product</th>
-                      <th className="text-right px-3 py-2 font-semibold text-gray-600">Qty</th>
+                      <th className="text-right px-3 py-2 font-semibold text-gray-600">Total Qty</th>
+                      <th className="text-right px-3 py-2 font-semibold text-gray-600">Already Returned</th>
+                      <th className="text-right px-3 py-2 font-semibold text-gray-600">Available</th>
+                      <th className="text-right px-3 py-2 font-semibold text-gray-600">Return Qty</th>
+                      <th className="text-right px-3 py-2 font-semibold text-gray-600">Remaining</th>
                       <th className="text-left px-3 py-2 font-semibold text-gray-600">D.O Number</th>
                       <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[200px]">Reason</th>
+                      <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[180px]">Debit Note <span className="text-red-500">*</span></th>
                       <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[180px]">Remarks</th>
                       <th className="px-3 py-2 w-10"></th>
                     </tr>
@@ -707,7 +770,45 @@ export default function MaterialReturnPage({ user }) {
                     {returnProductLines.map((line, i) => (
                       <tr key={line.dispatchId} className={line.removed ? "opacity-40 bg-gray-50" : "bg-white"}>
                         <td className="px-3 py-2 font-medium text-gray-800">{line.productName || "—"}</td>
-                        <td className="px-3 py-2 text-right text-gray-700">{line.qty}</td>
+                        <td className="px-3 py-2 text-right text-gray-500">{line.originalQty}</td>
+                        <td className="px-3 py-2 text-right text-xs text-orange-600">{line.alreadyReturned > 0 ? line.alreadyReturned : "—"}</td>
+                        <td className="px-3 py-2 text-right text-xs font-medium text-blue-700">{line.availableQty}</td>
+                        <td className="px-3 py-2 text-right">
+                          {!line.removed ? (
+                            <Input
+                              type="number"
+                              min="0.01"
+                              max={line.availableQty}
+                              step="any"
+                              value={line.returnQty}
+                              onChange={(e) =>
+                                setReturnProductLines((prev) => {
+                                  const next = [...prev]
+                                  next[i] = { ...next[i], returnQty: e.target.value }
+                                  return next
+                                })
+                              }
+                              placeholder="0"
+                              className="h-8 text-xs w-24 text-right ml-auto"
+                            />
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right text-xs">
+                          {!line.removed && line.returnQty !== "" ? (
+                            (() => {
+                              const remaining = line.availableQty - (parseFloat(line.returnQty) || 0)
+                              return (
+                                <span className={remaining < 0 ? "text-red-500 font-medium" : remaining === 0 ? "text-gray-400" : "text-green-600 font-medium"}>
+                                  {remaining < 0 ? "Exceeds!" : remaining}
+                                </span>
+                              )
+                            })()
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-gray-600 text-xs">{line.doNumber || "—"}</td>
                         <td className="px-3 py-2">
                           {!line.removed ? (
@@ -735,6 +836,30 @@ export default function MaterialReturnPage({ user }) {
                             </Select>
                           ) : (
                             <span className="text-xs text-gray-400 italic">Good — removed</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          {!line.removed ? (
+                            <div className="space-y-1">
+                              <Input
+                                type="file"
+                                accept=".pdf,image/*"
+                                className="h-8 text-xs"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0] || null
+                                  setReturnProductLines((prev) => {
+                                    const next = [...prev]
+                                    next[i] = { ...next[i], debitNoteFile: file }
+                                    return next
+                                  })
+                                }}
+                              />
+                              {line.debitNoteFile && (
+                                <p className="text-[10px] text-green-600 truncate max-w-[160px]">✓ {line.debitNoteFile.name}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
                           )}
                         </td>
                         <td className="px-3 py-2">
@@ -2346,6 +2471,22 @@ export default function MaterialReturnPage({ user }) {
                         <p className="font-medium">{selectedManagementEntry["D.O Number"]}</p>
                       </div>
                     )}
+                    <div className="col-span-2">
+                      <p className="text-gray-500 text-xs mb-1">Debit Note</p>
+                      {selectedManagementEntry["Debit Note Copy"] ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                          onClick={() => handleViewPhoto(selectedManagementEntry["Debit Note Copy"])}
+                        >
+                          <Eye className="w-3.5 h-3.5 mr-1" /> View Debit Note
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-gray-400 italic">Not uploaded</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 

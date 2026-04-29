@@ -497,6 +497,20 @@ export default function MakePIPage({ user }) {
                   <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Total PI Raised</p>
                   <p className="font-semibold text-violet-900 mt-1 tabular-nums">{formatCurrency(piRaisedAmounts[selectedGroup.poNumber] || 0)}</p>
                 </div>
+                {selectedGroup.rows[0]?.rawData?.["Upload SO"] && (
+                  <div>
+                    <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">PO Copy</p>
+                    <a
+                      href={selectedGroup.rows[0].rawData["Upload SO"]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 mt-1 text-sm font-semibold text-violet-700 hover:text-violet-900 underline underline-offset-2"
+                    >
+                      <Paperclip className="w-3.5 h-3.5" />
+                      View PO
+                    </a>
+                  </div>
+                )}
                 {/* Basic / With Tax toggle */}
                 <div className="ml-auto">
                   <p className="text-xs font-medium text-violet-600 uppercase tracking-wider mb-1">PI Amount Mode</p>

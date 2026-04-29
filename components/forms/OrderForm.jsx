@@ -301,6 +301,12 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       updatedProduct["Total PO Basic Value"] = (quantity * rate).toString();
     }
 
+    if (field === "Advance") {
+      const advance = Math.min(100, Math.max(0, parseFloat(value) || 0));
+      updatedProduct["Advance"] = advance.toString();
+      updatedProduct["Basic"] = (100 - advance).toString();
+    }
+
     setCurrentProduct(updatedProduct);
   }
 
@@ -1480,6 +1486,8 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                         <Label className="text-sm font-medium text-gray-700">Advance%</Label>
                         <Input
                           type="number"
+                          min="0"
+                          max="100"
                           value={currentProduct["Advance"]}
                           onChange={(e) => handleProductChange("Advance", e.target.value)}
                           className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
@@ -1493,9 +1501,9 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                         <Input
                           type="number"
                           value={currentProduct["Basic"]}
-                          onChange={(e) => handleProductChange("Basic", e.target.value)}
-                          className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
-                          placeholder="Basic percentage"
+                          readOnly
+                          className="h-11 border-gray-300 bg-gray-50"
+                          placeholder="Auto-calculated"
                         />
                       </div>
                     </div>

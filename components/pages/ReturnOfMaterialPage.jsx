@@ -17,8 +17,9 @@ import {
 } from "@/components/ui/dialog"
 import {
   Loader2, Search, CheckCircle2, PackageCheck, Truck, ChevronDown, ChevronRight,
-  RefreshCw, Phone,
+  RefreshCw, Phone, Eye,
 } from "lucide-react"
+import { getSignedUrl } from "@/lib/storageUtils"
 
 const fmt = (n) =>
   `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -87,12 +88,12 @@ export default function ReturnOfMaterialPage({ user }) {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
-      // Only "Material Return" reason rows — management approved, no credit note needed
+      // All reasons — management approved AND credit note issued
       const { data, error } = await supabase
         .from("Material Return")
         .select("*")
         .not("Actual5", "is", null)
-        .eq("Reason Of Material Return", "Material Return")
+        .not("Debit Note Issued At", "is", null)
         .order("id", { ascending: false })
       if (error) throw error
 
@@ -139,6 +140,12 @@ export default function ReturnOfMaterialPage({ user }) {
   const handleClose = () => {
     setSelectedEntry(null)
     setForm(EMPTY_FORM)
+  }
+
+  const handleViewFile = async (url) => {
+    if (!url) return
+    const signed = await getSignedUrl(url)
+    window.open(signed, "_blank")
   }
 
   const handleChange = (e) => {
@@ -426,11 +433,6 @@ export default function ReturnOfMaterialPage({ user }) {
               <div className="rounded-lg border bg-teal-50 border-teal-200 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold text-teal-700 uppercase tracking-wide">Product Details</p>
-                  {selectedEntry["Reason Of Material Return"] === "Material Return" && (
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
-                      Direct Return — No Credit Note
-                    </span>
-                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="col-span-2 bg-white rounded-lg border border-teal-100 px-3 py-2 flex items-center justify-between">
@@ -475,6 +477,22 @@ export default function ReturnOfMaterialPage({ user }) {
                       <p className="font-mono font-semibold text-blue-700">{selectedEntry["Invoice Number"]}</p>
                     </div>
                   )}
+                  <div className="col-span-2">
+                    <p className="text-xs text-gray-500 mb-1">Debit Note</p>
+                    {selectedEntry["Debit Note Copy"] ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                        onClick={() => handleViewFile(selectedEntry["Debit Note Copy"])}
+                      >
+                        <Eye className="w-3.5 h-3.5 mr-1" /> View Debit Note
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">Not uploaded</span>
+                    )}
+                  </div>
                 </div>
               </div>
 

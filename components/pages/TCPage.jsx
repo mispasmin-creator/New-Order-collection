@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Search, Loader2, Upload, FileCheck, CheckCircle2, X, Eye } from "lucide-react"
+import { Search, Loader2, Upload, FileCheck, CheckCircle2, X, Eye, ChevronDown, ChevronRight } from "lucide-react"
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const ACCEPTED_FILE_TYPES = [
@@ -30,7 +30,8 @@ export default function TCPage() {
   const [submitting, setSubmitting] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [activeTab, setActiveTab] = useState("pending")
-  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [selectedGroup, setSelectedGroup] = useState(null)
+  const [expandedGroups, setExpandedGroups] = useState({})
   const [formData, setFormData] = useState({
     tcFile: null,
   })
@@ -103,6 +104,7 @@ export default function TCPage() {
           actual4: row["Actual4"] || "",
           tcFileUrl: row["Trust Certificate Made"] || "",
           tcRequired: row["TC Required"] || "",
+          billNumber: row["Bill Number"] || "",
           rateOfMaterial: rateMap.get(row["Delivery Order No."]) || null,
           deliveryCreatedAt: deliveryRow?.Timestamp || "",
           movedToDelivery: !!deliveryRow,
@@ -158,18 +160,26 @@ export default function TCPage() {
     ? searchFilteredOrders(orders)
     : searchFilteredOrders(historyOrders)
 
-  const handleOpenModal = (order) => {
-    setSelectedOrder(order)
-    setFormData({
-      tcFile: null,
+  const groupedByInvoice = useMemo(() => {
+    const map = {}
+    displayOrders.forEach(order => {
+      const key = order.billNumber || `__no_invoice_${order.id}`
+      if (!map[key]) map[key] = { invoiceNo: order.billNumber || "", partyName: order.partyName, rows: [] }
+      map[key].rows.push(order)
     })
+    return Object.values(map)
+  }, [displayOrders])
+
+  const toggleGroup = (key) => setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }))
+
+  const handleOpenModal = (order) => {
+    setSelectedGroup({ invoiceNo: order.billNumber, partyName: order.partyName, rows: [order] })
+    setFormData({ tcFile: null })
   }
 
   const handleCancel = () => {
-    setSelectedOrder(null)
-    setFormData({
-      tcFile: null,
-    })
+    setSelectedGroup(null)
+    setFormData({ tcFile: null })
   }
 
   const handleFileChange = (event) => {
@@ -228,74 +238,65 @@ export default function TCPage() {
   }
 
   const handleSubmit = async () => {
-    if (!selectedOrder) return
+    if (!selectedGroup) return
 
-    const hasExistingFile = !!selectedOrder.tcFileUrl
-    if (!formData.tcFile && !hasExistingFile) {
-      toast({
-        variant: "destructive",
-        title: "Upload required",
-        description: "Please upload a Test Certificate file before submitting",
-      })
+    if (!formData.tcFile) {
+      toast({ variant: "destructive", title: "Upload required", description: "Please upload a Test Certificate file before submitting" })
       return
     }
 
     try {
       setSubmitting(true)
 
-      let tcFileUrl = selectedOrder.tcFileUrl || ""
+      let tcFileUrl = ""
       if (formData.tcFile) {
-        tcFileUrl = await uploadTCFile(selectedOrder, formData.tcFile)
+        const file = formData.tcFile
+        const safeInvoice = (selectedGroup.invoiceNo || "noinvoice").replace(/[^a-zA-Z0-9]/g, "_")
+        const safeFileName = file.name.replace(/[^a-zA-Z0-9.]/g, "_")
+        const filePath = `tc/invoice_${safeInvoice}_${Date.now()}_${safeFileName}`
+        const { error: uploadError } = await supabase.storage.from("images").upload(filePath, file, { cacheControl: "3600", upsert: false })
+        if (uploadError) throw uploadError
+        const { data: { publicUrl } } = supabase.storage.from("images").getPublicUrl(filePath)
+        tcFileUrl = publicUrl
       }
 
-      const dispatchUpdatePayload = {
-        "Trust Certificate Made": tcFileUrl,
-      }
+      // Update all dispatch rows in the group
+      await Promise.all(
+        selectedGroup.rows.map(row =>
+          supabase.from("DISPATCH").update({ "Trust Certificate Made": tcFileUrl }).eq("id", row.id)
+        )
+      )
 
-      const { error: dispatchError } = await supabase
-        .from("DISPATCH")
-        .update(dispatchUpdatePayload)
-        .eq("id", selectedOrder.id)
-
-      if (dispatchError) throw dispatchError
-
-      const deliveryPayload = {
-        "Timestamp": getISTTimestamp(),
-        "Bill Date": null,
-        "Delivery Order No.": selectedOrder.deliveryOrderNo,
-        "Party Name": selectedOrder.partyName,
-        "Product Name": selectedOrder.productName,
-        "Quantity Delivered.": selectedOrder.qtyToBeDispatched ? parseFloat(selectedOrder.qtyToBeDispatched) : null,
-        "Bill No.": "",
-        "Losgistic no.": selectedOrder.dSrNumber || "",
-        "Rate Of Material": selectedOrder.rateOfMaterial,
-        "Type Of Transporting": selectedOrder.typeOfTransporting || "",
-        "Transporter Name": selectedOrder.transporterName || "",
-        "Vehicle Number.": selectedOrder.truckNo || "",
-        "Bilty Number.": selectedOrder.biltyNo || "",
-        "Giving From Where": "",
-        "D-Sr Number": selectedOrder.dSrNumber || "",
-      }
-
-      const { error: deliveryInsertError } = await supabase
-        .from("DELIVERY")
-        .insert([deliveryPayload])
+      // Insert DELIVERY records for all rows
+      const timestamp = getISTTimestamp()
+      const { error: deliveryInsertError } = await supabase.from("DELIVERY").insert(
+        selectedGroup.rows.map(row => ({
+          "Timestamp": timestamp,
+          "Bill Date": null,
+          "Delivery Order No.": row.deliveryOrderNo,
+          "Party Name": row.partyName,
+          "Product Name": row.productName,
+          "Quantity Delivered.": row.qtyToBeDispatched ? parseFloat(row.qtyToBeDispatched) : null,
+          "Bill No.": selectedGroup.invoiceNo || "",
+          "Losgistic no.": row.dSrNumber || "",
+          "Rate Of Material": row.rateOfMaterial,
+          "Type Of Transporting": row.typeOfTransporting || "",
+          "Transporter Name": row.transporterName || "",
+          "Vehicle Number.": row.truckNo || "",
+          "Bilty Number.": row.biltyNo || "",
+          "Giving From Where": "",
+          "D-Sr Number": row.dSrNumber || "",
+        }))
+      )
 
       if (deliveryInsertError) throw deliveryInsertError
 
       await fetchData()
       handleCancel()
-      toast({
-        title: "Success",
-        description: "Test Certificate uploaded and order moved to the next stage successfully",
-      })
+      toast({ title: "Success", description: `TC uploaded and ${selectedGroup.rows.length} row(s) moved to delivery` })
     } catch (error) {
       console.error("Error submitting Test Certificate:", error)
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: `Failed to submit Test Certificate: ${error.message}`,
-      })
+      toast({ variant: "destructive", title: "Error", description: `Failed to submit: ${error.message}` })
     } finally {
       setSubmitting(false)
     }
@@ -402,84 +403,107 @@ export default function TCPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50 border-b border-gray-200">
-                {activeTab === "pending" && (
-                  <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Action</TableHead>
-                )}
-                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">D-Sr Number</TableHead>
-                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">DO No.</TableHead>
-                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Party Name</TableHead>
-                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Product Name</TableHead>
-                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Qty</TableHead>
-                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Invoice Done</TableHead>
-                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Test Certificate Status</TableHead>
-                {activeTab === "history" && (
-                  <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[160px]">Moved To Delivery</TableHead>
-                )}
+                <TableHead className="w-8" />
+                {activeTab === "pending" && <TableHead className="font-semibold text-gray-900 py-3 px-4">Action</TableHead>}
+                <TableHead className="font-semibold text-gray-900 py-3 px-4">Invoice No.</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4">Party Name</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4">Products</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4">TC Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {displayOrders.length === 0 ? (
+              {groupedByInvoice.length === 0 ? (
                 <TableRow>
-                  <TableCell
-                    colSpan={activeTab === "pending" ? 8 : 8}
-                    className="text-center py-8 text-gray-500"
-                  >
+                  <TableCell colSpan={6} className="text-center py-8 text-gray-500">
                     No {activeTab} Test Certificate entries found
                   </TableCell>
                 </TableRow>
               ) : (
-                displayOrders.map(order => (
-                  <TableRow key={order.id} className="hover:bg-gray-50 transition-colors border-b border-gray-100">
-                    {activeTab === "pending" && (
-                      <TableCell className="py-2 px-4 min-w-[120px]">
-                        <Button
-                          size="sm"
-                          onClick={() => handleOpenModal(order)}
-                          className="bg-blue-600 hover:bg-blue-700 h-8 text-xs"
-                          disabled={submitting}
-                        >
-                          Upload Test Certificate
-                        </Button>
-                      </TableCell>
-                    )}
-                    <TableCell className="py-2 px-4 min-w-[120px]">
-                      <Badge className="bg-blue-500 text-white rounded-sm text-xs">
-                        {order.dSrNumber || "N/A"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.deliveryOrderNo || "N/A"}</TableCell>
-                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.partyName || "N/A"}</TableCell>
-                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.productName || "N/A"}</TableCell>
-                    <TableCell className="py-2 px-4 min-w-[100px] text-sm font-medium">{order.qtyToBeDispatched || "N/A"}</TableCell>
-                    <TableCell className="py-2 px-4 min-w-[150px] text-sm">{formatDateTime(order.actual4)}</TableCell>
-                    <TableCell className="py-2 px-4 min-w-[120px]">
-                      {order.tcFileUrl ? (
-                        <button
-                          onClick={() => openTCFile(order.tcFileUrl)}
-                          className="text-blue-600 hover:text-blue-800 underline text-xs"
-                        >
-                          Uploaded
-                        </button>
-                      ) : (
-                        <span className="text-amber-600 text-xs font-medium">Pending</span>
-                      )}
-                    </TableCell>
-                    {activeTab === "history" && (
-                      <TableCell className="py-2 px-4 min-w-[160px] text-sm">
-                        {formatDateTime(order.deliveryCreatedAt)}
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))
+                groupedByInvoice.map(group => {
+                  const groupKey = group.invoiceNo || group.rows[0]?.id
+                  const isExpanded = !!expandedGroups[groupKey]
+                  const allTCDone = group.rows.every(r => r.tcFileUrl)
+                  const someTCDone = group.rows.some(r => r.tcFileUrl)
+                  return (
+                    <>
+                      {/* Group header row */}
+                      <TableRow
+                        key={`group-${groupKey}`}
+                        className="bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors"
+                        onClick={() => toggleGroup(groupKey)}
+                      >
+                        <TableCell className="text-gray-400 pl-3">
+                          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </TableCell>
+                        {activeTab === "pending" && <TableCell />}
+                        <TableCell className="py-2 px-4 font-semibold text-slate-900">
+                          {group.invoiceNo ? (
+                            <Badge className="bg-indigo-500 text-white rounded-sm text-xs">{group.invoiceNo}</Badge>
+                          ) : (
+                            <span className="text-gray-400 text-xs italic">No Invoice</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 text-slate-700">{group.partyName}</TableCell>
+                        <TableCell className="py-2 px-4 text-xs text-slate-500">
+                          {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
+                        </TableCell>
+                        <TableCell className="py-2 px-4">
+                          {allTCDone ? (
+                            <span className="text-green-600 text-xs font-medium">All Uploaded</span>
+                          ) : someTCDone ? (
+                            <span className="text-amber-600 text-xs font-medium">Partial</span>
+                          ) : (
+                            <span className="text-amber-600 text-xs font-medium">Pending</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+
+                      {/* Expanded rows */}
+                      {isExpanded && group.rows.map(order => (
+                        <TableRow key={order.id} className="bg-white hover:bg-gray-50 border-b border-gray-100">
+                          <TableCell />
+                          {activeTab === "pending" && (
+                            <TableCell onClick={e => e.stopPropagation()}>
+                              {!order.tcFileUrl && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleOpenModal(order)}
+                                  className="bg-blue-600 hover:bg-blue-700 h-7 text-xs px-2"
+                                  disabled={submitting}
+                                >
+                                  Upload TC
+                                </Button>
+                              )}
+                            </TableCell>
+                          )}
+                          <TableCell className="py-2 px-4">
+                            <Badge className="bg-blue-500 text-white rounded-sm text-xs">{order.dSrNumber || "N/A"}</Badge>
+                          </TableCell>
+                          <TableCell className="py-2 px-4 text-sm text-gray-600">{order.productName || "N/A"}</TableCell>
+                          <TableCell className="py-2 px-4 text-sm text-gray-600">Qty: {order.qtyToBeDispatched || "N/A"} · DO: {order.deliveryOrderNo || "N/A"}</TableCell>
+                          <TableCell className="py-2 px-4">
+                            {order.tcFileUrl ? (
+                              <button onClick={() => openTCFile(order.tcFileUrl)} className="text-blue-600 hover:text-blue-800 underline text-xs flex items-center gap-1">
+                                <Eye className="w-3 h-3" /> View TC
+                              </button>
+                            ) : (
+                              <span className="text-amber-600 text-xs font-medium">Pending</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </>
+                  )
+                })
               )}
             </TableBody>
           </Table>
         </div>
       </div>
 
-      {selectedOrder && (
+      {selectedGroup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
               <CardTitle className="text-lg">Upload Test Certificate</CardTitle>
               <Button variant="ghost" size="sm" onClick={handleCancel} disabled={submitting}>
@@ -488,12 +512,26 @@ export default function TCPage() {
             </CardHeader>
             <CardContent className="p-4">
               <div className="space-y-4">
-                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm">
-                  <p className="font-medium text-gray-900">{selectedOrder.partyName}</p>
-                  <p className="text-gray-600 mt-1">D-Sr: {selectedOrder.dSrNumber || "N/A"}</p>
-                  <p className="text-gray-600">DO: {selectedOrder.deliveryOrderNo || "N/A"}</p>
-                  <p className="text-gray-600">Product: {selectedOrder.productName || "N/A"}</p>
-                  <p className="text-gray-600">Invoice completed: {formatDateTime(selectedOrder.actual4)}</p>
+                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-sm space-y-1">
+                  {(() => {
+                    const row = selectedGroup.rows[0]
+                    return (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <p className="font-semibold text-gray-900">{row.partyName}</p>
+                          {selectedGroup.invoiceNo && (
+                            <Badge className="bg-indigo-500 text-white text-xs">{selectedGroup.invoiceNo}</Badge>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-600 mt-1">
+                          <span>D-Sr: <span className="font-medium text-gray-800">{row.dSrNumber || "N/A"}</span></span>
+                          <span>Product: <span className="font-medium text-gray-800">{row.productName || "N/A"}</span></span>
+                          <span>Qty: <span className="font-medium text-gray-800">{row.qtyToBeDispatched || "N/A"}</span></span>
+                          <span>DO: <span className="font-medium text-gray-800">{row.deliveryOrderNo || "N/A"}</span></span>
+                        </div>
+                      </>
+                    )
+                  })()}
                 </div>
 
                 <div className="space-y-2">
@@ -506,44 +544,21 @@ export default function TCPage() {
                     disabled={submitting}
                   />
                   <div className="flex items-center justify-between text-xs">
-                    <span className={formData.tcFile || selectedOrder.tcFileUrl ? "text-green-600" : "text-amber-600"}>
-                      Upload status: {formData.tcFile || selectedOrder.tcFileUrl ? "Uploaded" : "Pending"}
+                    <span className={formData.tcFile ? "text-green-600" : "text-amber-600"}>
+                      {formData.tcFile ? "File selected" : "No file selected"}
                     </span>
-                    {selectedOrder.tcFileUrl && (
-                      <button
-                        onClick={() => openTCFile(selectedOrder.tcFileUrl)}
-                        className="text-blue-600 hover:text-blue-800 underline"
-                        type="button"
-                      >
-                        <Eye className="w-3 h-3 inline mr-1" />
-                        View existing
-                      </button>
-                    )}
                   </div>
-                  <p className="text-xs text-gray-500">Accepted types: PDF, JPG, PNG, WEBP. Max size 5MB.</p>
+                  <p className="text-xs text-gray-500">Accepted: PDF, JPG, PNG, WEBP · Max 5MB</p>
                 </div>
 
                 <div className="border-t pt-4 flex flex-col gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={handleCancel}
-                    disabled={submitting}
-                  >
-                    Cancel
-                  </Button>
+                  <Button variant="outline" onClick={handleCancel} disabled={submitting}>Cancel</Button>
                   <Button
                     onClick={handleSubmit}
                     className="bg-blue-600 hover:bg-blue-700"
-                    disabled={(!formData.tcFile && !selectedOrder.tcFileUrl) || submitting}
+                    disabled={!formData.tcFile || submitting}
                   >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Submitting...
-                      </>
-                    ) : (
-                      "Submit"
-                    )}
+                    {submitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting...</> : "Submit & Move to Delivery"}
                   </Button>
                 </div>
               </div>

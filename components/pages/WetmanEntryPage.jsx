@@ -784,7 +784,7 @@ export default function WeighmentEntryPage({ user }) {
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="text-sm">Image Of Slip2 *</Label>
+                    <Label className="text-sm">Image Of Slip2</Label>
                     <div className="flex items-center gap-2">
                       <Input
                         type="file"
@@ -819,7 +819,7 @@ export default function WeighmentEntryPage({ user }) {
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="text-sm">Image Of Slip3 *</Label>
+                    <Label className="text-sm">Image Of Slip3</Label>
                     <div className="flex items-center gap-2">
                       <Input
                         type="file"
@@ -881,8 +881,6 @@ export default function WeighmentEntryPage({ user }) {
                         !formData.actualQtyLoadedInTruck ||
                         !formData.actualQtyAsPerWeighmentSlip ||
                         !formData.imageOfSlip ||
-                        !formData.imageOfSlip2 ||
-                        !formData.imageOfSlip3 ||
                         submitting
                       }
                     >
