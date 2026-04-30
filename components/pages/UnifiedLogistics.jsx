@@ -51,9 +51,30 @@ export default function UnifiedLogistics({ user }) {
   const fetchEverything = async () => {
     try {
       setLoading(true)
+
+      const userFirms = user?.role !== "ADMIN"
+        ? (user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
+        : null
+      const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
+
+      let allowedDoNumbers = null
+      if (shouldFilter) {
+        const { data: orRows } = await supabase
+          .from('ORDER RECEIPT')
+          .select('id, "DO-Delivery Order No."')
+          .in('Firm Name', userFirms)
+        allowedDoNumbers = (orRows || []).map(r => r['DO-Delivery Order No.']).filter(Boolean)
+      }
+
+      let deliveryQuery = supabase.from('DELIVERY').select('*').not('Planned 3', 'is', null)
+      if (shouldFilter) deliveryQuery = deliveryQuery.in('"Delivery Order No."', allowedDoNumbers)
+
+      let postDeliveryQuery = supabase.from('POST DELIVERY').select('*')
+      if (shouldFilter) postDeliveryQuery = postDeliveryQuery.in('"Order No."', allowedDoNumbers)
+
       const [deliveryRes, postDeliveryRes, dispatchRes] = await Promise.all([
-        supabase.from('DELIVERY').select('*').not('Planned 3', 'is', null),
-        supabase.from('POST DELIVERY').select('*'),
+        deliveryQuery,
+        postDeliveryQuery,
         supabase.from('DISPATCH').select('"D-Sr Number", "Trust Certificate Made"')
       ])
 

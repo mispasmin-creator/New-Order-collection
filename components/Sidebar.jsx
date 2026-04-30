@@ -52,6 +52,8 @@ const pageIcons = {
   "Management Approval": ShieldCheck,
   "Debit Note": FileText,
   "Bilty Update": PackageCheck,
+  "Make PI": FileText,
+  "Received PI Payment": Receipt,
   "Manage Users": Users,
 }
 

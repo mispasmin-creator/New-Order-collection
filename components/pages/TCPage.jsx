@@ -23,7 +23,7 @@ const ACCEPTED_FILE_TYPES = [
   "image/webp",
 ]
 
-export default function TCPage() {
+export default function TCPage({ user }) {
   const [orders, setOrders] = useState([])
   const [historyOrders, setHistoryOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -46,20 +46,29 @@ export default function TCPage() {
     try {
       setLoading(true)
 
-      const { data: dispatchData, error: dispatchError } = await supabase
-        .from("DISPATCH")
-        .select('*')
-        .not('Actual4', 'is', null)
+      const userFirms = user?.role !== "ADMIN"
+        ? (user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
+        : null
+      const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
 
-      if (dispatchError) throw dispatchError
-
-      const { data: orderReceiptData, error: orderReceiptError } = await supabase
+      let orQuery = supabase
         .from("ORDER RECEIPT")
-        .select('"DO-Delivery Order No.", "Rate Of Material"')
+        .select('id, "DO-Delivery Order No.", "Rate Of Material"')
+      if (shouldFilter) orQuery = orQuery.in('Firm Name', userFirms)
+      const { data: orderReceiptData, error: orderReceiptError } = await orQuery
 
       if (orderReceiptError) {
         console.error("Error fetching ORDER RECEIPT data:", orderReceiptError)
       }
+
+      const allowedPoIds = (orderReceiptData || []).map(r => r.id)
+
+      let dispatchQuery = supabase.from("DISPATCH").select('*').not('Actual4', 'is', null)
+      if (shouldFilter) dispatchQuery = dispatchQuery.in('po_id', allowedPoIds)
+
+      const { data: dispatchData, error: dispatchError } = await dispatchQuery
+
+      if (dispatchError) throw dispatchError
 
       const { data: deliveryData, error: deliveryError } = await supabase
         .from("DELIVERY")

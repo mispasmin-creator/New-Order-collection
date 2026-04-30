@@ -67,6 +67,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     // Technical & Lead Time
     "Lead Time For Collection Of Final Payment": "",
     "Type Of Application": "",
+    "Lead Time to Reach Factory": "",
 
     // Marketing
     "Marketing Mangager Name": "",
@@ -79,6 +80,9 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     "Iron%": "",
     "Advance": "",
     "Basic": "",
+
+    // Computed
+    "PI Due Date": "",
 
     // File upload
     "Upload SO": null,
@@ -283,12 +287,33 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     }
   }
 
+  const computePiDueDate = (data) => {
+    const typeOfPI = data["Type Of PI"] || "";
+    const isAfterDelivery =
+      typeOfPI.toLowerCase().includes("100") &&
+      typeOfPI.toLowerCase().includes("after");
+    if (!isAfterDelivery) return "";
+
+    const leadTimeCollection = parseInt(data["Lead Time For Collection Of Final Payment"]) || 0;
+    const leadTimeFactory = parseInt(data["Lead Time to Reach Factory"]) || 0;
+    const totalDays = leadTimeCollection + leadTimeFactory;
+    if (totalDays === 0) return "";
+
+    const date = new Date();
+    date.setDate(date.getDate() + totalDays);
+    return date.toISOString().slice(0, 10);
+  }
+
   const handleInputChange = (field, value) => {
     if (field === "Party Name") {
       setFormData(prev => ({ ...prev, [field]: value }));
       fetchPartyDetails(value);
     } else {
-      setFormData(prev => ({ ...prev, [field]: value }));
+      setFormData(prev => {
+        const updated = { ...prev, [field]: value };
+        updated["PI Due Date"] = computePiDueDate(updated);
+        return updated;
+      });
     }
   }
 
@@ -398,6 +423,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "Type Of PI": formData["Type Of PI"],
       "Lead Time For Collection Of Final Payment": parseInt(formData["Lead Time For Collection Of Final Payment"]) || null,
       "Type Of Application": formData["Type Of Application"],
+      "Lead Time to Reach Factory": parseInt(formData["Lead Time to Reach Factory"]) || null,
       "Customer Category": formData["Customer Category"],
       "Free Replacement (FOC)": formData["Free Replacement (FOC)"],
       "Gst Number": formData["Gst Number"],
@@ -415,6 +441,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "TC Required": formData["TC Required"],
       "Adjusted Amount": parseFloat(formData["Adjusted Amount"]) || 0,
       "Marketing Mangager Name": formData["Marketing Mangager Name"],
+      "PI Due Date": formData["PI Due Date"] || null,
       "Status": "New Order",
       "Planned 1": timestamp
     };
@@ -567,8 +594,10 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
         "Specific Concern": "",
         "Lead Time For Collection Of Final Payment": "",
         "Type Of Application": "",
+        "Lead Time to Reach Factory": "",
         "Marketing Mangager Name": "",
         "Type of Packaging": "",
+        "PI Due Date": "",
         "Product Name": "",
         "Quantity": "",
         "Rate Of Material": "",
@@ -677,6 +706,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "Specific Concern": "Auto-filled test order for development verification.",
       "Lead Time For Collection Of Final Payment": randomNumber(7, 30, 0),
       "Type Of Application": pickRandom(dropdownData.typeOfApplications, "Full application"),
+      "Lead Time to Reach Factory": randomNumber(1, 30, 0),
       "Marketing Mangager Name": pickRandom(dropdownData.marketingMangagerNames, "Test Manager"),
       "Product Name": mockProduct["Product Name"],
       "Quantity": mockProduct["Quantity"],
@@ -1180,6 +1210,21 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                 />
               </div>
 
+              {/* Lead Time to Reach Factory */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">
+                  Lead Time to Reach Factory (Days)
+                </Label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="Enter days"
+                  value={formData["Lead Time to Reach Factory"]}
+                  onChange={(e) => handleInputChange("Lead Time to Reach Factory", e.target.value)}
+                  className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+
               {/* Specific Concern */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-gray-700">
@@ -1279,6 +1324,24 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* PI Due Date (auto-calculated for 100% after delivery) */}
+              {formData["PI Due Date"] && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">
+                    PI Due Date <span className="text-xs text-blue-600 font-normal">(Auto-calculated)</span>
+                  </Label>
+                  <Input
+                    type="date"
+                    value={formData["PI Due Date"]}
+                    readOnly
+                    className="h-11 border-blue-200 bg-blue-50 text-blue-800 font-medium cursor-default"
+                  />
+                  <p className="text-xs text-gray-500">
+                    Today + Lead Time for Final Payment ({formData["Lead Time For Collection Of Final Payment"] || 0}d) + Lead Time to Factory ({formData["Lead Time to Reach Factory"] || 0}d)
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

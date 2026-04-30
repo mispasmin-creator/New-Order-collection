@@ -88,13 +88,30 @@ export default function ReturnOfMaterialPage({ user }) {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
+
+      const userFirms = user?.role !== "ADMIN"
+        ? (user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
+        : null
+      const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
+
+      let allowedDoNumbers = null
+      if (shouldFilter) {
+        const { data: orRows } = await supabase
+          .from('ORDER RECEIPT')
+          .select('id, "DO-Delivery Order No."')
+          .in('Firm Name', userFirms)
+        allowedDoNumbers = (orRows || []).map(r => r['DO-Delivery Order No.']).filter(Boolean)
+      }
+
       // All reasons — management approved AND credit note issued
-      const { data, error } = await supabase
+      let returnQuery = supabase
         .from("Material Return")
         .select("*")
         .not("Actual5", "is", null)
         .not("Debit Note Issued At", "is", null)
         .order("id", { ascending: false })
+      if (shouldFilter) returnQuery = returnQuery.in('"D.O Number"', allowedDoNumbers)
+      const { data, error } = await returnQuery
       if (error) throw error
 
       const pending = []

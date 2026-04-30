@@ -108,11 +108,28 @@ export default function DebitNotePage({ user }) {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+
+      const userFirms = user?.role !== "ADMIN"
+        ? (user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
+        : null
+      const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
+
+      let allowedDoNumbers = null
+      if (shouldFilter) {
+        const { data: orRows } = await supabase
+          .from('ORDER RECEIPT')
+          .select('id, "DO-Delivery Order No."')
+          .in('Firm Name', userFirms)
+        allowedDoNumbers = (orRows || []).map(r => r['DO-Delivery Order No.']).filter(Boolean)
+      }
+
+      let returnQuery = supabase
         .from("Material Return")
         .select("*")
         .not("Actual5", "is", null)   // must be management-approved first
         .order("id", { ascending: false })
+      if (shouldFilter) returnQuery = returnQuery.in('"D.O Number"', allowedDoNumbers)
+      const { data, error } = await returnQuery
       if (error) throw error
 
       const pending = []

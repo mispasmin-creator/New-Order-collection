@@ -482,7 +482,7 @@ export default function ManageUsersPage() {
                             htmlFor={`page-${page}`}
                             className={`text-xs cursor-pointer ${formData.pages.includes("all") ? "text-gray-400" : "text-gray-700"}`}
                           >
-                            {page}
+                            {page === "Wetman Entry" ? "Weighment Entry" : page === "Debit Note" ? "Credit Note" : page}
                           </Label>
                         </div>
                       ))}

@@ -59,7 +59,7 @@ const formatDate = (value) => {
   }
 }
 
-export default function LogisticPage() {
+export default function LogisticPage({ user }) {
   const [orders, setOrders] = useState([])
   const [historyOrders, setHistoryOrders] = useState([])
   const [transporters, setTransporters] = useState([])
@@ -86,18 +86,31 @@ export default function LogisticPage() {
     try {
       setLoading(true)
 
+      const userFirms = user?.role !== "ADMIN"
+        ? (user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
+        : null
+      const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
+
+      let orderQuery = supabase.from("ORDER RECEIPT").select('id, "PARTY PO NO (As Per Po Exact)", "Party Names"')
+      if (shouldFilter) orderQuery = orderQuery.in('Firm Name', userFirms)
+      const { data: orderData, error: orderError } = await orderQuery
+
+      if (orderError) throw orderError
+
+      const allowedPoIds = (orderData || []).map(r => r.id)
+
+      let dispatchQuery = supabase.from("DISPATCH").select("*").order("id", { ascending: false })
+      if (shouldFilter) dispatchQuery = dispatchQuery.in('po_id', allowedPoIds)
+
       const [
         { data: dispatchData, error: dispatchError },
-        { data: orderData, error: orderError },
         { data: approvedSplitsData, error: approvedSplitsError },
       ] = await Promise.all([
-        supabase.from("DISPATCH").select("*").order("id", { ascending: false }),
-        supabase.from("ORDER RECEIPT").select('id, "PARTY PO NO (As Per Po Exact)", "Party Names"'),
+        dispatchQuery,
         supabase.from("po_logistics_splits").select("id, payment_term_status, accounts_remarks").eq("status", "Accounts Approved"),
       ])
 
       if (dispatchError) throw dispatchError
-      if (orderError) throw orderError
       if (approvedSplitsError) throw approvedSplitsError
 
       const orderMap = new Map()

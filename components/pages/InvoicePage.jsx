@@ -37,18 +37,27 @@ export default function MakeInvoicePage({ user }) {
     try {
       setLoading(true)
 
-      const [
-        { data: dispatchData, error: dispatchError },
-        { data: orData, error: orError },
-      ] = await Promise.all([
-        supabase.from("DISPATCH").select("*").not("Planned4", "is", null),
-        supabase
-          .from("ORDER RECEIPT")
-          .select('id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Gst Number", "Address", "Rate Of Material", "Upload SO"'),
-      ])
+      const userFirms = user?.role !== "ADMIN"
+        ? (user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
+        : null
+      const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
+
+      let orQuery = supabase
+        .from("ORDER RECEIPT")
+        .select('id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Gst Number", "Address", "Rate Of Material", "Upload SO"')
+      if (shouldFilter) orQuery = orQuery.in('Firm Name', userFirms)
+      const { data: orData, error: orError } = await orQuery
+
+      if (orError) console.error("ORDER RECEIPT fetch error:", orError)
+
+      const allowedPoIds = (orData || []).map(r => r.id)
+
+      let dispatchQuery = supabase.from("DISPATCH").select("*").not("Planned4", "is", null)
+      if (shouldFilter) dispatchQuery = dispatchQuery.in('po_id', allowedPoIds)
+
+      const { data: dispatchData, error: dispatchError } = await dispatchQuery
 
       if (dispatchError) throw dispatchError
-      if (orError) console.error("ORDER RECEIPT fetch error:", orError)
 
       const orMap = new Map()
       ;(orData || []).forEach((row) => orMap.set(row.id, row))

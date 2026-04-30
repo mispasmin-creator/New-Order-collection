@@ -45,16 +45,25 @@ export default function WeighmentEntryPage({ user }) {
     try {
       setLoading(true)
 
-      const [
-        { data, error },
-        { data: orData, error: orError },
-      ] = await Promise.all([
-        supabase.from('DISPATCH').select('*').not('Planned3', 'is', null),
-        supabase.from('ORDER RECEIPT').select('id, "PARTY PO NO (As Per Po Exact)", "Party Names"'),
-      ])
+      const userFirms = user?.role !== "ADMIN"
+        ? (user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
+        : null
+      const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
+
+      let orQuery = supabase.from('ORDER RECEIPT').select('id, "PARTY PO NO (As Per Po Exact)", "Party Names"')
+      if (shouldFilter) orQuery = orQuery.in('Firm Name', userFirms)
+      const { data: orData, error: orError } = await orQuery
+
+      if (orError) console.error("ORDER RECEIPT fetch error:", orError)
+
+      const allowedPoIds = (orData || []).map(r => r.id)
+
+      let dispatchQuery = supabase.from('DISPATCH').select('*').not('Planned3', 'is', null)
+      if (shouldFilter) dispatchQuery = dispatchQuery.in('po_id', allowedPoIds)
+
+      const { data, error } = await dispatchQuery
 
       if (error) throw error
-      if (orError) console.error("ORDER RECEIPT fetch error:", orError)
 
       const orMap = new Map()
       ;(orData || []).forEach((row) => orMap.set(row.id, row))
