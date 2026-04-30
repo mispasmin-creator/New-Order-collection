@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { X, Plus, Package, Trash2 } from "lucide-react"
+import { X, Plus, Package, Trash2, Check, ChevronsUpDown } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { supabase } from "@/lib/supabaseClient"
 
 // Google Apps Script URL for Master Data and File Upload ONLY
@@ -26,6 +28,53 @@ const randomNumber = (min, max, precision = 0) => {
   const factor = 10 ** precision
   const value = Math.random() * (max - min) + min
   return (Math.round(value * factor) / factor).toFixed(precision)
+}
+
+function SearchableSelect({ value, onValueChange, options, placeholder, emptyText, loading }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between h-11 border-gray-300 font-normal bg-white"
+        >
+          <span className="truncate">
+             {value ? value : (loading ? "Loading..." : placeholder)}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search..." />
+          <CommandList>
+            <CommandEmpty>{emptyText || "No options found."}</CommandEmpty>
+            <CommandGroup>
+              {options.map((option, index) => (
+                <CommandItem
+                  key={index}
+                  value={option}
+                  onSelect={(currentValue) => {
+                    const actualOption = options.find(o => o.toLowerCase() === currentValue.toLowerCase()) || currentValue;
+                    onValueChange(actualOption === value ? "" : actualOption)
+                    setOpen(false)
+                  }}
+                >
+                  <Check
+                    className={`mr-2 h-4 w-4 ${value === option ? "opacity-100" : "opacity-0"}`}
+                  />
+                  {option}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
@@ -236,15 +285,15 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
 
         setDropdownData(prev => ({
           ...prev,
-          firmNames: Array.from(firmNamesSet).filter(Boolean),
-          partyNames: Array.from(partyNamesSet).filter(Boolean),
-          gstNumbers: Array.from(gstNumbersSet).filter(Boolean),
-          addresses: Array.from(addressesSet).filter(Boolean),
-          typeOfPis: Array.from(typeOfPisSet).filter(Boolean),
+          firmNames: Array.from(firmNamesSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+          partyNames: Array.from(partyNamesSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+          gstNumbers: Array.from(gstNumbersSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+          addresses: Array.from(addressesSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+          typeOfPis: Array.from(typeOfPisSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
           customerCategories: Array.from(customerCategoriesSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
-          marketingMangagerNames: Array.from(marketingManagersSet).filter(Boolean),
-          productNames: Array.from(productNamesSet).filter(Boolean),
-          uoms: Array.from(uomsSet).filter(Boolean).filter(uom => !['yz', 'kl'].includes(uom.toLowerCase())).concat(['SQN']),
+          marketingMangagerNames: Array.from(marketingManagersSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+          productNames: Array.from(productNamesSet).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+          uoms: Array.from(uomsSet).filter(Boolean).filter(uom => !['yz', 'kl'].includes(uom.toLowerCase())).sort((a, b) => a.localeCompare(b)).concat(['SQN']),
           typeOfTransportings: ["FOR", "Ex Factory", "Ex Factory But paid by Us", "Owned Truck"],
         }));
       }
@@ -799,27 +848,18 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pl-11">
               {/* Firm Name */}
-              <div className="space-y-2">
+              <div className="space-y-2 flex flex-col">
                 <Label className="text-sm font-medium text-gray-700">
                   Firm Name <span className="text-red-500">*</span>
                 </Label>
-                <Select
+                <SearchableSelect
                   value={formData["Firm Name"]}
                   onValueChange={(value) => handleInputChange("Firm Name", value)}
-                >
-                  <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="Select Firm" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dropdownData.firmNames.length > 0 ? (
-                      dropdownData.firmNames.map((firm, index) => (
-                        <SelectItem key={index} value={firm}>{firm}</SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="No data" disabled>No firms found</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                  options={dropdownData.firmNames}
+                  placeholder="Select Firm"
+                  emptyText="No firms found"
+                  loading={loading}
+                />
               </div>
 
               {/* PARTY PO NO */}
@@ -852,29 +892,18 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
 
 
               {/* Party Name Dropdown */}
-              <div className="space-y-2">
+              <div className="space-y-2 flex flex-col">
                 <Label className="text-sm font-medium text-gray-700">
                   Party Name <span className="text-red-500">*</span>
                 </Label>
-                <Select
+                <SearchableSelect
                   value={formData["Party Name"]}
                   onValueChange={(value) => handleInputChange("Party Name", value)}
-                >
-                  <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="Select Party Name" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dropdownData.partyNames.length > 0 ? (
-                      dropdownData.partyNames.map((party, index) => (
-                        <SelectItem key={index} value={party}>{party}</SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="No data" disabled>
-                        {loading ? "Loading..." : "No party names found"}
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                  options={dropdownData.partyNames}
+                  placeholder="Select Party Name"
+                  emptyText="No party names found"
+                  loading={loading}
+                />
               </div>
 
               {/* GST Number */}
@@ -1051,57 +1080,33 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
               </div>
 
               {/* Customer Category */}
-              <div className="space-y-2">
+              <div className="space-y-2 flex flex-col">
                 <Label className="text-sm font-medium text-gray-700">
                   Customer Category
                 </Label>
-                <Select
+                <SearchableSelect
                   value={formData["Customer Category"]}
                   onValueChange={(value) => handleInputChange("Customer Category", value)}
-                >
-                  <SelectTrigger className="h-11 border-gray-300">
-                    <SelectValue placeholder="Select Customer Category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dropdownData.customerCategories.length > 0 ? (
-                      dropdownData.customerCategories.map((cat, index) => (
-                        <SelectItem key={index} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="loading" disabled>
-                        Loading...
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                  options={dropdownData.customerCategories}
+                  placeholder="Select Customer Category"
+                  emptyText="No categories found"
+                  loading={loading}
+                />
               </div>
 
               {/* Marketing Sales Person */}
-              <div className="space-y-2">
+              <div className="space-y-2 flex flex-col">
                 <Label className="text-sm font-medium text-gray-700">
                   Marketing Sales Person
                 </Label>
-                <Select
+                <SearchableSelect
                   value={formData["Marketing Mangager Name"]}
                   onValueChange={(value) => handleInputChange("Marketing Mangager Name", value)}
-                >
-                  <SelectTrigger className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="Select manager" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {dropdownData.marketingMangagerNames.length > 0 ? (
-                      dropdownData.marketingMangagerNames.map((manager, index) => (
-                        <SelectItem key={index} value={manager}>{manager}</SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="No data" disabled>
-                        {loading ? "Loading..." : "No managers found"}
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                  options={dropdownData.marketingMangagerNames}
+                  placeholder="Select manager"
+                  emptyText="No managers found"
+                  loading={loading}
+                />
               </div>
             </div>
           </div>
@@ -1439,27 +1444,16 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                   <CardContent className="p-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                       {/* Product Name */}
-                      <div className="space-y-2">
+                      <div className="space-y-2 flex flex-col">
                         <Label className="text-sm font-medium text-gray-700">Product Name <span className="text-red-500">*</span></Label>
-                        <Select
+                        <SearchableSelect
                           value={currentProduct["Product Name"]}
                           onValueChange={(value) => handleProductChange("Product Name", value)}
-                        >
-                          <SelectTrigger className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500">
-                            <SelectValue placeholder="Select Product" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {dropdownData.productNames.length > 0 ? (
-                              dropdownData.productNames.map((product, index) => (
-                                <SelectItem key={index} value={product}>{product}</SelectItem>
-                              ))
-                            ) : (
-                              <SelectItem value="No data" disabled>
-                                {loading ? "Loading..." : "No products found"}
-                              </SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
+                          options={dropdownData.productNames}
+                          placeholder="Select Product"
+                          emptyText="No products found"
+                          loading={loading}
+                        />
                       </div>
 
                       {/* Quantity */}
