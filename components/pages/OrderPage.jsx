@@ -110,7 +110,7 @@ export default function OrderPage({ user }) {
           contactPerson: row["Contact Person Name"],
           contactWhatsapp: row["Contact Person WhatsApp No."],
           alumina: parseFloat(row["Alumina%"]) || 0,
-          iron: parseFloat(row["Iron%"]) || 0,
+          iron: row["Iron%"] || "",
           typeOfPI: row["Type Of PI"],
           leadTimeFinalPayment: row["Lead Time For Collection Of Final Payment"],
           typeOfApplication: row["Type Of Application"],
@@ -633,7 +633,7 @@ export default function OrderPage({ user }) {
                 {(() => {
                   const poItems = orders.filter(o => o.partyPONumber === selectedOrder.partyPONumber)
                   const showAlumina = poItems.some(o => o.alumina != null && o.alumina !== 0)
-                  const showIron = poItems.some(o => o.iron != null && o.iron !== 0)
+                  const showIron = poItems.some(o => o.iron != null && o.iron !== "")
                   const showAdvance = poItems.some(o => o.advance != null && o.advance !== 0)
                   const showBasic = poItems.some(o => o.basic != null && o.basic !== 0)
                   return (
@@ -661,7 +661,7 @@ export default function OrderPage({ user }) {
                               <td className="py-2 px-3 text-right whitespace-nowrap">{item.rate ? `₹${Number(item.rate).toLocaleString("en-IN")}` : "—"}</td>
                               <td className="py-2 px-3 text-right font-semibold whitespace-nowrap">{item.totalValue ? `₹${Number(item.totalValue).toLocaleString("en-IN")}` : "—"}</td>
                               {showAlumina && <td className="py-2 px-3 text-right whitespace-nowrap">{item.alumina != null && item.alumina !== 0 ? `${item.alumina}%` : "—"}</td>}
-                              {showIron && <td className="py-2 px-3 text-right whitespace-nowrap">{item.iron != null && item.iron !== 0 ? `${item.iron}%` : "—"}</td>}
+                              {showIron && <td className="py-2 px-3 text-right whitespace-nowrap">{item.iron != null && item.iron !== "" ? `${item.iron}%` : "—"}</td>}
                               {showAdvance && <td className="py-2 px-3 text-right whitespace-nowrap">{item.advance != null && item.advance !== 0 ? `${item.advance}%` : "—"}</td>}
                               {showBasic && <td className="py-2 px-3 text-right whitespace-nowrap">{item.basic != null && item.basic !== 0 ? `${item.basic}%` : "—"}</td>}
                             </tr>

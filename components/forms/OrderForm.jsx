@@ -419,7 +419,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "Contact Person Name": formData["Contact Person Name"],
       "Contact Person WhatsApp No.": formData["Contact Person WhatsApp No."],
       "Alumina%": 0,
-      "Iron%": 0,
+      "Iron%": "",
       "Type Of PI": formData["Type Of PI"],
       "Lead Time For Collection Of Final Payment": parseInt(formData["Lead Time For Collection Of Final Payment"]) || null,
       "Type Of Application": formData["Type Of Application"],
@@ -544,7 +544,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
           "Rate Of Material": parseFloat(product["Rate Of Material"]) || 0,
           "Type Of Measurement": product["Type Of Measurement"],
           "Alumina%": parseFloat(product["Alumina%"]) || 0,
-          "Iron%": parseFloat(product["Iron%"]) || 0,
+          "Iron%": product["Iron%"] || "",
           "Advance": parseFloat(product["Advance"]) || 0,
           "Basic": parseFloat(product["Basic"]) || 0,
           "Total PO Basic Value": parseFloat(product["Total PO Basic Value"]) || 0,
@@ -1536,11 +1536,11 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                       <div className="space-y-2">
                         <Label className="text-sm font-medium text-gray-700">Iron%</Label>
                         <Input
-                          type="number"
+                          type="text"
                           value={currentProduct["Iron%"]}
                           onChange={(e) => handleProductChange("Iron%", e.target.value)}
                           className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
-                          placeholder="Iron percentage"
+                          placeholder="e.g. 1.2 or 1.2-1.5"
                         />
                       </div>
 
