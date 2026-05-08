@@ -1,0 +1,795 @@
+"use client"
+
+import { useState, useEffect, useCallback, useMemo, Fragment } from "react"
+import { supabase } from "@/lib/supabaseClient"
+import { getISTTimestamp } from "@/lib/dateUtils"
+import { useToast } from "@/hooks/use-toast"
+import { useNotification } from "@/components/providers/NotificationProvider"
+import { groupRowsByPo } from "@/lib/workflowGrouping"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Search, Loader2, CheckCircle2, Clock, IndianRupee, FileText, ChevronDown, ChevronRight, RefreshCw, FilePlus, Upload, X, Paperclip, Download, Building, User } from "lucide-react"
+import { exportToExcel } from "@/lib/exportUtils"
+
+/** Parse PI type string into payment slabs */
+export const parsePIType = (piType = "") => {
+  const t = piType.toLowerCase().trim()
+  if (t.includes("100") && t.includes("advance"))
+    return [{ label: "Advance (100%)", pct: 100, key: "advance_100" }]
+  const advMatch = t.match(/(\d+)%?\s*advance/)
+  const balMatch = t.match(/(\d+)%?\s*(balance|on delivery|on dispatch|final)/)
+  if (advMatch) {
+    const advPct = parseInt(advMatch[1])
+    const slabs = [{ label: `Advance (${advPct}%)`, pct: advPct, key: "advance" }]
+    if (balMatch) slabs.push({ label: `Balance (${parseInt(balMatch[1])}%)`, pct: parseInt(balMatch[1]), key: "balance" })
+    else if (advPct < 100) slabs.push({ label: `Balance (${100 - advPct}%)`, pct: 100 - advPct, key: "balance" })
+    return slabs
+  }
+  if (t.includes("lc")) return [{ label: "LC Payment", pct: 100, key: "lc" }]
+  if (t.includes("credit") || t.includes("open")) return [{ label: "On Credit", pct: 100, key: "credit" }]
+  return [{ label: "Full Payment", pct: 100, key: "full" }]
+}
+
+export const formatCurrency = (n) =>
+  `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+
+const formatDate = (d) => {
+  if (!d) return ""
+  try {
+    const date = new Date(d)
+    if (isNaN(date.getTime())) return d
+    return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`
+  } catch { return d }
+}
+
+const formatQty = (q) => {
+  const n = Number(q) || 0
+  return n % 1 === 0 ? n.toString() : n.toFixed(2).replace(/\.?0+$/, "")
+}
+
+const sanitizeAdj = (raw, total) => {
+  const r = Number(raw) || 0
+  return (r > 0 && r <= total * 10) ? r : total
+}
+
+// Generate PI number: PI-YYYYMMDD-XXXX
+const generatePINumber = () => {
+  const now = new Date()
+  const d = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`
+  const rand = String(Math.floor(1000 + Math.random() * 9000))
+  return `PI-${d}-${rand}`
+}
+
+export default function MakePIPage({ user }) {
+  const { toast } = useToast()
+  const { updateCount } = useNotification()
+
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filterFirm, setFilterFirm] = useState("all")
+  const [filterParty, setFilterParty] = useState("all")
+  const [expandedPOs, setExpandedPOs] = useState(new Set())
+
+  // dialog
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [selectedGroup, setSelectedGroup] = useState(null)
+  const [piDueDates, setPiDueDates] = useState({})  // { [slabKey]: date }
+  const [piNotes, setPiNotes] = useState({}) // { [slabKey]: note }
+  const [submitting, setSubmitting] = useState(false)
+
+  // existing PIs for this session (to show "Already Created" badge)
+  const [createdPIs, setCreatedPIs] = useState(new Set()) // set of po_numbers that have PIs
+  const [piRaisedAmounts, setPiRaisedAmounts] = useState({}) // { po_number: total_raised_amount }
+  const [piRaisedQuantities, setPiRaisedQuantities] = useState({}) // { po_number: total_raised_qty }
+  const [dispatchedQuantities, setDispatchedQuantities] = useState({}) // { do_id: qty }
+  const [piToMakeQtys, setPiToMakeQtys] = useState({}) // { do_id: qty in tons }
+  const [manualDueDate, setManualDueDate] = useState("")
+  const [manualNotes, setManualNotes] = useState("")
+  const [piAmountMode, setPiAmountMode] = useState("basic") // "basic" | "tax"
+  const [piFiles, setPiFiles] = useState({}) // { [rowId]: File }
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const [ordersRes, pisRes] = await Promise.all([
+        supabase.from("ORDER RECEIPT").select("*").not("Actual 2", "is", null).order("id", { ascending: false }),
+        supabase.from("po_pi_records").select("po_number, status, expected_amount, pi_quantity")
+      ])
+      if (ordersRes.error) throw ordersRes.error
+      setOrders(ordersRes.data || [])
+
+      if (!pisRes.error && pisRes.data) {
+        setCreatedPIs(new Set(pisRes.data.map(r => r.po_number)))
+        const raised = {}
+        const raisedQty = {}
+        pisRes.data.forEach(r => {
+          raised[r.po_number] = (raised[r.po_number] || 0) + (Number(r.expected_amount) || 0)
+          raisedQty[r.po_number] = (raisedQty[r.po_number] || 0) + (Number(r.pi_quantity) || 0)
+        })
+        setPiRaisedAmounts(raised)
+        setPiRaisedQuantities(raisedQty)
+      }
+    } catch (err) {
+      toast({ title: "Error loading data", description: err.message, variant: "destructive" })
+    } finally {
+      setLoading(false)
+    }
+  }, [toast])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  const ordersTransformed = useMemo(() => orders.map(r => {
+    const totalValue = Number(r["Total PO Basic Value"]) || 0
+    const adjustedAmount = sanitizeAdj(r["Adjusted Amount"], totalValue)
+    return {
+      id: r.id,
+      partyPONumber: r["PARTY PO NO (As Per Po Exact)"] || "N/A",
+      partyName: r["Party Names"] || "",
+      firmName: r["Firm Name"] || "",
+      productName: r["Product Name"] || "",
+      quantity: Number(r["Quantity"]) || 0,
+      rate: Number(r["Rate Of Material"]) || 0,
+      totalValue, adjustedAmount,
+      typeOfPI: r["Type Of PI"] || "—",
+      advance: Number(r["Advance"]) || 0,
+      basic: Number(r["Basic"]) || 0,
+      actual2: r["Actual 2"],
+      rawData: r,
+    }
+  }), [orders])
+
+  const roleFiltered = useMemo(() => {
+    if (!user || user.role === "ADMIN") return ordersTransformed
+    const firms = user.firm ? user.firm.split(",").map(f => f.trim().toLowerCase()) : []
+    if (firms.includes("all")) return ordersTransformed
+    return ordersTransformed.filter(o => firms.includes((o.firmName || "").toLowerCase()))
+  }, [ordersTransformed, user])
+
+  const filtered = useMemo(() => {
+    let list = roleFiltered
+
+    if (filterFirm !== "all") {
+      list = list.filter(o => o.firmName === filterFirm)
+    }
+    if (filterParty !== "all") {
+      list = list.filter(o => o.partyName === filterParty)
+    }
+
+    if (!searchTerm.trim()) return list
+    const t = searchTerm.toLowerCase()
+    return list.filter(o =>
+      [o.partyPONumber, o.partyName, o.productName, o.typeOfPI, o.firmName]
+        .some(v => v?.toLowerCase().includes(t))
+    )
+  }, [roleFiltered, searchTerm, filterFirm, filterParty])
+
+  const firmOptions = useMemo(() => {
+    const firms = [...new Set(roleFiltered.map(o => o.firmName).filter(Boolean))]
+    return ["all", ...firms]
+  }, [roleFiltered])
+
+  const partyOptions = useMemo(() => {
+    const parties = [...new Set(roleFiltered.map(o => o.partyName).filter(Boolean))]
+    return ["all", ...parties]
+  }, [roleFiltered])
+
+  const groupedOrders = useMemo(() => groupRowsByPo(filtered), [filtered])
+
+  // POs that still need a PI created — any PO where raised qty < total order qty
+  const pendingGroups = useMemo(() => groupedOrders.filter(g => {
+    const totalOrderQty = g.rows.reduce((s, r) => s + (r.quantity || 0), 0)
+    const raisedQty = piRaisedQuantities[g.poNumber] || 0
+    return raisedQty < totalOrderQty
+  }), [groupedOrders, piRaisedQuantities])
+
+  // POs fully PI'd — raised qty >= total order qty
+  const doneGroups = useMemo(() => groupedOrders.filter(g => {
+    const totalOrderQty = g.rows.reduce((s, r) => s + (r.quantity || 0), 0)
+    const raisedQty = piRaisedQuantities[g.poNumber] || 0
+    return raisedQty >= totalOrderQty && totalOrderQty > 0
+  }), [groupedOrders, piRaisedQuantities])
+
+  useEffect(() => { updateCount("Make PI", pendingGroups.length) }, [pendingGroups.length, updateCount])
+
+  const toggleExpand = (key) => setExpandedPOs(prev => {
+    const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n
+  })
+
+  const handleExport = () => {
+    exportToExcel(filtered, "MakePI_Data")
+  }
+
+  const openDialog = async (group) => {
+    setSelectedGroup(group)
+    const slabs = parsePIType(group.rows[0]?.typeOfPI)
+    const dates = {}; const notes = {}
+    slabs.forEach(s => { dates[s.key] = ""; notes[s.key] = "" })
+    setPiDueDates(dates); setPiNotes(notes)
+
+    const initialPiToMakeQtys = {}
+    group.rows.forEach(r => { initialPiToMakeQtys[r.id] = "" })
+    setPiToMakeQtys(initialPiToMakeQtys)
+    setManualDueDate("")
+    setManualNotes("")
+    setPiFiles({})
+
+    setDialogOpen(true)
+
+    try {
+      const rowIds = group.rows.map(r => r.id)
+      const { data: splits } = await supabase.from("po_logistics_splits")
+        .select("po_id, allocated_qty, status")
+        .in("po_id", rowIds)
+        .in("status", ["Dispatched", "Logistic Completed", "Accounts Approved"])
+      
+      const qtyMap = {}
+      if (splits) {
+        splits.forEach(s => {
+          qtyMap[s.po_id] = (qtyMap[s.po_id] || 0) + (Number(s.allocated_qty) || 0)
+        })
+      }
+      setDispatchedQuantities(qtyMap)
+    } catch (e) {
+      console.error("Error fetching dispatched quantities", e)
+    }
+  }
+
+  const totalPOValue = useMemo(() => {
+    if (!selectedGroup) return 0
+    return selectedGroup.rows.reduce((s, r) => s + (r.adjustedAmount || r.totalValue || 0), 0)
+  }, [selectedGroup])
+
+  const piSlabs = useMemo(() => {
+    if (!selectedGroup) return []
+    return parsePIType(selectedGroup.rows[0]?.typeOfPI)
+  }, [selectedGroup])
+
+  const handleCreatePI = async () => {
+    // Each row: qty entered × rate = basic amount; proportional adjustedAmount = tax-inclusive
+    const totalPiQty = selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeQtys[r.id]) || 0), 0)
+    const totalPiBasic = selectedGroup.rows.reduce((sum, r) => {
+      const qty = Number(piToMakeQtys[r.id]) || 0
+      return sum + qty * (r.rate || 0)
+    }, 0)
+    const totalPiTax = selectedGroup.rows.reduce((sum, r) => {
+      const qty = Number(piToMakeQtys[r.id]) || 0
+      const basic = qty * (r.rate || 0)
+      const proportion = r.quantity > 0 ? qty / r.quantity : 0
+      const taxAdj = proportion * (r.adjustedAmount || 0)
+      return sum + basic + taxAdj   // basic + proportional GST adjustment
+    }, 0)
+    const totalPiAmount = piAmountMode === "tax" ? totalPiTax : totalPiBasic
+
+    if (totalPiQty <= 0) {
+      toast({ title: "No Quantity", description: "Please enter quantity (tons) to make PI for at least one DO.", variant: "destructive" })
+      return
+    }
+    if (!manualDueDate) {
+      toast({ title: "Missing due date", description: "Set due date for the PI", variant: "destructive" })
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const ts = getISTTimestamp()
+      const poNumber = selectedGroup.poNumber
+
+      // Upload PI files
+      const uploadResults = {}
+      for (const rowId of Object.keys(piFiles)) {
+        if (!piFiles[rowId]) continue
+        const file = piFiles[rowId]
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${poNumber}_PI_${rowId}_${Date.now()}.${fileExt}`
+        const { error: upErr } = await supabase.storage.from("images").upload(fileName, file)
+        if (upErr) throw upErr
+        const { data: { publicUrl } } = supabase.storage.from("images").getPublicUrl(fileName)
+        uploadResults[rowId] = publicUrl
+      }
+
+      const partyName = selectedGroup.partyName
+      const firmName = selectedGroup.rows[0]?.firmName || ""
+      const typeOfPI = selectedGroup.rows[0]?.typeOfPI || ""
+      const poIds = selectedGroup.rows.map(r => r.id)
+      const productNames = [...new Set(selectedGroup.rows.map(r => r.productName).filter(Boolean))]
+
+      const record = {
+        po_number: poNumber,
+        po_ids: poIds,
+        pi_number: generatePINumber(),
+        party_name: partyName,
+        firm_name: firmName,
+        pi_type: typeOfPI,
+        product_names: productNames,
+        slab_label: "Manual PI",
+        slab_pct: totalPOValue > 0 ? Math.round((totalPiAmount / totalPOValue) * 100) : 0,
+        total_po_value: totalPOValue,
+        expected_amount: Math.round(totalPiAmount),
+        pi_quantity: totalPiQty,
+        due_date: manualDueDate,
+        notes: manualNotes,
+        status: "Pending",
+        created_at: ts,
+        pi_copy: JSON.stringify(uploadResults), // map of rowId -> URL
+      }
+
+      const { error } = await supabase.from("po_pi_records").insert([record])
+      if (error) throw error
+
+      toast({
+        title: "PI Created",
+        description: `PI created for ${totalPiQty} tons — PO ${poNumber}`,
+        className: "bg-green-50 border-green-200 text-green-800",
+      })
+      setDialogOpen(false)
+      fetchData()
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const renderGroup = (group, isPending) => {
+    const isExpanded = expandedPOs.has(group.key)
+    const totalAdj = group.rows.reduce((s, r) => s + (r.adjustedAmount || 0), 0)
+    const piType = group.rows[0]?.typeOfPI || "—"
+    const slabs = parsePIType(piType)
+    const raisedForGroup = piRaisedQuantities[group.poNumber] || 0
+    const totalOrderQty = group.rows.reduce((s, r) => s + (r.quantity || 0), 0)
+    const pendingQtyBalance = Math.max(0, totalOrderQty - raisedForGroup)
+    const isPartial = raisedForGroup > 0 && raisedForGroup < totalOrderQty
+
+    return (
+      <Fragment key={group.key}>
+        <TableRow className="bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors" onClick={() => toggleExpand(group.key)}>
+          <TableCell onClick={e => e.stopPropagation()}>
+            {isPending ? (
+              <div className="flex flex-col gap-1">
+                <Button size="sm" onClick={() => openDialog(group)} className="bg-violet-600 hover:bg-violet-700 h-7 text-xs gap-1">
+                  <FilePlus className="w-3 h-3" /> Create PI
+                </Button>
+                {isPartial && (
+                  <span className="text-[10px] text-orange-600 font-medium">
+                    Pending: {pendingQtyBalance} tons
+                  </span>
+                )}
+              </div>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                <CheckCircle2 className="w-3 h-3" /> Fully PI'd
+              </span>
+            )}
+          </TableCell>
+          <TableCell>{isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}</TableCell>
+          <TableCell className="font-semibold text-slate-900">{group.poNumber}</TableCell>
+          <TableCell className="text-sm text-slate-700">{group.partyName}</TableCell>
+          <TableCell><Badge variant="outline" className="bg-white text-xs">{group.rows[0]?.firmName || "—"}</Badge></TableCell>
+          <TableCell>
+            <Badge className="text-xs font-medium bg-blue-100 text-blue-800 border-blue-200">{piType}</Badge>
+          </TableCell>
+          <TableCell className="text-right font-bold text-green-700 text-sm tabular-nums">{formatCurrency(totalAdj)}</TableCell>
+        </TableRow>
+
+        {isExpanded && (
+          <TableRow>
+            <TableCell colSpan={7} className="p-0 bg-slate-50/50 border-b border-slate-200">
+              <div className="px-6 py-4 space-y-4">
+                {/* Products */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Products in this PO</p>
+                  <div className="space-y-2">
+                    {group.rows.map(row => (
+                      <div key={row.id} className="bg-white border border-gray-200 rounded-lg p-3 flex flex-wrap gap-4 text-sm">
+                        <div className="min-w-[180px]"><p className="text-xs text-gray-400">Product</p><p className="font-medium">{row.productName}</p></div>
+                        <div><p className="text-xs text-gray-400">Qty</p><p className="font-medium">{row.quantity}</p></div>
+                        <div><p className="text-xs text-gray-400">Rate</p><p className="font-medium tabular-nums">{formatCurrency(row.rate)}</p></div>
+                        <div><p className="text-xs text-gray-400">Basic Value</p><p className="font-medium text-indigo-700 tabular-nums">{formatCurrency(row.totalValue)}</p></div>
+                        <div><p className="text-xs text-gray-400">Adj. Amount</p><p className="font-bold text-green-700 tabular-nums">{formatCurrency(row.adjustedAmount)}</p></div>
+                        <div><p className="text-xs text-gray-400">Advance %</p><p className="font-medium">{row.advance}%</p></div>
+                        <div><p className="text-xs text-gray-400">Basic %</p><p className="font-medium">{row.basic}%</p></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* Payment slabs */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">PI Slabs ({piType})</p>
+                  <div className="flex flex-wrap gap-3">
+                    {slabs.map(slab => (
+                      <div key={slab.key} className="bg-violet-50 border border-violet-200 rounded-lg p-3 min-w-[160px]">
+                        <p className="text-xs text-violet-500 font-medium">{slab.label}</p>
+                        <p className="text-base font-bold text-violet-800 mt-1 tabular-nums">{formatCurrency((totalAdj * slab.pct) / 100)}</p>
+                        <p className="text-[10px] text-violet-400">{slab.pct}% of adj. amount</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </TableCell>
+          </TableRow>
+        )}
+      </Fragment>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <Loader2 className="w-12 h-12 animate-spin text-violet-600" />
+        <span className="text-gray-600">Loading...</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Make PI</h1>
+          <p className="text-gray-600">Create Proforma Invoices for verified POs based on payment terms</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 w-fit">
+          <Button variant="outline" size="sm" onClick={handleExport} className="flex items-center gap-2">
+            <Download className="w-4 h-4" /> Export
+          </Button>
+          <Button variant="outline" size="sm" onClick={fetchData} className="flex items-center gap-2">
+            <RefreshCw className="w-4 h-4" /> Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="bg-violet-50 border-violet-100 shadow-sm">
+          <CardContent className="p-5 flex justify-between items-center gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-violet-600">PI Pending Creation</p>
+              <div className="text-xl font-bold text-violet-900">{pendingGroups.length} POs</div>
+            </div>
+            <div className="h-10 w-10 bg-violet-500 rounded-full flex items-center justify-center text-white shrink-0"><Clock className="h-5 w-5" /></div>
+          </CardContent>
+        </Card>
+        <Card className="bg-green-50 border-green-100 shadow-sm">
+          <CardContent className="p-5 flex justify-between items-center gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-green-600">PI Created</p>
+              <div className="text-xl font-bold text-green-900">{doneGroups.length} POs</div>
+            </div>
+            <div className="h-10 w-10 bg-green-500 rounded-full flex items-center justify-center text-white shrink-0"><CheckCircle2 className="h-5 w-5" /></div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search + Filters */}
+      <div className="bg-white border rounded-md shadow-sm p-4 flex flex-col md:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Input placeholder="Search by PO, party, product..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10 h-10" />
+        </div>
+
+        <Select value={filterFirm} onValueChange={setFilterFirm}>
+          <SelectTrigger className="h-10 w-[180px]">
+            <Building className="w-4 h-4 mr-2" />
+            <SelectValue placeholder="Firm" />
+          </SelectTrigger>
+          <SelectContent>
+            {firmOptions.map(firm => (
+              <SelectItem key={firm} value={firm}>
+                {firm === "all" ? "All Firms" : firm}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={filterParty} onValueChange={setFilterParty}>
+          <SelectTrigger className="h-10 w-[180px]">
+            <User className="w-4 h-4 mr-2" />
+            <SelectValue placeholder="Party" />
+          </SelectTrigger>
+          <SelectContent>
+            {partyOptions.map(party => (
+              <SelectItem key={party} value={party}>
+                {party === "all" ? "All Parties" : party}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white border rounded-md shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader className="bg-gray-50">
+              <TableRow>
+                <TableHead className="min-w-[130px]">Action</TableHead>
+                <TableHead className="w-10" />
+                <TableHead className="min-w-[120px]">PO Number</TableHead>
+                <TableHead className="min-w-[130px]">Party</TableHead>
+                <TableHead className="min-w-[100px]">Firm</TableHead>
+                <TableHead className="min-w-[120px]">Type of PI</TableHead>
+                <TableHead className="text-right min-w-[110px]">Adj. Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groupedOrders.length === 0 ? (
+                <TableRow><TableCell colSpan={7} className="text-center py-12 text-gray-500">
+                  <div className="flex flex-col items-center gap-2"><FileText className="w-8 h-8 text-gray-300" /><span>No POs found</span></div>
+                </TableCell></TableRow>
+              ) : (
+                <>
+                  {pendingGroups.map(g => renderGroup(g, true))}
+                  {doneGroups.map(g => renderGroup(g, false))}
+                </>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+
+      {/* Create PI Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><FilePlus className="w-5 h-5 text-violet-600" />Create PI</DialogTitle>
+            <DialogDescription>PO: <strong>{selectedGroup?.poNumber}</strong> — {selectedGroup?.partyName}</DialogDescription>
+          </DialogHeader>
+
+          {selectedGroup && (
+            <div className="space-y-6 py-2">
+              <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 flex flex-wrap gap-6 items-start">
+                <div>
+                  <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Type of PI</p>
+                  <p className="font-semibold text-violet-900 mt-1">{selectedGroup.rows[0]?.typeOfPI || "—"}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Total PO Amount (Adj. w/ Tax)</p>
+                  <p className="font-semibold text-violet-900 mt-1 tabular-nums">{formatCurrency(totalPOValue)}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">Total PI Raised</p>
+                  <p className="font-semibold text-violet-900 mt-1 tabular-nums">{formatCurrency(piRaisedAmounts[selectedGroup.poNumber] || 0)}</p>
+                </div>
+                {selectedGroup.rows[0]?.rawData?.["Upload SO"] && (
+                  <div>
+                    <p className="text-xs font-medium text-violet-600 uppercase tracking-wider">PO Copy</p>
+                    <a
+                      href={selectedGroup.rows[0].rawData["Upload SO"]}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 mt-1 text-sm font-semibold text-violet-700 hover:text-violet-900 underline underline-offset-2"
+                    >
+                      <Paperclip className="w-3.5 h-3.5" />
+                      View PO
+                    </a>
+                  </div>
+                )}
+                {/* Basic / With Tax toggle */}
+                <div className="ml-auto">
+                  <p className="text-xs font-medium text-violet-600 uppercase tracking-wider mb-1">PI Amount Mode</p>
+                  <div className="flex bg-white border border-violet-300 rounded-md overflow-hidden text-xs font-semibold">
+                    <button
+                      onClick={() => setPiAmountMode("basic")}
+                      className={`px-3 py-1.5 transition-colors ${
+                        piAmountMode === "basic"
+                          ? "bg-violet-600 text-white"
+                          : "text-violet-700 hover:bg-violet-50"
+                      }`}
+                    >
+                      Basic
+                    </button>
+                    <button
+                      onClick={() => setPiAmountMode("tax")}
+                      className={`px-3 py-1.5 transition-colors ${
+                        piAmountMode === "tax"
+                          ? "bg-violet-600 text-white"
+                          : "text-violet-700 hover:bg-violet-50"
+                      }`}
+                    >
+                      With Tax
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border rounded-md overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-slate-50">
+                    <TableRow>
+                      <TableHead className="min-w-[120px]">DO Number</TableHead>
+                      <TableHead className="min-w-[150px]">Product</TableHead>
+                      <TableHead className="text-right">Rate (₹/t)</TableHead>
+                      <TableHead className="text-right">Order Qty</TableHead>
+                      <TableHead className="text-right">Dispatched Qty</TableHead>
+                      <TableHead className="text-right">Pending Dispatched Qty</TableHead>
+                      <TableHead className="text-right">Total PI Qty</TableHead>
+                      <TableHead className="text-right">Total PI Made</TableHead>
+                      <TableHead className="text-right">Total Pending PI</TableHead>
+                      <TableHead className="text-right min-w-[120px]">PI Making Qty</TableHead>
+                      <TableHead className="text-center min-w-[100px]">PI Copy</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedGroup.rows.map(row => {
+                      const dispatchedQty = dispatchedQuantities[row.id] || 0
+                      const pendingDispatchQty = Math.max(0, row.quantity - dispatchedQty)
+                      const totalOrderQtyForPO = selectedGroup.rows.reduce((s, r) => s + (r.quantity || 0), 0)
+                      // Proportional qty raised for this DO based on its share of total order qty
+                      const totalPIQtyRaised = piRaisedQuantities[selectedGroup.poNumber] || 0
+                      const proportionalQtyRaised = totalOrderQtyForPO > 0
+                        ? Math.round((row.quantity / totalOrderQtyForPO) * totalPIQtyRaised * 100) / 100
+                        : 0
+                      const pendingToPI = Math.max(0, Math.round((row.quantity - proportionalQtyRaised) * 100) / 100)
+                      const enteredQty = Number(piToMakeQtys[row.id]) || 0
+                      const calculatedAmount = enteredQty * (row.rate || 0)
+
+                      return (
+                        <TableRow key={row.id}>
+                          <TableCell className="font-medium text-xs">{row.rawData["DO-Delivery Order No."] || "N/A"}</TableCell>
+                          <TableCell className="text-sm font-medium">
+                            <div className="flex flex-col">
+                              <span>{row.productName}</span>
+                              {row.rate > 0 && (
+                                <span className="text-[10px] text-violet-500 font-semibold tabular-nums">
+                                  ₹{Number(row.rate).toLocaleString("en-IN")}/t
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-semibold text-emerald-700">
+                            {row.rate > 0 ? formatCurrency(row.rate) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right">{row.quantity} t</TableCell>
+                          <TableCell className="text-right font-medium text-blue-600">{formatQty(dispatchedQty)} t</TableCell>
+                          <TableCell className="text-right">{formatQty(pendingDispatchQty)} t</TableCell>
+                          <TableCell className="text-right font-semibold text-slate-800">{formatQty(row.quantity)} t</TableCell>
+                          <TableCell className="text-right tabular-nums text-slate-600">{formatQty(proportionalQtyRaised)} t</TableCell>
+                          <TableCell className="text-right tabular-nums text-orange-600 font-medium">
+                            {formatQty(Math.max(0, pendingToPI - enteredQty))} t
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col items-end gap-0.5">
+                              <Input 
+                                type="number" 
+                                placeholder="0" 
+                                min={0}
+                                max={row.quantity}
+                                className="h-8 text-right w-24"
+                                value={piToMakeQtys[row.id] || ""}
+                                onChange={e => {
+                                  const val = Math.min(Number(e.target.value), row.quantity)
+                                  setPiToMakeQtys(prev => ({ ...prev, [row.id]: val === 0 && e.target.value === "" ? "" : val }))
+                                }}
+                              />
+                              {enteredQty > 0 && (() => {
+                                const basicAmt = Math.round(enteredQty * (row.rate || 0))
+                                const proportion = row.quantity > 0 ? enteredQty / row.quantity : 0
+                                const gstAdj = Math.round(proportion * (row.adjustedAmount || 0))
+                                const withTaxAmt = basicAmt + gstAdj
+                                return (
+                                  <>
+                                    <span className={`text-[10px] font-semibold tabular-nums ${
+                                      piAmountMode === "basic" ? "text-violet-700" : "text-slate-400"
+                                    }`}>
+                                      Basic: {formatCurrency(basicAmt)}
+                                    </span>
+                                    <span className={`text-[10px] font-semibold tabular-nums ${
+                                      piAmountMode === "tax" ? "text-emerald-700" : "text-slate-400"
+                                    }`}>
+                                      With Tax: {formatCurrency(withTaxAmt)}
+                                      {piAmountMode === "tax" && gstAdj > 0 && (
+                                        <span className="text-slate-400 font-normal"> (GST: {formatCurrency(gstAdj)})</span>
+                                      )}
+                                    </span>
+                                  </>
+                                )
+                              })()}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex justify-center">
+                              {piFiles[row.id] ? (
+                                <div className="flex items-center gap-2 bg-violet-50 px-2 py-1 rounded border border-violet-200">
+                                  <Paperclip className="w-3 h-3 text-violet-600" />
+                                  <span className="text-[10px] font-medium text-violet-700 max-w-[60px] truncate">{piFiles[row.id].name}</span>
+                                  <button onClick={() => setPiFiles(p => ({ ...p, [row.id]: null }))} className="text-gray-400 hover:text-red-500">
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="relative">
+                                  <input
+                                    type="file"
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    onChange={e => {
+                                      const file = e.target.files?.[0]
+                                      if (file) setPiFiles(p => ({ ...p, [row.id]: file }))
+                                    }}
+                                  />
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-violet-600">
+                                    <Upload className="w-4 h-4" />
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="bg-slate-50 border rounded-lg p-4 space-y-4">
+                <p className="text-sm font-medium text-slate-800">PI Details</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-500">Due Date <span className="text-red-500">*</span></label>
+                    <Input type="date" value={manualDueDate} onChange={e => setManualDueDate(e.target.value)} className="h-9" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-slate-500">Notes (optional)</label>
+                    <Input placeholder="Any remark..." value={manualNotes} onChange={e => setManualNotes(e.target.value)} className="h-9" />
+                  </div>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t mt-4">
+                  <div>
+                    <span className="text-sm font-semibold text-slate-700">Total Qty to PI</span>
+                    <div className="text-lg font-bold text-violet-700">
+                      {formatQty(selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeQtys[r.id]) || 0), 0))} tons
+                    </div>
+                  </div>
+                  <div className="text-right space-y-1">
+                    {(() => {
+                      const totalBasic = Math.round(selectedGroup.rows.reduce((sum, r) => {
+                        const qty = Number(piToMakeQtys[r.id]) || 0
+                        return sum + qty * (r.rate || 0)
+                      }, 0))
+                      const totalTax = Math.round(selectedGroup.rows.reduce((sum, r) => {
+                        const qty = Number(piToMakeQtys[r.id]) || 0
+                        const basic = qty * (r.rate || 0)
+                        const prop = r.quantity > 0 ? qty / r.quantity : 0
+                        const gstAdj = prop * (r.adjustedAmount || 0)
+                        return sum + basic + gstAdj
+                      }, 0))
+                      return (
+                        <>
+                          <div className={`text-sm font-semibold tabular-nums ${
+                            piAmountMode === "basic" ? "text-violet-700 text-base" : "text-slate-400"
+                          }`}>
+                            Basic: {formatCurrency(totalBasic)}
+                            {piAmountMode === "basic" && <span className="ml-1 text-[10px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">Selected</span>}
+                          </div>
+                          <div className={`text-sm font-semibold tabular-nums ${
+                            piAmountMode === "tax" ? "text-emerald-700 text-base" : "text-slate-400"
+                          }`}>
+                            With Tax: {formatCurrency(totalTax)}
+                            {piAmountMode === "tax" && <span className="ml-1 text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">Selected</span>}
+                          </div>
+                        </>
+                      )
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>Cancel</Button>
+            <Button onClick={handleCreatePI} disabled={submitting} className="bg-violet-600 hover:bg-violet-700">
+              {submitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Creating...</> : <><FilePlus className="w-4 h-4 mr-2" />Create PI</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
