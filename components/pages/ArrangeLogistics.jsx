@@ -21,6 +21,9 @@ import { exportToExcel } from "@/lib/exportUtils"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 export default function ArrangeLogistics({ user }) {
+  const [activeTab, setActiveTab] = useState("pending")
+  const [pendingOrders, setPendingOrders] = useState([])
+  const [historyOrders, setHistoryOrders] = useState([])
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedGroup, setSelectedGroup] = useState(null)
@@ -104,11 +107,23 @@ export default function ArrangeLogistics({ user }) {
         .select("*")
         .not("Actual 2", "is", null)
         .not("check_delivery_actual", "is", null)
-        .or("logistics_status.eq.Pending Arrangement,logistics_status.is.null")
-        .neq("Type Of Transporting", "Ex Factory")
-        .order("id", { ascending: false })
       if (error) throw error
-      setOrders(data || [])
+      
+      const pending = []
+      const history = []
+
+      ;(data || []).forEach(row => {
+        const status = row.logistics_status
+        if (!status || status === "Pending Arrangement") {
+          pending.push(row)
+        } else {
+          history.push(row)
+        }
+      })
+
+      setPendingOrders(pending)
+      setHistoryOrders(history)
+      setOrders(activeTab === "pending" ? pending : history)
     } catch (error) {
       console.error("Error fetching orders:", error)
       toast({ title: "Error fetching data", description: error.message, variant: "destructive" })
@@ -116,6 +131,13 @@ export default function ArrangeLogistics({ user }) {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    setOrders(activeTab === "pending" ? pendingOrders : historyOrders)
+    setFilterFirm("all")
+    setFilterParty("all")
+    setSearchTerm("")
+  }, [activeTab, pendingOrders, historyOrders])
 
   const handleExport = () => {
     exportToExcel(displayOrders, "ArrangeLogistics")
@@ -269,22 +291,21 @@ export default function ArrangeLogistics({ user }) {
           <p className="text-gray-600">Assign a transporter for each product in a PO</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={fetchOrders} disabled={loading}>
-            <Loader2 className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+          <Button onClick={fetchOrders} variant="outline" className="h-10 px-3" disabled={loading}>
+            <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
-          <Button onClick={handleExport} variant="outline" className="flex items-center gap-2">
+          <Button onClick={handleExport} variant="outline" className="h-10 px-3 flex items-center gap-2">
             <Download className="w-4 h-4" />
-            Export
           </Button>
         </div>
       </div>
+
       <div className="bg-white border rounded-md shadow-sm p-4 space-y-4">
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
-              placeholder="Search orders..."
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 h-10"
@@ -319,149 +340,154 @@ export default function ArrangeLogistics({ user }) {
             </SelectContent>
           </Select>
         </div>
+
+        <div className="flex bg-gray-100 p-1 rounded-md w-fit">
+          <button
+            onClick={() => setActiveTab("pending")}
+            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all ${activeTab === "pending" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            Pending ({pendingOrders.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all ${activeTab === "history" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            History ({historyOrders.length})
+          </button>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Pending PO Arrangement</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-gray-50">
+      <Card className="shadow-sm border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead className="w-8" />
+                <TableHead>PO Number</TableHead>
+                <TableHead>Party Name</TableHead>
+                <TableHead>Firm</TableHead>
+                <TableHead className="text-right px-6">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groupedOrders.length === 0 ? (
                 <TableRow>
-                  <TableHead>Action</TableHead>
-                  <TableHead>PO Number</TableHead>
-                  <TableHead>Party</TableHead>
-                  <TableHead>Firm</TableHead>
-                  <TableHead>Products</TableHead>
+                  <TableCell colSpan={5} className="h-32 text-center text-gray-500">
+                    {searchTerm || filterFirm !== "all" || filterParty !== "all" 
+                      ? "No matching orders found" 
+                      : activeTab === "pending" ? "No orders pending arrangement" : "No arrangement history found"}
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {groupedOrders.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-gray-500">
-                      No POs currently pending logistics arrangement.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  groupedOrders.map((group) => {
-                    const isExpanded = expandedPO === group.key
-                    return (
-                      <Fragment key={group.key}>
-                        {/* PO header row */}
-                        <TableRow
-                          className="bg-slate-50 cursor-pointer hover:bg-slate-100"
-                          onClick={() => setExpandedPO(isExpanded ? null : group.key)}
-                        >
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              size="sm"
-                              onClick={() => openArrangeDialog(group)}
-                              className="bg-blue-600 hover:bg-blue-700"
+              ) : (
+                groupedOrders.map((group) => {
+                  const isExpanded = expandedPO === group.key
+                  return (
+                    <Fragment key={group.key}>
+                      <TableRow className="hover:bg-gray-50/50 cursor-pointer" onClick={() => setExpandedPO(isExpanded ? null : group.key)}>
+                        <TableCell className="text-gray-400">
+                          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </TableCell>
+                        <TableCell className="font-semibold text-gray-900">{group.poNumber}</TableCell>
+                        <TableCell className="text-gray-700">{group.partyName}</TableCell>
+                        <TableCell className="text-gray-600">{group.rows[0]?.["Firm Name"]}</TableCell>
+                        <TableCell className="text-right px-6">
+                          {activeTab === "pending" ? (
+                            <Button 
+                              size="sm" 
+                              className="bg-blue-600 hover:bg-blue-700 shadow-sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openArrangeDialog(group)
+                              }}
                             >
                               <Truck className="w-4 h-4 mr-2" />
                               Arrange
                             </Button>
-                          </TableCell>
-                          <TableCell className="font-semibold text-slate-900">
-                            <div className="flex items-center gap-2">
-                              {isExpanded
-                                ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-                                : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-                              }
-                              {group.poNumber}
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200 shadow-sm">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Arranged
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+
+                      {isExpanded && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="p-0 border-b border-slate-200">
+                            <div className="bg-slate-50/80 px-6 py-4 space-y-3">
+                              {group.rows.map((order) => (
+                                <div key={order.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <span className="text-sm font-semibold text-gray-800">{order["Product Name"]}</span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                      <Clock className="w-3 h-3 mr-1" />
+                                      Remaining Qty: {(parseFloat(order.Quantity) - (parseFloat(order.logistics_approved_qty) || 0)).toFixed(2)}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
+                                    <div>
+                                      <span className="text-gray-500">DO Number</span>
+                                      <p className="font-mono font-medium text-gray-800">{order["DO-Delivery Order No."] || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Party PO Date</span>
+                                      <p className="font-medium text-gray-800">{order["Party PO Date"] || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Rate</span>
+                                      <p className="font-medium text-gray-800">{order["Rate Of Material"] ? `₹${order["Rate Of Material"]}` : "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Total PO Value</span>
+                                      <p className="font-medium text-green-700">{order["Total PO Basic Value"] ? `₹${Number(order["Total PO Basic Value"]).toLocaleString()}` : "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Transport Type</span>
+                                      <p className="font-medium text-gray-800">{order["Type Of Transporting"] || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Payment</span>
+                                      <p className="font-medium text-gray-800">{order["Payment to Be Taken"] || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">GST Number</span>
+                                      <p className="font-medium text-gray-800">{order["Gst Number"] || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Contact Person</span>
+                                      <p className="font-medium text-gray-800">{order["Contact Person Name"] || "—"}</p>
+                                    </div>
+                                    {order["Address"] && (
+                                      <div className="col-span-2">
+                                        <span className="text-gray-500">Address</span>
+                                        <p className="font-medium text-gray-800">{order["Address"]}</p>
+                                      </div>
+                                    )}
+                                    {order["Specific Concern"] && (
+                                      <div className="col-span-2">
+                                        <span className="text-gray-500">Specific Concern</span>
+                                        <p className="font-medium text-orange-700">{order["Specific Concern"]}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </TableCell>
-                          <TableCell className="text-slate-700">{group.partyName}</TableCell>
-                          <TableCell className="text-slate-600">{group.rows[0]?.["Firm Name"]}</TableCell>
-                          <TableCell>
-                            <span className="text-xs text-slate-500">
-                              {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
-                            </span>
-                          </TableCell>
                         </TableRow>
-
-                        {/* Expanded detail panel */}
-                        {isExpanded && (
-                          <TableRow>
-                            <TableCell colSpan={5} className="p-0 border-b border-slate-200">
-                              <div className="bg-slate-50/80 px-6 py-4 space-y-3">
-                                {group.rows.map((order) => (
-                                  <div key={order.id} className="bg-white border border-gray-200 rounded-lg p-4">
-                                    <div className="flex items-center justify-between mb-3">
-                                      <span className="text-sm font-semibold text-gray-800">{order["Product Name"]}</span>
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                                        <Clock className="w-3 h-3 mr-1" />
-                                        Remaining Qty: {(parseFloat(order.Quantity) - (parseFloat(order.logistics_approved_qty) || 0)).toFixed(2)}
-                                      </span>
-                                    </div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
-                                      <div>
-                                        <span className="text-gray-500">DO Number</span>
-                                        <p className="font-mono font-medium text-gray-800">{order["DO-Delivery Order No."] || "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Party PO Date</span>
-                                        <p className="font-medium text-gray-800">{order["Party PO Date"] || "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Rate</span>
-                                        <p className="font-medium text-gray-800">{order["Rate Of Material"] ? `₹${order["Rate Of Material"]}` : "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Total PO Value</span>
-                                        <p className="font-medium text-green-700">{order["Total PO Basic Value"] ? `₹${Number(order["Total PO Basic Value"]).toLocaleString()}` : "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Transport Type</span>
-                                        <p className="font-medium text-gray-800">{order["Type Of Transporting"] || "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Payment</span>
-                                        <p className="font-medium text-gray-800">{order["Payment to Be Taken"] || "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">GST Number</span>
-                                        <p className="font-medium text-gray-800">{order["Gst Number"] || "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Contact Person</span>
-                                        <p className="font-medium text-gray-800">{order["Contact Person Name"] || "—"}</p>
-                                      </div>
-                                      {order["Address"] && (
-                                        <div className="col-span-2">
-                                          <span className="text-gray-500">Address</span>
-                                          <p className="font-medium text-gray-800">{order["Address"]}</p>
-                                        </div>
-                                      )}
-                                      {order["Specific Concern"] && (
-                                        <div className="col-span-2">
-                                          <span className="text-gray-500">Specific Concern</span>
-                                          <p className="font-medium text-orange-700">{order["Specific Concern"]}</p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
+                      )}
+                    </Fragment>
+                  )
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={(open) => !open && closeDialog()}>
         <DialogContent className="sm:max-w-5xl max-h-[94vh] overflow-y-auto p-0">
-
-          {/* Header */}
           <DialogHeader className="p-6 pb-4 border-b">
             <DialogTitle className="text-xl font-semibold flex items-center gap-2">
               <Truck className="h-5 w-5 text-blue-600" />
@@ -482,7 +508,6 @@ export default function ArrangeLogistics({ user }) {
             </div>
           </DialogHeader>
 
-          {/* Global Transporter Options */}
           <div className="p-6 space-y-4">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -496,7 +521,6 @@ export default function ArrangeLogistics({ user }) {
 
             <div className="grid gap-4 lg:grid-cols-3">
               {transporterOptions.map((opt, oIdx) => {
-                // Calculate est total based on PO quantity sum
                 const totalRemainingQty = selectedGroup?.rows.reduce((sum, r) => {
                   const rem = (parseFloat(r.Quantity) || 0) - (parseFloat(r.logistics_approved_qty) || 0)
                   return sum + Math.max(0, rem)
@@ -516,7 +540,6 @@ export default function ArrangeLogistics({ user }) {
                         : "border-gray-200 bg-gray-50/30 hover:border-gray-300"
                     }`}
                   >
-                    {/* Card header */}
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
                         Transporter {oIdx + 1}
@@ -533,7 +556,6 @@ export default function ArrangeLogistics({ user }) {
                       )}
                     </div>
 
-                    {/* Name / Agency */}
                     <div className="space-y-1">
                       <Label className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Name / Agency</Label>
                       <Select
@@ -555,7 +577,6 @@ export default function ArrangeLogistics({ user }) {
                       </Select>
                     </div>
 
-                    {/* Rate Type + Entered Rate */}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="block mb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider">Rate Type</Label>
@@ -590,7 +611,6 @@ export default function ArrangeLogistics({ user }) {
                       </div>
                     </div>
 
-                    {/* Cost Estimates */}
                     {opt.cost && opt.rateType && (
                       <div className="pt-3 border-t border-gray-100 space-y-2">
                         <div className="flex justify-between items-center p-2 rounded-lg bg-blue-50/50 border border-blue-100/50">
@@ -609,7 +629,6 @@ export default function ArrangeLogistics({ user }) {
             </div>
           </div>
 
-          {/* Sticky footer */}
           <div className="sticky bottom-0 bg-white border-t p-4 px-6 flex justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <Button variant="outline" onClick={closeDialog} disabled={isSubmitting} className="px-6">
               Cancel
@@ -626,7 +645,6 @@ export default function ArrangeLogistics({ user }) {
               )}
             </Button>
           </div>
-
         </DialogContent>
       </Dialog>
     </div>

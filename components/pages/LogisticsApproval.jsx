@@ -38,10 +38,12 @@ export default function LogisticsApproval() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [fetchingPlan, setFetchingPlan] = useState(false)
   const [expandedPO, setExpandedPO] = useState(null)
+  const [activeTab, setActiveTab] = useState("pending")
+  const [pendingOrders, setPendingOrders] = useState([])
+  const [historyOrders, setHistoryOrders] = useState([])
   const [searchTerm, setSearchTerm] = useState("")
   const [filterFirm, setFilterFirm] = useState("all")
   const [filterParty, setFilterParty] = useState("all")
-
   const { toast } = useToast()
 
   // Get unique options from active orders
@@ -93,10 +95,24 @@ export default function LogisticsApproval() {
       const { data, error } = await supabase
         .from("ORDER RECEIPT")
         .select("*")
-        .eq("logistics_status", "Pending Approval")
+        .in("logistics_status", ["Pending Approval", "Approved"])
         .order("id", { ascending: false })
       if (error) throw error
-      setOrders(data || [])
+      
+      const pending = []
+      const history = []
+      
+      ;(data || []).forEach(row => {
+        if (row.logistics_status === "Approved") {
+          history.push(row)
+        } else {
+          pending.push(row)
+        }
+      })
+
+      setPendingOrders(pending)
+      setHistoryOrders(history)
+      setOrders(activeTab === "pending" ? pending : history)
     } catch (error) {
       console.error("Error fetching orders:", error)
       toast({ title: "Error fetching data", description: error.message, variant: "destructive" })
@@ -104,6 +120,13 @@ export default function LogisticsApproval() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    setOrders(activeTab === "pending" ? pendingOrders : historyOrders)
+    setFilterFirm("all")
+    setFilterParty("all")
+    setSearchTerm("")
+  }, [activeTab, pendingOrders, historyOrders])
 
   const handleExport = () => {
     exportToExcel(displayOrders, "LogisticsApproval")
@@ -119,20 +142,14 @@ export default function LogisticsApproval() {
     setAllocations({})
 
     try {
-      console.log("Opening review dialog for PO:", group.poNumber);
-      // Fetch all orders for this PO to find the plan regardless of which product it was linked to
       const { data: allOrders, error: ordersErr } = await supabase
         .from("ORDER RECEIPT")
         .select("id")
         .eq('"PARTY PO NO (As Per Po Exact)"', group.poNumber)
       
-      if (ordersErr) {
-        console.error("Error fetching related orders:", ordersErr);
-        throw ordersErr;
-      }
+      if (ordersErr) throw ordersErr;
       
       const allPoOrderIds = allOrders?.map(o => o.id) || []
-      console.log("Found order IDs for this PO:", allPoOrderIds);
 
       const { data: plans, error: planError } = await supabase
         .from("po_logistics_plans")
@@ -142,20 +159,15 @@ export default function LogisticsApproval() {
         .order("id", { ascending: false })
         .limit(1)
 
-      if (planError) {
-        console.error("Error fetching logistics plan:", planError);
-        throw planError;
-      }
+      if (planError) throw planError;
 
       const currentPlan = plans?.[0]
       if (!currentPlan) {
-        console.warn("No pending plan found for PO IDs:", allPoOrderIds);
         toast({ title: "No plan found", description: "No pending logistics plan found for this PO.", variant: "destructive" })
         setIsDialogOpen(false)
         return
       }
 
-      console.log("Found plan:", currentPlan.id);
       setPlan(currentPlan)
 
       const { data: splits, error: splitError } = await supabase
@@ -166,7 +178,6 @@ export default function LogisticsApproval() {
 
       if (splitError) throw splitError
 
-      // Calculate PO total quantity (remaining to be approved)
       const total = group.rows.reduce((sum, order) => {
         const qty = parseFloat(order.Quantity) || 0
         const approved = parseFloat(order.logistics_approved_qty) || 0
@@ -174,7 +185,6 @@ export default function LogisticsApproval() {
       }, 0)
       setPoTotalQty(total)
 
-      // Transporter options
       const options = (splits || []).map((s) => ({
         id: s.id,
         po_id: s.po_id,
@@ -190,7 +200,6 @@ export default function LogisticsApproval() {
 
       setTransporterOptions(options)
 
-      // Init allocation: always start at 0 for new entries as requested
       const initAlloc = {}
       options.forEach((s) => {
         initAlloc[s.id] = "0"
@@ -230,19 +239,13 @@ export default function LogisticsApproval() {
       return
     }
 
-    const finalAllocations = allocations
-
     try {
       setIsSubmitting(true)
-
-      // Incremental Update: We don't delete Checked/Dispatched splits anymore.
-      // We update existing splits by adding the new allocation.
       
       for (const opt of transporterOptions) {
-        const newVal = parseFloat(finalAllocations[opt.id] || "0") || 0
+        const newVal = parseFloat(allocations[opt.id] || "0") || 0
         if (newVal > 0) {
           if (opt.status === "Checked" || opt.status === "Pending Approval" || opt.status === "Pending") {
-            // Update existing split: Add the new quantity and ensure status is Checked
             const { error: updErr } = await supabase
               .from("po_logistics_splits")
               .update({ 
@@ -255,8 +258,6 @@ export default function LogisticsApproval() {
         }
       }
 
-      // Finalize the plan status only if fully allocated
-      const totalOrderQty = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.Quantity) || 0), 0)
       const { data: allPlanSplits } = await supabase
         .from("po_logistics_splits")
         .select("allocated_qty")
@@ -274,9 +275,7 @@ export default function LogisticsApproval() {
         if (planError) throw planError
       }
 
-      // Update each product's status individually
       for (const product of selectedGroup.rows) {
-        // Fetch ALL splits for this product across all plans to get cumulative approved qty
         const { data: allSplits, error: allSplitsErr } = await supabase
           .from("po_logistics_splits")
           .select("allocated_qty")
@@ -315,7 +314,6 @@ export default function LogisticsApproval() {
         await supabase.from("po_logistics_splits").update({ status: "Rejected" }).eq("plan_id", plan.id).neq("status", "Dispatched")
       }
       
-      // Calculate remaining approved qty (only what was already dispatched)
       for (const row of selectedGroup.rows) {
         const { data: dispatchedSplits } = await supabase
           .from("po_logistics_splits")
@@ -352,7 +350,6 @@ export default function LogisticsApproval() {
         await supabase.from("po_logistics_splits").update({ status: "Rejected" }).eq("plan_id", plan.id).neq("status", "Dispatched")
       }
 
-      // Calculate remaining approved qty (only what was already dispatched)
       for (const row of selectedGroup.rows) {
         const { data: dispatchedSplits } = await supabase
           .from("po_logistics_splits")
@@ -408,12 +405,13 @@ export default function LogisticsApproval() {
           </Button>
         </div>
       </div>
+
       <div className="bg-white border rounded-md shadow-sm p-4 space-y-4">
         <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1 relative">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
             <Input
-              placeholder="Search orders..."
+              placeholder="Search..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 h-10"
@@ -448,148 +446,154 @@ export default function LogisticsApproval() {
             </SelectContent>
           </Select>
         </div>
+
+        <div className="flex bg-gray-100 p-1 rounded-md w-fit">
+          <button
+            onClick={() => setActiveTab("pending")}
+            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all ${activeTab === "pending" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            Pending ({pendingOrders.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all ${activeTab === "history" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            History ({historyOrders.length})
+          </button>
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Pending Logistics Approval</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader className="bg-gray-50">
+      <Card className="shadow-sm border-gray-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50">
+                <TableHead className="w-8" />
+                <TableHead>PO Number</TableHead>
+                <TableHead>Party Name</TableHead>
+                <TableHead>Firm</TableHead>
+                <TableHead className="text-right px-6">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groupedOrders.length === 0 ? (
                 <TableRow>
-                  <TableHead>Action</TableHead>
-                  <TableHead>PO Number</TableHead>
-                  <TableHead>Party</TableHead>
-                  <TableHead>Firm</TableHead>
-                  <TableHead>Products</TableHead>
+                  <TableCell colSpan={5} className="h-32 text-center text-gray-500">
+                    {searchTerm || filterFirm !== "all" || filterParty !== "all" 
+                      ? "No matching orders found" 
+                      : activeTab === "pending" ? "No orders pending approval" : "No approval history found"}
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {groupedOrders.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-gray-500">
-                      No logistics currently pending approval.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  groupedOrders.map((group) => {
-                    const isExpanded = expandedPO === group.key
-                    return (
-                      <Fragment key={group.key}>
-                        <TableRow
-                          className="bg-slate-50 cursor-pointer hover:bg-slate-100"
-                          onClick={() => setExpandedPO(isExpanded ? null : group.key)}
-                        >
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              size="sm"
-                              onClick={() => openReviewDialog(group)}
-                              className="bg-purple-600 hover:bg-purple-700"
+              ) : (
+                groupedOrders.map((group) => {
+                  const isExpanded = expandedPO === group.key
+                  return (
+                    <Fragment key={group.key}>
+                      <TableRow className="hover:bg-gray-50/50 cursor-pointer" onClick={() => setExpandedPO(isExpanded ? null : group.key)}>
+                        <TableCell className="text-gray-400">
+                          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </TableCell>
+                        <TableCell className="font-semibold text-gray-900">{group.poNumber}</TableCell>
+                        <TableCell className="text-gray-700">{group.partyName}</TableCell>
+                        <TableCell className="text-gray-600">{group.rows[0]?.["Firm Name"]}</TableCell>
+                        <TableCell className="text-right px-6">
+                          {activeTab === "pending" ? (
+                            <Button 
+                              size="sm" 
+                              className="bg-blue-600 hover:bg-blue-700 shadow-sm"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openReviewDialog(group)
+                              }}
                             >
                               <LayoutList className="w-4 h-4 mr-2" />
-                              Review Plan
+                              Review
                             </Button>
-                          </TableCell>
-                          <TableCell className="font-semibold text-slate-900">
-                            <div className="flex items-center gap-2">
-                              {isExpanded
-                                ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-                                : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-                              }
-                              {group.poNumber}
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200 shadow-sm">
+                              <CheckSquare className="w-3 h-3 mr-1" />
+                              Approved
+                            </span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+
+                      {isExpanded && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="p-0 border-b border-slate-200">
+                            <div className="bg-slate-50/80 px-6 py-4 space-y-3">
+                              {group.rows.map((order) => (
+                                <div key={order.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <span className="text-sm font-semibold text-gray-800">{order["Product Name"]}</span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                      <Clock className="w-3 h-3 mr-1" />
+                                      Remaining Qty: {(parseFloat(order.Quantity) - (parseFloat(order.logistics_approved_qty) || 0)).toFixed(2)}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
+                                    <div>
+                                      <span className="text-gray-500">DO Number</span>
+                                      <p className="font-mono font-medium text-gray-800">{order["DO-Delivery Order No."] || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Party PO Date</span>
+                                      <p className="font-medium text-gray-800">{order["Party PO Date"] || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Rate</span>
+                                      <p className="font-medium text-gray-800">{order["Rate Of Material"] ? `₹${order["Rate Of Material"]}` : "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Total PO Value</span>
+                                      <p className="font-medium text-green-700">{order["Total PO Basic Value"] ? `₹${Number(order["Total PO Basic Value"]).toLocaleString()}` : "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Transport Type</span>
+                                      <p className="font-medium text-gray-800">{order["Type Of Transporting"] || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Payment</span>
+                                      <p className="font-medium text-gray-800">{order["Payment to Be Taken"] || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">GST Number</span>
+                                      <p className="font-medium text-gray-800">{order["Gst Number"] || "—"}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Contact Person</span>
+                                      <p className="font-medium text-gray-800">{order["Contact Person Name"] || "—"}</p>
+                                    </div>
+                                    {order["Address"] && (
+                                      <div className="col-span-2">
+                                        <span className="text-gray-500">Address</span>
+                                        <p className="font-medium text-gray-800">{order["Address"]}</p>
+                                      </div>
+                                    )}
+                                    {order["Specific Concern"] && (
+                                      <div className="col-span-2">
+                                        <span className="text-gray-500">Specific Concern</span>
+                                        <p className="font-medium text-orange-700">{order["Specific Concern"]}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </TableCell>
-                          <TableCell className="text-slate-700">{group.partyName}</TableCell>
-                          <TableCell className="text-slate-600">{group.rows[0]?.["Firm Name"]}</TableCell>
-                          <TableCell>
-                            <span className="text-xs text-slate-500">
-                              {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
-                            </span>
-                          </TableCell>
                         </TableRow>
-
-                        {isExpanded && (
-                          <TableRow>
-                            <TableCell colSpan={5} className="p-0 border-b border-slate-200">
-                              <div className="bg-slate-50/80 px-6 py-4 space-y-3">
-                                {group.rows.map((order) => (
-                                  <div key={order.id} className="bg-white border border-gray-200 rounded-lg p-4">
-                                    <div className="flex items-center justify-between mb-3">
-                                      <span className="text-sm font-semibold text-gray-800">{order["Product Name"]}</span>
-                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                                        <Clock className="w-3 h-3 mr-1" />
-                                        Remaining Qty: {(parseFloat(order.Quantity) - (parseFloat(order.logistics_approved_qty) || 0)).toFixed(2)}
-                                      </span>
-                                    </div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
-                                      <div>
-                                        <span className="text-gray-500">DO Number</span>
-                                        <p className="font-mono font-medium text-gray-800">{order["DO-Delivery Order No."] || "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Party PO Date</span>
-                                        <p className="font-medium text-gray-800">{order["Party PO Date"] || "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Rate</span>
-                                        <p className="font-medium text-gray-800">{order["Rate Of Material"] ? `₹${order["Rate Of Material"]}` : "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Total PO Value</span>
-                                        <p className="font-medium text-green-700">{order["Total PO Basic Value"] ? `₹${Number(order["Total PO Basic Value"]).toLocaleString()}` : "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Transport Type</span>
-                                        <p className="font-medium text-gray-800">{order["Type Of Transporting"] || "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Payment</span>
-                                        <p className="font-medium text-gray-800">{order["Payment to Be Taken"] || "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">GST Number</span>
-                                        <p className="font-medium text-gray-800">{order["Gst Number"] || "—"}</p>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Contact Person</span>
-                                        <p className="font-medium text-gray-800">{order["Contact Person Name"] || "—"}</p>
-                                      </div>
-                                      {order["Address"] && (
-                                        <div className="col-span-2">
-                                          <span className="text-gray-500">Address</span>
-                                          <p className="font-medium text-gray-800">{order["Address"]}</p>
-                                        </div>
-                                      )}
-                                      {order["Specific Concern"] && (
-                                        <div className="col-span-2">
-                                          <span className="text-gray-500">Specific Concern</span>
-                                          <p className="font-medium text-orange-700">{order["Specific Concern"]}</p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
+                      )}
+                    </Fragment>
+                  )
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </Card>
 
-      {/* Review Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={(open) => !open && closeDialog()}>
         <DialogContent className="sm:max-w-4xl max-h-[94vh] overflow-y-auto p-0">
-
-          {/* Header */}
           <DialogHeader className="p-6 pb-4 border-b">
             <DialogTitle className="text-xl font-semibold flex items-center gap-2">
               <Truck className="h-5 w-5 text-purple-600" />
@@ -618,7 +622,6 @@ export default function LogisticsApproval() {
             </div>
           </DialogHeader>
 
-          {/* Body */}
           <div className="p-6 space-y-8">
             {fetchingPlan ? (
               <div className="flex justify-center p-8">
@@ -628,7 +631,6 @@ export default function LogisticsApproval() {
               <div className="text-center p-8 text-gray-500">No plan data found.</div>
             ) : (
               <div className="space-y-4">
-                {/* PO Quantity header & Mode Toggle */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
                   <div>
                     <p className="text-sm font-semibold text-gray-800">Remaining to Approve: <span className="text-purple-700 text-base">{poTotalQty}</span></p>
@@ -639,7 +641,6 @@ export default function LogisticsApproval() {
                       const totalNewAllocated = Object.values(allocations).reduce((sum, q) => sum + (parseFloat(q) || 0), 0)
                       const totalOrderQty = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.Quantity) || 0), 0)
                       const totalAlreadyApproved = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.logistics_approved_qty) || 0), 0)
-                      
                       const remaining = totalOrderQty - totalAlreadyApproved - totalNewAllocated
                       const isBalanced = Math.abs(remaining) < 0.01
 
@@ -654,11 +655,9 @@ export default function LogisticsApproval() {
                   </div>
                 </div>
 
-                {/* Product-wise allocation sections */}
                 <div className="space-y-8">
                   {selectedGroup.rows.map((product) => {
                     const productSplits = transporterOptions.filter(s => s.po_id === product.id)
-
                     const productQty = parseFloat(product.Quantity) || 0
                     const totalAllocatedForProduct = productSplits.reduce((sum, s) => sum + (parseFloat(allocations[s.id]) || 0), 0)
                     const remainingForProduct = productQty - totalAllocatedForProduct
@@ -682,84 +681,77 @@ export default function LogisticsApproval() {
                           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                             {productSplits.map((split) => {
                               const ratesForProduct = productSplits.map(s => parseFloat(s.rate)).filter(r => !isNaN(r) && r > 0)
-                            const minRateForProduct = ratesForProduct.length > 0 ? Math.min(...ratesForProduct) : null
-                            const isLowestCost = minRateForProduct !== null && parseFloat(split.rate) === minRateForProduct
-                            
-                            const allocVal = allocations[split.id] || "0"
-                            const isActive = parseFloat(allocVal) > 0
-                            const isFixed = split.vehicle_details === "Fixed"
-                            const estTotal = split.rate && parseFloat(allocVal) ? parseFloat(split.rate) * parseFloat(allocVal) : null
+                              const minRateForProduct = ratesForProduct.length > 0 ? Math.min(...ratesForProduct) : null
+                              const isLowestCost = minRateForProduct !== null && parseFloat(split.rate) === minRateForProduct
+                              const allocVal = allocations[split.id] || "0"
+                              const isActive = parseFloat(allocVal) > 0
+                              const estTotal = split.rate && parseFloat(allocVal) ? parseFloat(split.rate) * parseFloat(allocVal) : null
 
-                            return (
-                              <div
-                                key={split.id}
-                                className={`p-4 border rounded-xl space-y-3 transition-all ${
-                                  isLowestCost
-                                    ? "border-green-500 bg-green-50/40 shadow-sm ring-1 ring-green-500/20"
-                                    : isActive
-                                    ? "border-purple-500 bg-purple-50/50 shadow-sm ring-1 ring-purple-500/20"
-                                    : "border-gray-200 bg-white opacity-80 hover:opacity-100"
-                                }`}
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div>
-                                    <p className="text-sm font-semibold text-gray-900 leading-tight">{split.transporter_name || "—"}</p>
-                                    {split.availability && <p className="text-[10px] text-gray-500 mt-0.5">{split.availability}</p>}
-                                  </div>
-                                  {isLowestCost && (
-                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-600 text-white">Lowest Cost</span>
-                                  )}
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 bg-white/60 p-2 rounded-lg border border-gray-100">
-                                  <div>
-                                    <span className="text-gray-400 block text-[10px] uppercase">Rate Type</span>
-                                    <span className="font-medium text-gray-800">{split.vehicle_details || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-400 block text-[10px] uppercase">Rate</span>
-                                    <span className="font-medium text-gray-800">{split.rate ? `₹${split.rate}` : "—"}</span>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-1">
-                                  <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
-                                    <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">New Allocation</label>
-                                    {(parseFloat(split.allocated_qty) > 0 && (split.status === "Checked" || split.status === "Dispatched" || split.status === "Logistic Completed")) && (
-                                      <span className="text-[9px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 whitespace-nowrap">
-                                        Approved: {split.allocated_qty}
-                                      </span>
+                              return (
+                                <div
+                                  key={split.id}
+                                  className={`p-4 border rounded-xl space-y-3 transition-all ${
+                                    isLowestCost ? "border-green-500 bg-green-50/40 shadow-sm ring-1 ring-green-500/20" : isActive ? "border-purple-500 bg-purple-50/50 shadow-sm ring-1 ring-purple-500/20" : "border-gray-200 bg-white opacity-80 hover:opacity-100"
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                      <p className="text-sm font-semibold text-gray-900 leading-tight">{split.transporter_name || "—"}</p>
+                                      {split.availability && <p className="text-[10px] text-gray-500 mt-0.5">{split.availability}</p>}
+                                    </div>
+                                    {isLowestCost && (
+                                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-600 text-white">Lowest Cost</span>
                                     )}
                                   </div>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    max={remainingForProduct}
-                                    value={allocVal}
-                                    onChange={(e) => updateAllocation(split.id, e.target.value)}
-                                    className="h-8 text-sm bg-white font-medium border-gray-200"
-                                    placeholder="Enter new qty"
-                                    disabled={split.status === "Dispatched" || split.status === "Logistic Completed"}
-                                  />
-                                </div>
 
-                                {estTotal !== null && (
-                                  <div className={`flex justify-between items-center px-2 py-1.5 rounded ${isLowestCost ? "bg-green-100/70" : "bg-purple-100/50"}`}>
-                                    <span className={`text-[10px] font-semibold uppercase tracking-wide ${isLowestCost ? "text-green-700" : "text-purple-700"}`}>Est. Cost</span>
-                                    <span className={`text-xs font-bold ${isLowestCost ? "text-green-700" : "text-purple-700"}`}>₹{estTotal.toLocaleString("en-IN", {maximumFractionDigits:2})}</span>
+                                  <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 bg-white/60 p-2 rounded-lg border border-gray-100">
+                                    <div>
+                                      <span className="text-gray-400 block text-[10px] uppercase">Rate Type</span>
+                                      <span className="font-medium text-gray-800">{split.vehicle_details || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-400 block text-[10px] uppercase">Rate</span>
+                                      <span className="font-medium text-gray-800">{split.rate ? `₹${split.rate}` : "—"}</span>
+                                    </div>
                                   </div>
-                                )}
-                              </div>
-                            )
-                          })}
-                        </div>
+
+                                  <div className="space-y-1">
+                                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                                      <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">New Allocation</label>
+                                      {(parseFloat(split.allocated_qty) > 0 && (split.status === "Checked" || split.status === "Dispatched" || split.status === "Logistic Completed")) && (
+                                        <span className="text-[9px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 whitespace-nowrap">
+                                          Approved: {split.allocated_qty}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      max={remainingForProduct}
+                                      value={allocVal}
+                                      onChange={(e) => updateAllocation(split.id, e.target.value)}
+                                      className="h-8 text-sm bg-white font-medium border-gray-200"
+                                      placeholder="Enter new qty"
+                                      disabled={split.status === "Dispatched" || split.status === "Logistic Completed"}
+                                    />
+                                  </div>
+
+                                  {estTotal !== null && (
+                                    <div className={`flex justify-between items-center px-2 py-1.5 rounded ${isLowestCost ? "bg-green-100/70" : "bg-purple-100/50"}`}>
+                                      <span className={`text-[10px] font-semibold uppercase tracking-wide ${isLowestCost ? "text-green-700" : "text-purple-700"}`}>Est. Cost</span>
+                                      <span className={`text-xs font-bold ${isLowestCost ? "text-green-700" : "text-purple-700"}`}>₹{estTotal.toLocaleString("en-IN", {maximumFractionDigits:2})}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
                         )}
                       </div>
                     )
                   })}
                 </div>
 
-                {/* Grand total for the PO */}
                 <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-gray-100 text-sm">
                   <span className="text-gray-600">Total Allocated</span>
                   {(() => {
@@ -767,7 +759,6 @@ export default function LogisticsApproval() {
                     const totalOrderQty = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.Quantity) || 0), 0)
                     const totalAlreadyApproved = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.logistics_approved_qty) || 0), 0)
                     const totalCumulative = totalAlreadyApproved + totalNewAllocated
-                    
                     const isBalanced = Math.abs(totalCumulative - totalOrderQty) < 0.01
                     return (
                       <span className={`font-semibold ${isBalanced ? "text-green-700" : "text-red-600"}`}>
@@ -780,7 +771,6 @@ export default function LogisticsApproval() {
             )}
           </div>
 
-          {/* Sticky footer */}
           <div className="sticky bottom-0 bg-white border-t p-4 px-6 flex flex-wrap justify-end gap-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
             <Button variant="outline" onClick={closeDialog} disabled={isSubmitting}>
               Close
@@ -812,7 +802,6 @@ export default function LogisticsApproval() {
               )}
             </Button>
           </div>
-
         </DialogContent>
       </Dialog>
     </div>
