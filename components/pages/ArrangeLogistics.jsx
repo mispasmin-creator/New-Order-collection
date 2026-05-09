@@ -208,6 +208,7 @@ export default function ArrangeLogistics({ user }) {
       // 2. Duplicate splits per product (order) so LogisticsApproval can allocate
       const splitRows = []
       selectedGroup.rows.forEach((order, pIdx) => {
+        const remainingToApprove = (parseFloat(order.Quantity) || 0) - (parseFloat(order.logistics_approved_qty) || 0)
         validOptions.forEach((opt, oIdx) => {
           splitRows.push({
             plan_id: insertedPlan.id,
@@ -215,7 +216,7 @@ export default function ArrangeLogistics({ user }) {
             transporter_name: opt.transporter_name,
             vehicle_details: opt.rateType, // Using vehicle_details to store rateType for display
             rate: parseFloat(opt.cost) || 0,
-            allocated_qty: parseFloat(order.Quantity) || 1,
+            allocated_qty: oIdx === 0 ? Math.max(0, remainingToApprove) : 0,
             sort_order: pIdx * 10 + oIdx,
           })
         })
@@ -392,7 +393,7 @@ export default function ArrangeLogistics({ user }) {
                                       <span className="text-sm font-semibold text-gray-800">{order["Product Name"]}</span>
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                                         <Clock className="w-3 h-3 mr-1" />
-                                        Qty: {order.Quantity}
+                                        Remaining Qty: {(parseFloat(order.Quantity) - (parseFloat(order.logistics_approved_qty) || 0)).toFixed(2)}
                                       </span>
                                     </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
@@ -472,7 +473,9 @@ export default function ArrangeLogistics({ user }) {
                 {selectedGroup?.rows.map((row, idx) => (
                   <div key={idx} className="p-3 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-between">
                     <span className="font-medium text-gray-800 truncate mr-2" title={row["Product Name"]}>{row["Product Name"]}</span>
-                    <span className="text-xs font-bold text-gray-600 bg-gray-200/60 px-2 py-0.5 rounded">{row.Quantity} Tons</span>
+                    <span className="text-xs font-bold text-gray-600 bg-gray-200/60 px-2 py-0.5 rounded">
+                      {Math.max(0, (parseFloat(row.Quantity) || 0) - (parseFloat(row.logistics_approved_qty) || 0))} Tons
+                    </span>
                   </div>
                 ))}
               </div>
@@ -494,11 +497,14 @@ export default function ArrangeLogistics({ user }) {
             <div className="grid gap-4 lg:grid-cols-3">
               {transporterOptions.map((opt, oIdx) => {
                 // Calculate est total based on PO quantity sum
-                const totalPoQty = selectedGroup?.rows.reduce((sum, r) => sum + (parseFloat(r.Quantity) || 0), 0) || 1
+                const totalRemainingQty = selectedGroup?.rows.reduce((sum, r) => {
+                  const rem = (parseFloat(r.Quantity) || 0) - (parseFloat(r.logistics_approved_qty) || 0)
+                  return sum + Math.max(0, rem)
+                }, 0) || 1
                 const entered = parseFloat(opt.cost) || 0
                 const isFixed = opt.rateType === "Fixed"
-                const estTotalCost = isFixed ? entered : entered * totalPoQty
-                const estRatePerMt = isFixed ? (entered / totalPoQty) : entered
+                const estTotalCost = isFixed ? entered : entered * totalRemainingQty
+                const estRatePerMt = isFixed ? (entered / totalRemainingQty) : entered
                 const isExFactory = opt.transporter_name === "Ex Factory Transporter"
 
                 return (

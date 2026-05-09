@@ -168,17 +168,22 @@ export default function DispatchPlanningPage({ user }) {
             .select("id")
             .single()
           if (!planErr && plan) {
+            const finalQty = parseFloat(order.Quantity) || 0;
             await supabase.from("po_logistics_splits").insert([{
               plan_id: plan.id,
               po_id: order.id,
               transporter_name: "Ex Factory",
-              allocated_qty: parseFloat(order.Quantity) || 0,
+              allocated_qty: Math.max(0, finalQty - (parseFloat(order.logistics_approved_qty) || 0)),
               status: STATUS_CHECKED,
               sort_order: 0,
             }])
             await supabase
               .from("ORDER RECEIPT")
-              .update({ logistics_status: "Approved", approved_logistics_plan_id: plan.id })
+              .update({ 
+                logistics_status: "Approved", 
+                approved_logistics_plan_id: plan.id,
+                logistics_approved_qty: finalQty
+              })
               .eq("id", order.id)
             // Mutate local copy so dashboard stage computes correctly this cycle
             order.logistics_status = "Approved"

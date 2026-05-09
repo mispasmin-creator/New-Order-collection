@@ -34,8 +34,6 @@ export default function LogisticsApproval() {
   const [transporterOptions, setTransporterOptions] = useState([])
   const [poTotalQty, setPoTotalQty] = useState(0)
   const [allocations, setAllocations] = useState({})
-  const [isSplitMode, setIsSplitMode] = useState(false)
-  const [selectedTransporterId, setSelectedTransporterId] = useState(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [fetchingPlan, setFetchingPlan] = useState(false)
@@ -119,8 +117,6 @@ export default function LogisticsApproval() {
     setTransporterOptions([])
     setPoTotalQty(0)
     setAllocations({})
-    setIsSplitMode(false)
-    setSelectedTransporterId(null)
 
     try {
       console.log("Opening review dialog for PO:", group.poNumber);
@@ -170,38 +166,36 @@ export default function LogisticsApproval() {
 
       if (splitError) throw splitError
 
-      // Calculate PO total quantity
-      const total = group.rows.reduce((sum, order) => sum + (parseFloat(order.Quantity) || 0), 0)
+      // Calculate PO total quantity (remaining to be approved)
+      const total = group.rows.reduce((sum, order) => {
+        const qty = parseFloat(order.Quantity) || 0
+        const approved = parseFloat(order.logistics_approved_qty) || 0
+        return sum + Math.max(0, qty - approved)
+      }, 0)
       setPoTotalQty(total)
 
-      // Transporter options are now product-specific splits
-      const options = splits.map((s) => ({
+      // Transporter options
+      const options = (splits || []).map((s) => ({
         id: s.id,
         po_id: s.po_id,
         transporter_name: s.transporter_name || "",
         rate: s.rate?.toString() || "",
-        allocated_qty: s.allocated_qty?.toString() || "",
+        allocated_qty: s.allocated_qty?.toString() || "0",
         contact_number: s.contact_number || "",
         availability: s.availability || "",
         vehicle_details: s.vehicle_details || "",
         remarks: s.remarks || "",
+        status: s.status || "Pending",
       }))
 
       setTransporterOptions(options)
 
-      // Init allocation: put full qty on first split if nothing is allocated yet
+      // Init allocation: always start at 0 for new entries as requested
       const initAlloc = {}
-      const hasQty = options.some((s) => parseFloat(s.allocated_qty) > 0)
       options.forEach((s) => {
-        if (hasQty) {
-          initAlloc[s.id] = s.allocated_qty || "0"
-        } else {
-          initAlloc[s.id] = "0"
-        }
+        initAlloc[s.id] = "0"
       })
       setAllocations(initAlloc)
-      setSelectedTransporterId(options.length > 0 ? options[0].id : null)
-      setIsSplitMode(false)
     } catch (err) {
       console.error("Error loading plan:", err)
       toast({ title: "Failed to load plan", description: err.message, variant: "destructive" })
@@ -217,8 +211,6 @@ export default function LogisticsApproval() {
     setTransporterOptions([])
     setPoTotalQty(0)
     setAllocations({})
-    setIsSplitMode(false)
-    setSelectedTransporterId(null)
   }
 
   const updateAllocation = (splitId, value) => {
@@ -226,69 +218,54 @@ export default function LogisticsApproval() {
   }
 
   const handleApprove = async () => {
-    let finalAllocations = {}
+    const totalOrderQty = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.Quantity) || 0), 0)
+    const totalAllocated = Object.values(allocations).reduce((sum, q) => sum + (parseFloat(q) || 0), 0)
 
-    if (isSplitMode) {
-      const totalAllocated = Object.values(allocations).reduce((sum, q) => sum + (parseFloat(q) || 0), 0)
-      const activeCount = Object.values(allocations).filter((q) => parseFloat(q) > 0).length
-      if (activeCount === 0) {
-        toast({ title: "Validation Error", description: "Allocate at least some qty to a transporter.", variant: "destructive" })
-        return
-      }
-      if (totalAllocated > poTotalQty + 0.01) {
-        toast({ title: "Validation Error", description: `Allocations (${totalAllocated}) cannot exceed total PO quantity (${poTotalQty}).`, variant: "destructive" })
-        return
-      }
-      finalAllocations = allocations
-    } else {
-      if (!selectedTransporterId) {
-        toast({ title: "Validation Error", description: "Please select a transporter.", variant: "destructive" })
-        return
-      }
-      finalAllocations = { [selectedTransporterId]: poTotalQty.toString() }
+    if (totalAllocated <= 0) {
+      toast({ title: "Validation Error", description: "Allocate at least some qty to a transporter.", variant: "destructive" })
+      return
     }
+    if (totalAllocated > totalOrderQty + 0.01) {
+      toast({ title: "Validation Error", description: `Total allocations (${totalAllocated.toFixed(2)}) cannot exceed total PO quantity (${totalOrderQty.toFixed(2)}).`, variant: "destructive" })
+      return
+    }
+
+    const finalAllocations = allocations
 
     try {
       setIsSubmitting(true)
 
-      // Delete existing splits that are not yet dispatched or completed
-      const { error: deleteError } = await supabase
-        .from("po_logistics_splits")
-        .delete()
-        .eq("plan_id", plan.id)
-        .not("status", "in", '("Dispatched","Logistic Completed")')
-      if (deleteError) throw deleteError
-
-      // Build Checked splits based on specific product-transporter allocations
-      const finalSplits = []
-      let subIdx = 0
-
+      // Incremental Update: We don't delete Checked/Dispatched splits anymore.
+      // We update existing splits by adding the new allocation.
+      
       for (const opt of transporterOptions) {
-        const allocQty = parseFloat(finalAllocations[opt.id] || "0") || 0
-        
-        finalSplits.push({
-          plan_id: plan.id,
-          po_id: opt.po_id,
-          transporter_name: opt.transporter_name,
-          contact_number: opt.contact_number || "",
-          rate: parseFloat(opt.rate) || 0,
-          availability: opt.availability || "",
-          remarks: opt.remarks || "",
-          vehicle_details: opt.vehicle_details || "",
-          status: allocQty > 0 ? "Checked" : (opt.status || "Pending"),
-          allocated_qty: allocQty,
-          sort_order: subIdx,
-        })
-        subIdx++
+        const newVal = parseFloat(finalAllocations[opt.id] || "0") || 0
+        if (newVal > 0) {
+          if (opt.status === "Checked" || opt.status === "Pending Approval" || opt.status === "Pending") {
+            // Update existing split: Add the new quantity and ensure status is Checked
+            const { error: updErr } = await supabase
+              .from("po_logistics_splits")
+              .update({ 
+                allocated_qty: (parseFloat(opt.allocated_qty) || 0) + newVal,
+                status: "Checked"
+              })
+              .eq("id", opt.id)
+            if (updErr) throw updErr
+          }
+        }
       }
 
-      const { error: insertError } = await supabase.from("po_logistics_splits").insert(finalSplits)
-      if (insertError) throw insertError
-
-      const totalAllocated = Object.values(finalAllocations).reduce((sum, q) => sum + (parseFloat(q) || 0), 0)
-      const isFullyAllocated = Math.abs(totalAllocated - poTotalQty) < 0.01
-
       // Finalize the plan status only if fully allocated
+      const totalOrderQty = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.Quantity) || 0), 0)
+      const { data: allPlanSplits } = await supabase
+        .from("po_logistics_splits")
+        .select("allocated_qty")
+        .eq("plan_id", plan.id)
+        .in("status", ["Checked", "Dispatched", "Logistic Completed"])
+      
+      const totalPlanAllocated = (allPlanSplits || []).reduce((sum, s) => sum + (parseFloat(s.allocated_qty) || 0), 0)
+      const isFullyAllocated = Math.abs(totalPlanAllocated - totalOrderQty) < 0.01
+
       if (isFullyAllocated) {
         const { error: planError } = await supabase
           .from("po_logistics_plans")
@@ -299,25 +276,24 @@ export default function LogisticsApproval() {
 
       // Update each product's status individually
       for (const product of selectedGroup.rows) {
+        // Fetch ALL splits for this product across all plans to get cumulative approved qty
+        const { data: allSplits, error: allSplitsErr } = await supabase
+          .from("po_logistics_splits")
+          .select("allocated_qty")
+          .eq("po_id", product.id)
+          .in("status", ["Checked", "Dispatched", "Logistic Completed"])
+        
+        if (allSplitsErr) throw allSplitsErr
+
         const productQty = parseFloat(product.Quantity) || 0
-        const productAllocated = finalSplits
-          .filter((s) => s.po_id === product.id)
-          .reduce((sum, s) => sum + (s.allocated_qty || 0), 0)
+        const totalApproved = (allSplits || []).reduce((sum, s) => sum + (parseFloat(s.allocated_qty) || 0), 0)
+        const isProductFullyApproved = Math.abs(totalApproved - productQty) < 0.01
 
-        const isProductFullyAllocated = Math.abs(productAllocated - productQty) < 0.01
-
-        if (isProductFullyAllocated) {
-          await supabase.from("ORDER RECEIPT").update({ 
-            logistics_status: "Approved", 
-            approved_logistics_plan_id: plan.id 
-          }).eq("id", product.id)
-        } else {
-          // Keep as Pending Approval so it stays in the list for further review
-          await supabase.from("ORDER RECEIPT").update({ 
-            logistics_status: "Pending Approval", 
-            approved_logistics_plan_id: plan.id 
-          }).eq("id", product.id)
-        }
+        await supabase.from("ORDER RECEIPT").update({ 
+          logistics_status: isProductFullyApproved ? "Approved" : "Pending Approval", 
+          approved_logistics_plan_id: plan.id,
+          logistics_approved_qty: totalApproved
+        }).eq("id", product.id)
       }
 
       toast({ title: "Approved", description: "Logistics plan approved successfully.", className: "bg-green-50 text-green-800 border-green-200" })
@@ -336,12 +312,28 @@ export default function LogisticsApproval() {
       setIsSubmitting(true)
       if (plan) {
         await supabase.from("po_logistics_plans").update({ status: "Rejected" }).eq("id", plan.id)
-        await supabase.from("po_logistics_splits").update({ status: "Rejected" }).eq("plan_id", plan.id)
+        await supabase.from("po_logistics_splits").update({ status: "Rejected" }).eq("plan_id", plan.id).neq("status", "Dispatched")
       }
-      await supabase
-        .from("ORDER RECEIPT")
-        .update({ logistics_status: "Pending Arrangement", approved_logistics_plan_id: null })
-        .in("id", selectedGroup.rows.map((r) => r.id))
+      
+      // Calculate remaining approved qty (only what was already dispatched)
+      for (const row of selectedGroup.rows) {
+        const { data: dispatchedSplits } = await supabase
+          .from("po_logistics_splits")
+          .select("allocated_qty")
+          .eq("po_id", row.id)
+          .in("status", ["Dispatched", "Logistic Completed"])
+        
+        const dispatchedQty = (dispatchedSplits || []).reduce((sum, s) => sum + (parseFloat(s.allocated_qty) || 0), 0)
+        
+        await supabase
+          .from("ORDER RECEIPT")
+          .update({ 
+            logistics_status: "Pending Arrangement", 
+            approved_logistics_plan_id: null, 
+            logistics_approved_qty: dispatchedQty 
+          })
+          .eq("id", row.id)
+      }
       toast({ title: "Sent Back", description: "PO sent back for a new arrangement.", className: "bg-orange-50 text-orange-800 border-orange-200" })
       closeDialog()
       fetchOrders()
@@ -357,12 +349,28 @@ export default function LogisticsApproval() {
       setIsSubmitting(true)
       if (plan) {
         await supabase.from("po_logistics_plans").update({ status: "Rejected" }).eq("id", plan.id)
-        await supabase.from("po_logistics_splits").update({ status: "Rejected" }).eq("plan_id", plan.id)
+        await supabase.from("po_logistics_splits").update({ status: "Rejected" }).eq("plan_id", plan.id).neq("status", "Dispatched")
       }
-      await supabase
-        .from("ORDER RECEIPT")
-        .update({ logistics_status: "Logistics Rejected", approved_logistics_plan_id: null })
-        .in("id", selectedGroup.rows.map((r) => r.id))
+
+      // Calculate remaining approved qty (only what was already dispatched)
+      for (const row of selectedGroup.rows) {
+        const { data: dispatchedSplits } = await supabase
+          .from("po_logistics_splits")
+          .select("allocated_qty")
+          .eq("po_id", row.id)
+          .in("status", ["Dispatched", "Logistic Completed"])
+        
+        const dispatchedQty = (dispatchedSplits || []).reduce((sum, s) => sum + (parseFloat(s.allocated_qty) || 0), 0)
+
+        await supabase
+          .from("ORDER RECEIPT")
+          .update({ 
+            logistics_status: "Logistics Rejected", 
+            approved_logistics_plan_id: null, 
+            logistics_approved_qty: dispatchedQty 
+          })
+          .eq("id", row.id)
+      }
       toast({ title: "Fully Rejected", description: "Logistics cancelled for this PO.", className: "bg-red-50 text-red-800 border-red-200" })
       closeDialog()
       fetchOrders()
@@ -512,7 +520,7 @@ export default function LogisticsApproval() {
                                       <span className="text-sm font-semibold text-gray-800">{order["Product Name"]}</span>
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                                         <Clock className="w-3 h-3 mr-1" />
-                                        Qty: {order.Quantity}
+                                        Remaining Qty: {(parseFloat(order.Quantity) - (parseFloat(order.logistics_approved_qty) || 0)).toFixed(2)}
                                       </span>
                                     </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
@@ -623,44 +631,28 @@ export default function LogisticsApproval() {
                 {/* PO Quantity header & Mode Toggle */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gray-50/50 p-4 rounded-xl border border-gray-100">
                   <div>
-                    <p className="text-sm font-semibold text-gray-800">Total PO Quantity: <span className="text-purple-700 text-base">{poTotalQty}</span></p>
-                    <p className="text-xs text-gray-500 mt-0.5">Choose how to allocate transport for this PO.</p>
+                    <p className="text-sm font-semibold text-gray-800">Remaining to Approve: <span className="text-purple-700 text-base">{poTotalQty}</span></p>
+                    <p className="text-xs text-gray-500 mt-0.5">Enter the quantity to approve for each transporter below.</p>
                   </div>
-                  <div className="flex bg-gray-200/80 p-1 rounded-lg self-start sm:self-auto shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setIsSplitMode(false)}
-                      className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${!isSplitMode ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-                    >
-                      Single Transporter
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsSplitMode(true)}
-                      className={`px-4 py-1.5 rounded-md text-xs font-semibold transition-all ${isSplitMode ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-                    >
-                      Split Quantities
-                    </button>
-                  </div>
-                </div>
-
-                {isSplitMode && (
                   <div className="flex items-center justify-end">
                     {(() => {
-                      const totalAllocated = Object.values(allocations).reduce((sum, q) => sum + (parseFloat(q) || 0), 0)
-                      const remaining = poTotalQty - totalAllocated
+                      const totalNewAllocated = Object.values(allocations).reduce((sum, q) => sum + (parseFloat(q) || 0), 0)
+                      const totalOrderQty = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.Quantity) || 0), 0)
+                      const totalAlreadyApproved = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.logistics_approved_qty) || 0), 0)
+                      
+                      const remaining = totalOrderQty - totalAlreadyApproved - totalNewAllocated
                       const isBalanced = Math.abs(remaining) < 0.01
 
                       return (
                         <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
                           isBalanced ? "bg-green-100 text-green-700" : remaining > 0 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
                         }`}>
-                          {isBalanced ? "✓ Balanced" : remaining > 0 ? `${remaining} unallocated` : `${Math.abs(remaining)} over`}
+                          {isBalanced ? "✓ Balanced" : remaining > 0 ? `${remaining.toFixed(2)} remaining` : `${Math.abs(remaining).toFixed(2)} over`}
                         </div>
                       )
                     })()}
                   </div>
-                )}
+                </div>
 
                 {/* Product-wise allocation sections */}
                 <div className="space-y-8">
@@ -676,12 +668,9 @@ export default function LogisticsApproval() {
                         <div className="flex items-center justify-between">
                           <div>
                             <h3 className="text-sm font-bold text-gray-900">{product["Product Name"]}</h3>
-                            <p className="text-xs text-gray-500">Order Qty: {productQty} tons</p>
-                          </div>
-                          <div className={`px-3 py-1 rounded-full text-[10px] font-bold ${
-                            Math.abs(remainingForProduct) < 0.01 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
-                          }`}>
-                            {Math.abs(remainingForProduct) < 0.01 ? "Fully Allocated" : `${remainingForProduct.toFixed(2)} remaining`}
+                            <p className="text-xs text-gray-500">
+                              Order Qty: {productQty} | Approved: {product.logistics_approved_qty || 0}
+                            </p>
                           </div>
                         </div>
 
@@ -734,15 +723,23 @@ export default function LogisticsApproval() {
                                 </div>
 
                                 <div className="space-y-1">
-                                  <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Allocate Qty (Tons)</label>
+                                  <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                                    <label className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">New Allocation</label>
+                                    {(parseFloat(split.allocated_qty) > 0 && (split.status === "Checked" || split.status === "Dispatched" || split.status === "Logistic Completed")) && (
+                                      <span className="text-[9px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 whitespace-nowrap">
+                                        Approved: {split.allocated_qty}
+                                      </span>
+                                    )}
+                                  </div>
                                   <Input
                                     type="number"
                                     min="0"
-                                    max={productQty}
+                                    max={remainingForProduct}
                                     value={allocVal}
                                     onChange={(e) => updateAllocation(split.id, e.target.value)}
                                     className="h-8 text-sm bg-white font-medium border-gray-200"
-                                    placeholder="0"
+                                    placeholder="Enter new qty"
+                                    disabled={split.status === "Dispatched" || split.status === "Logistic Completed"}
                                   />
                                 </div>
 
@@ -762,21 +759,23 @@ export default function LogisticsApproval() {
                   })}
                 </div>
 
-                {/* Grand total for the PO (ONLY IN SPLIT MODE) */}
-                {isSplitMode && (
-                  <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-gray-100 text-sm">
-                    <span className="text-gray-600">Total Allocated</span>
-                    {(() => {
-                      const totalAllocated = Object.values(allocations).reduce((sum, q) => sum + (parseFloat(q) || 0), 0)
-                      const isBalanced = Math.abs(totalAllocated - poTotalQty) < 0.01
-                      return (
-                        <span className={`font-semibold ${isBalanced ? "text-green-700" : "text-red-600"}`}>
-                          {totalAllocated} / {poTotalQty} {isBalanced ? "✓" : ""}
-                        </span>
-                      )
-                    })()}
-                  </div>
-                )}
+                {/* Grand total for the PO */}
+                <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-gray-100 text-sm">
+                  <span className="text-gray-600">Total Allocated</span>
+                  {(() => {
+                    const totalNewAllocated = Object.values(allocations).reduce((sum, q) => sum + (parseFloat(q) || 0), 0)
+                    const totalOrderQty = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.Quantity) || 0), 0)
+                    const totalAlreadyApproved = selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.logistics_approved_qty) || 0), 0)
+                    const totalCumulative = totalAlreadyApproved + totalNewAllocated
+                    
+                    const isBalanced = Math.abs(totalCumulative - totalOrderQty) < 0.01
+                    return (
+                      <span className={`font-semibold ${isBalanced ? "text-green-700" : "text-red-600"}`}>
+                        {totalCumulative.toFixed(2)} / {totalOrderQty.toFixed(2)} {isBalanced ? "✓" : ""}
+                      </span>
+                    )
+                  })()}
+                </div>
               </div>
             )}
           </div>

@@ -552,8 +552,13 @@ export default function AccountsApprovalPage({ user }) {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Accounts Approval</DialogTitle>
-            <DialogDescription>
-              PO: {selectedGroup?.poNumber} · {selectedGroup?.rows[0]?.partyName}
+            <DialogDescription className="flex flex-col gap-1.5 mt-1">
+              <span className="text-slate-600">PO: {selectedGroup?.poNumber} · {selectedGroup?.rows[0]?.partyName}</span>
+              {selectedGroup && (
+                <span className="font-bold text-blue-700 bg-blue-100/80 px-2.5 py-1 rounded-lg border border-blue-200 w-fit text-sm shadow-sm">
+                  Total Qty: {selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.allocatedQty) || 0), 0)} Tons
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -698,7 +703,7 @@ export default function AccountsApprovalPage({ user }) {
                   <div key={row.id} className="bg-white rounded-lg px-3 py-2.5 border border-slate-100 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-slate-800 text-sm">{row.productName || "—"}</span>
-                      <span className="text-xs text-slate-500">{row.transporterName} · {row.allocatedQty} qty</span>
+                      <span className="text-xs text-slate-500">{row.transporterName}</span>
                     </div>
                     <div className="flex items-center gap-4 text-xs text-slate-600">
                       {row.poRate && (
