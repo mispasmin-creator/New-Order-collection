@@ -175,6 +175,19 @@ export default function ArrangeLogistics({ user }) {
       return
     }
 
+    // For non-Ex-Factory options, Entered Rate is mandatory
+    const missingRate = validOptions.some(
+      (o) => o.transporter_name !== "Ex Factory Transporter" && !o.cost.trim()
+    )
+    if (missingRate) {
+      toast({
+        title: "Validation Error",
+        description: "Entered Rate is required for Fixed and Per MT transporter options.",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       setIsSubmitting(true)
 
@@ -486,11 +499,16 @@ export default function ArrangeLogistics({ user }) {
                 const isFixed = opt.rateType === "Fixed"
                 const estTotalCost = isFixed ? entered : entered * totalPoQty
                 const estRatePerMt = isFixed ? (entered / totalPoQty) : entered
+                const isExFactory = opt.transporter_name === "Ex Factory Transporter"
 
                 return (
                   <div
                     key={oIdx}
-                    className="border border-gray-200 rounded-xl p-4 space-y-4 bg-gray-50/30 hover:border-gray-300 transition-all"
+                    className={`border rounded-xl p-4 space-y-4 transition-all ${
+                      isExFactory
+                        ? "border-amber-300 bg-amber-50/30 hover:border-amber-400"
+                        : "border-gray-200 bg-gray-50/30 hover:border-gray-300"
+                    }`}
                   >
                     {/* Card header */}
                     <div className="flex items-center justify-between">
@@ -535,7 +553,11 @@ export default function ArrangeLogistics({ user }) {
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label className="block mb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider">Rate Type</Label>
-                        <Select value={opt.rateType || undefined} onValueChange={(value) => handleOptionChange(oIdx, "rateType", value)}>
+                        <Select
+                          value={opt.rateType || undefined}
+                          onValueChange={(value) => handleOptionChange(oIdx, "rateType", value)}
+                          disabled={isExFactory}
+                        >
                           <SelectTrigger className="text-sm border-gray-200 h-9 bg-white text-gray-700">
                             <SelectValue placeholder="Type" />
                           </SelectTrigger>
@@ -546,12 +568,18 @@ export default function ArrangeLogistics({ user }) {
                         </Select>
                       </div>
                       <div>
-                        <Label className="block mb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider">Entered Rate</Label>
+                        <Label className="block mb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                          Entered Rate
+                          {!isExFactory && <span className="text-red-500 ml-0.5">*</span>}
+                          {isExFactory && <span className="text-amber-500 ml-1 normal-case text-[9px]">(Optional)</span>}
+                        </Label>
                         <Input 
                           value={opt.cost} 
                           onChange={(e) => handleOptionChange(oIdx, "cost", e.target.value)} 
-                          className="text-sm border-gray-200 h-9 bg-white" 
-                          placeholder="0.00" 
+                          className={`text-sm border-gray-200 h-9 bg-white ${
+                            !isExFactory && !opt.cost ? "border-red-200 focus-visible:ring-red-400" : ""
+                          }`}
+                          placeholder={isExFactory ? "Optional" : "0.00"}
                         />
                       </div>
                     </div>
