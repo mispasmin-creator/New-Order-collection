@@ -202,7 +202,7 @@ export default function LogisticsApproval() {
 
       const initAlloc = {}
       options.forEach((s) => {
-        initAlloc[s.id] = "0"
+        initAlloc[s.id] = s.allocated_qty || ""
       })
       setAllocations(initAlloc)
     } catch (err) {
@@ -244,17 +244,15 @@ export default function LogisticsApproval() {
       
       for (const opt of transporterOptions) {
         const newVal = parseFloat(allocations[opt.id] || "0") || 0
-        if (newVal > 0) {
-          if (opt.status === "Checked" || opt.status === "Pending Approval" || opt.status === "Pending") {
-            const { error: updErr } = await supabase
-              .from("po_logistics_splits")
-              .update({ 
-                allocated_qty: (parseFloat(opt.allocated_qty) || 0) + newVal,
-                status: "Checked"
-              })
-              .eq("id", opt.id)
-            if (updErr) throw updErr
-          }
+        if (opt.status === "Checked" || opt.status === "Pending Approval" || opt.status === "Pending") {
+          const { error: updErr } = await supabase
+            .from("po_logistics_splits")
+            .update({ 
+              allocated_qty: newVal,
+              status: "Checked"
+            })
+            .eq("id", opt.id)
+          if (updErr) throw updErr
         }
       }
 
@@ -683,7 +681,7 @@ export default function LogisticsApproval() {
                               const ratesForProduct = productSplits.map(s => parseFloat(s.rate)).filter(r => !isNaN(r) && r > 0)
                               const minRateForProduct = ratesForProduct.length > 0 ? Math.min(...ratesForProduct) : null
                               const isLowestCost = minRateForProduct !== null && parseFloat(split.rate) === minRateForProduct
-                              const allocVal = allocations[split.id] || "0"
+                              const allocVal = allocations[split.id] ?? ""
                               const isActive = parseFloat(allocVal) > 0
                               const estTotal = split.rate && parseFloat(allocVal) ? parseFloat(split.rate) * parseFloat(allocVal) : null
 
