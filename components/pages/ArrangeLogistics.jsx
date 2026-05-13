@@ -19,6 +19,7 @@ import {
 import { Loader2, Truck, CheckCircle, Clock, Plus, Trash2, ChevronDown, ChevronRight, Download, Search, Building, User, Filter } from "lucide-react"
 import { exportToExcel } from "@/lib/exportUtils"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
+import { Checkbox } from "@/components/ui/checkbox"
 
 export default function ArrangeLogistics({ user }) {
   const [activeTab, setActiveTab] = useState("pending")
@@ -35,6 +36,7 @@ export default function ArrangeLogistics({ user }) {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterFirm, setFilterFirm] = useState("all")
   const [filterParty, setFilterParty] = useState("all")
+  const [selectedProductIds, setSelectedProductIds] = useState(new Set())
   const { toast } = useToast()
 
   // Get unique options from active orders
@@ -152,7 +154,28 @@ export default function ArrangeLogistics({ user }) {
   const openArrangeDialog = (group) => {
     setSelectedGroup(group)
     setTransporterOptions([emptyOption(), emptyOption(), emptyOption()])
+    setSelectedProductIds(new Set()) // Start empty so user can select specific products
     setIsDialogOpen(true)
+  }
+
+  const toggleProductSelection = (productId) => {
+    setSelectedProductIds(prev => {
+      const next = new Set(prev)
+      if (next.has(productId)) {
+        next.delete(productId)
+      } else {
+        next.add(productId)
+      }
+      return next
+    })
+  }
+
+  const toggleAllProducts = () => {
+    if (selectedProductIds.size === selectedGroup?.rows.length) {
+      setSelectedProductIds(new Set())
+    } else {
+      setSelectedProductIds(new Set(selectedGroup?.rows.map(r => r.id)))
+    }
   }
 
   const closeDialog = () => {
@@ -226,10 +249,12 @@ export default function ArrangeLogistics({ user }) {
         .single()
 
       if (planError) throw planError
+      
+      const selectedRows = selectedGroup.rows.filter(r => selectedProductIds.has(r.id))
 
       // 2. Duplicate splits per product (order) so LogisticsApproval can allocate
       const splitRows = []
-      selectedGroup.rows.forEach((order, pIdx) => {
+      selectedRows.forEach((order, pIdx) => {
         const remainingToApprove = (parseFloat(order.Quantity) || 0) - (parseFloat(order.logistics_approved_qty) || 0)
         validOptions.forEach((opt, oIdx) => {
           splitRows.push({
@@ -250,11 +275,11 @@ export default function ArrangeLogistics({ user }) {
 
       if (splitError) throw splitError
 
-      // 3. Update all ORDER RECEIPT rows in this PO to Pending Approval
+      // 3. Update all selected ORDER RECEIPT rows in this PO to Pending Approval
       const { error: updateError } = await supabase
         .from("ORDER RECEIPT")
         .update({ logistics_status: "Pending Approval", approved_logistics_plan_id: null })
-        .in("id", selectedGroup.rows.map((r) => r.id))
+        .in("id", selectedRows.map((r) => r.id))
 
       if (updateError) throw updateError
 
@@ -494,14 +519,39 @@ export default function ArrangeLogistics({ user }) {
               Arrange Logistics
             </DialogTitle>
             <div className="flex flex-col gap-2 mt-4 text-sm">
-              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Products in this PO</span>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Select Products for this Plan</span>
+                <button 
+                  onClick={toggleAllProducts}
+                  className="text-[10px] font-bold text-blue-600 hover:text-blue-700 uppercase"
+                >
+                  {selectedProductIds.size === selectedGroup?.rows.length ? "Unselect All" : "Select All"}
+                </button>
+              </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {selectedGroup?.rows.map((row, idx) => (
-                  <div key={idx} className="p-3 rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-between">
-                    <span className="font-medium text-gray-800 truncate mr-2" title={row["Product Name"]}>{row["Product Name"]}</span>
-                    <span className="text-xs font-bold text-gray-600 bg-gray-200/60 px-2 py-0.5 rounded">
-                      {Math.max(0, (parseFloat(row.Quantity) || 0) - (parseFloat(row.logistics_approved_qty) || 0))} Tons
-                    </span>
+                {selectedGroup?.rows.map((row) => (
+                  <div 
+                    key={row.id} 
+                    className={`p-3 rounded-lg border transition-all flex items-center cursor-pointer ${
+                      selectedProductIds.has(row.id) 
+                        ? "bg-blue-50 border-blue-200 shadow-sm" 
+                        : "bg-gray-50 border-gray-100 opacity-60"
+                    }`}
+                    onClick={() => toggleProductSelection(row.id)}
+                  >
+                    <div onClick={(e) => e.stopPropagation()} className="flex items-center">
+                      <Checkbox 
+                        checked={selectedProductIds.has(row.id)} 
+                        onCheckedChange={() => toggleProductSelection(row.id)}
+                        className="mr-3"
+                      />
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-medium text-gray-800 truncate text-xs" title={row["Product Name"]}>{row["Product Name"]}</span>
+                      <span className="text-[10px] font-bold text-gray-500">
+                        {Math.max(0, (parseFloat(row.Quantity) || 0) - (parseFloat(row.logistics_approved_qty) || 0))} Tons
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -615,11 +665,33 @@ export default function ArrangeLogistics({ user }) {
                       <div className="pt-3 border-t border-gray-100 space-y-2">
                         <div className="flex justify-between items-center p-2 rounded-lg bg-blue-50/50 border border-blue-100/50">
                           <span className="text-xs font-medium text-blue-700">Est. Rate per MT:</span>
-                          <span className="text-sm font-bold text-blue-700">₹{estRatePerMt.toLocaleString("en-IN", {maximumFractionDigits:2})}</span>
+                          {(() => {
+                            const totalSelectedRemainingQty = selectedGroup?.rows
+                              .filter(r => selectedProductIds.has(r.id))
+                              .reduce((sum, r) => {
+                                const rem = (parseFloat(r.Quantity) || 0) - (parseFloat(r.logistics_approved_qty) || 0)
+                                return sum + Math.max(0, rem)
+                              }, 0) || 1
+                            const enteredVal = parseFloat(opt.cost) || 0
+                            const isFixedVal = opt.rateType === "Fixed"
+                            const ratePerMt = isFixedVal ? (enteredVal / totalSelectedRemainingQty) : enteredVal
+                            return <span className="text-sm font-bold text-blue-700">₹{ratePerMt.toLocaleString("en-IN", {maximumFractionDigits:2})}</span>
+                          })()}
                         </div>
                         <div className="flex justify-between items-center px-2 text-xs">
-                          <span className="text-gray-500 italic">Total PO Est. Cost:</span>
-                          <span className="font-semibold text-gray-700">₹{estTotalCost.toLocaleString("en-IN", {maximumFractionDigits:2})}</span>
+                          <span className="text-gray-500 italic">Selected Items Est. Cost:</span>
+                          {(() => {
+                            const totalSelectedRemainingQty = selectedGroup?.rows
+                              .filter(r => selectedProductIds.has(r.id))
+                              .reduce((sum, r) => {
+                                const rem = (parseFloat(r.Quantity) || 0) - (parseFloat(r.logistics_approved_qty) || 0)
+                                return sum + Math.max(0, rem)
+                              }, 0) || 1
+                            const enteredVal = parseFloat(opt.cost) || 0
+                            const isFixedVal = opt.rateType === "Fixed"
+                            const totalCost = isFixedVal ? enteredVal : enteredVal * totalSelectedRemainingQty
+                            return <span className="font-semibold text-gray-700">₹{totalCost.toLocaleString("en-IN", {maximumFractionDigits:2})}</span>
+                          })()}
                         </div>
                       </div>
                     )}
@@ -635,7 +707,7 @@ export default function ArrangeLogistics({ user }) {
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={isSubmitting || transporterOptions.every((o) => !o.transporter_name.trim())}
+              disabled={isSubmitting || selectedProductIds.size === 0 || transporterOptions.every((o) => !o.transporter_name.trim())}
               className="px-6 bg-green-600 hover:bg-green-700"
             >
               {isSubmitting ? (
