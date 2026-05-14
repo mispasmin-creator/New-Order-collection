@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { X, Search, CheckCircle2, Loader2, Upload, Eye, ChevronDown, ChevronRight, Download, Building, User } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 import { exportToExcel } from "@/lib/exportUtils"
 
 import { supabase } from "@/lib/supabaseClient"
@@ -28,6 +29,7 @@ export default function WeighmentEntryPage({ user }) {
   const { toast } = useToast()
   const { updateCount } = useNotification()
   const [selectedGroup, setSelectedGroup] = useState(null)
+  const [selectedRowIds, setSelectedRowIds] = useState(new Set())
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
   const [filterFirm, setFilterFirm] = useState("all")
@@ -217,9 +219,7 @@ export default function WeighmentEntryPage({ user }) {
 
   const handleWeighment = (group) => {
     setSelectedGroup(group)
-    // Use the first row as a reference for initial form data if needed,
-    // but usually these will be empty for new entries.
-    const firstRow = group.rows[0]
+    setSelectedRowIds(new Set(group.rows.map((r) => r.id)))
     setFormData({
       imageOfSlip: null,
       imageOfSlip2: null,
@@ -230,13 +230,33 @@ export default function WeighmentEntryPage({ user }) {
     })
   }
 
+  const toggleRow = (id) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = (checked) => {
+    if (checked) setSelectedRowIds(new Set(selectedGroup.rows.map((r) => r.id)))
+    else setSelectedRowIds(new Set())
+  }
+
 
 
   const handleSubmit = async () => {
-    if (!selectedGroup || selectedGroup.rows.length === 0) return
+    if (!selectedGroup) return
 
     try {
       setSubmitting(true)
+
+      const selectedRows = selectedGroup.rows.filter((r) => selectedRowIds.has(r.id))
+      if (selectedRows.length === 0) {
+        toast({ title: "Validation Error", description: "Please select at least one row to submit.", variant: "destructive" })
+        return
+      }
 
       const actual3Date = getISTTimestamp() // Use timestamp for Stage 3
 
@@ -310,7 +330,7 @@ export default function WeighmentEntryPage({ user }) {
       if (slip3Url) commonPayload["Image Of Slip3"] = slip3Url
 
       // Update all rows in the group
-      const updatePromises = selectedGroup.rows.map(order => {
+      const updatePromises = selectedRows.map(order => {
         const rowPayload = {
           ...commonPayload,
           "Actual Truck Qty": order.actualTruckQty,
@@ -340,7 +360,7 @@ export default function WeighmentEntryPage({ user }) {
 
       toast({
         title: "Success",
-        description: `Weighment entry submitted for all products in PO: ${selectedGroup.poNumber}`,
+        description: `Weighment entry submitted for ${selectedRows.length} product(s) in PO: ${selectedGroup.poNumber}`,
       })
 
     } catch (error) {
@@ -357,6 +377,7 @@ export default function WeighmentEntryPage({ user }) {
 
   const handleCancel = () => {
     setSelectedGroup(null)
+    setSelectedRowIds(new Set())
     setFormData({
       imageOfSlip: null,
       imageOfSlip2: null,
@@ -767,7 +788,7 @@ export default function WeighmentEntryPage({ user }) {
       {/* Weighment Entry Form Modal */}
       {selectedGroup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
               <CardTitle className="text-lg">Weighment Entry Form</CardTitle>
               <Button variant="ghost" size="sm" onClick={handleCancel} disabled={submitting}>
@@ -776,25 +797,72 @@ export default function WeighmentEntryPage({ user }) {
             </CardHeader>
             <CardContent className="p-4">
               <div className="space-y-4">
-                {/* Group Info */}
-                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                  <p className="font-bold text-gray-900 text-sm">PO: {selectedGroup.poNumber}</p>
-                  <p className="text-xs text-gray-600 mt-1">Party: {selectedGroup.partyName}</p>
-                  <div className="mt-3 space-y-2 max-h-[120px] overflow-y-auto pr-1">
-                    {selectedGroup.rows.map((order, idx) => (
-                      <div key={idx} className="bg-white p-2 rounded border border-gray-100 text-[11px] flex justify-between items-center">
-                        <div>
-                          <span className="font-semibold text-blue-700">{order.productName}</span>
-                          <span className="text-gray-500 ml-2">(DO: {order.deliveryOrderNo})</span>
-                        </div>
-                        <span className="font-bold text-gray-700">{order.qtyToBeDispatched}</span>
+                {/* Group Info */}                <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-bold text-gray-900 text-sm">PO: {selectedGroup.poNumber}</p>
+                    <span className="text-xs text-blue-600 font-medium">
+                      {selectedRowIds.size} / {selectedGroup.rows.length} Selected
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600">Party: {selectedGroup.partyName}</p>
+                  
+                  <div className="border rounded-md overflow-hidden mt-3 bg-white">
+                    <div className="flex items-center justify-between px-2 py-1.5 bg-gray-100 border-b">
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Select Rows</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-gray-400">Select All</span>
+                        <Checkbox 
+                          checked={selectedRowIds.size === selectedGroup.rows.length} 
+                          onCheckedChange={toggleAll}
+                        />
                       </div>
-                    ))}
+                    </div>
+                    <table className="w-full text-[11px]">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="w-8 px-2 py-1"></th>
+                          <th className="text-left px-2 py-1 font-medium text-gray-600">Logistic Details</th>
+                          <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
+                          <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {selectedGroup.rows.map((order) => (
+                          <tr key={order.id} className={`transition-colors ${selectedRowIds.has(order.id) ? "bg-blue-50/30" : "bg-white opacity-60"}`}>
+                            <td className="px-2 py-1 text-center">
+                              <Checkbox 
+                                checked={selectedRowIds.has(order.id)} 
+                                onCheckedChange={() => toggleRow(order.id)}
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-blue-700 font-bold">{order.dSrNumber || "N/A"}</span>
+                                  <span className="text-gray-900 font-bold">{order.vehicleNumber || "N/A"}</span>
+                                </div>
+                                <div className="text-[10px] text-gray-500">
+                                  {order.transporterName || "N/A"}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-2 py-1 text-gray-700 font-medium">
+                              <div className="flex flex-col">
+                                <span>{order.productName || "N/A"}</span>
+                                <span className="text-[10px] text-gray-400">{order.deliveryOrderNo}</span>
+                              </div>
+                            </td>
+                            <td className="px-2 py-1 text-gray-700 text-right font-bold">{order.qtyToBeDispatched || "N/A"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                   <p className="text-[10px] text-green-600 font-medium mt-2">
-                    Actual3 will be set for all products to: {getISTFullDisplayDateTime(new Date())}
+                    Actual3 will be set for the {selectedRowIds.size} selected row(s).
                   </p>
                 </div>
+
 
                 <div className="space-y-3">
                   <div className="space-y-2">

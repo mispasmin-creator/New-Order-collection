@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { X, Search, CheckCircle2, Loader2, Upload, Eye, Trash2, Truck, Download } from "lucide-react"
 import { exportToExcel } from "@/lib/exportUtils"
 import { getSignedUrl } from "@/lib/storageUtils"
+import { Checkbox } from "@/components/ui/checkbox"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 // Image storage constants
@@ -26,6 +27,7 @@ export default function TestReportPage({ user }) {
   const [submitting, setSubmitting] = useState(false)
   const { toast } = useToast()
   const [selectedGroup, setSelectedGroup] = useState(null)
+  const [selectedRowIds, setSelectedRowIds] = useState(new Set())
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
   const [formData, setFormData] = useState({
@@ -153,12 +155,28 @@ export default function TestReportPage({ user }) {
   // ── Group-level open/close ──────────────────────────────────────────────────
   const handleOpen = (group) => {
     setSelectedGroup(group)
+    setSelectedRowIds(new Set(group.rows.map((r) => r.id)))
     setFormData({ loadingImage1: null, loadingImage2: null, loadingImage3: null })
     setUploadedUrls({ loadingImage1: "", loadingImage2: "", loadingImage3: "" })
   }
 
+  const toggleRow = (id) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = (checked) => {
+    if (checked) setSelectedRowIds(new Set(selectedGroup.rows.map((r) => r.id)))
+    else setSelectedRowIds(new Set())
+  }
+
   const handleClose = () => {
     setSelectedGroup(null)
+    setSelectedRowIds(new Set())
     setFormData({ loadingImage1: null, loadingImage2: null, loadingImage3: null })
     setUploadedUrls({ loadingImage1: "", loadingImage2: "", loadingImage3: "" })
   }
@@ -206,8 +224,14 @@ export default function TestReportPage({ user }) {
     try {
       setSubmitting(true)
 
+      const selectedRows = selectedGroup.rows.filter((r) => selectedRowIds.has(r.id))
+      if (selectedRows.length === 0) {
+        toast({ title: "Validation Error", description: "Please select at least one row to submit.", variant: "destructive" })
+        return
+      }
+
       // Use the first row's LGST number as the reference for file naming
-      const refLgst = selectedGroup.rows[0]?.lgstSrNumber || "unknown"
+      const refLgst = selectedRows[0]?.lgstSrNumber || "unknown"
 
       const finalUrls = { loadingImage1: "", loadingImage2: "", loadingImage3: "" }
 
@@ -238,7 +262,7 @@ export default function TestReportPage({ user }) {
 
       // Update every row in the group simultaneously
       await Promise.all(
-        selectedGroup.rows.map((row) =>
+        selectedRows.map((row) =>
           supabase
             .from('DISPATCH')
             .update({
@@ -253,7 +277,7 @@ export default function TestReportPage({ user }) {
 
       toast({
         title: "Success",
-        description: `Load Material submitted for PO ${selectedGroup.poNumber} (${selectedGroup.rows.length} row${selectedGroup.rows.length > 1 ? "s" : ""}).`,
+        description: `Load Material submitted for PO ${selectedGroup.poNumber} (${selectedRows.length} row${selectedRows.length > 1 ? "s" : ""}).`,
       })
 
       handleClose()
@@ -558,55 +582,66 @@ export default function TestReportPage({ user }) {
               <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="font-semibold text-gray-900">PO: {selectedGroup.poNumber}</p>
-                  <span className="text-xs text-slate-500">{selectedGroup.rows.length} product{selectedGroup.rows.length > 1 ? "s" : ""}</span>
+                  <span className="text-xs text-blue-600 font-medium">
+                    {selectedRowIds.size} / {selectedGroup.rows.length} Selected
+                  </span>
                 </div>
                 <p className="text-gray-600">Party: {selectedGroup.partyName}</p>
                 <div className="border rounded-md overflow-hidden mt-1">
-                  <table className="w-full text-xs">
+                  <div className="flex items-center justify-between px-2 py-1.5 bg-gray-100 border-b">
+                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Select Rows</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gray-400">Select All</span>
+                      <Checkbox 
+                        checked={selectedRowIds.size === selectedGroup.rows.length} 
+                        onCheckedChange={toggleAll}
+                      />
+                    </div>
+                  </div>
+                  <table className="w-full text-[11px]">
                     <thead className="bg-gray-100">
                       <tr>
-                        <th className="text-left px-2 py-1 font-medium text-gray-600">LGST-Sr</th>
-                        <th className="text-left px-2 py-1 font-medium text-gray-600">DO No.</th>
+                        <th className="w-8 px-2 py-1"></th>
+                        <th className="text-left px-2 py-1 font-medium text-gray-600">Logistic Details</th>
                         <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
-                        <th className="text-right px-2 py-1 font-medium text-gray-600">Truck Qty</th>
-                        <th className="text-right px-2 py-1 font-medium text-gray-600">Planned2</th>
+                        <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {selectedGroup.rows.map((row) => (
-                        <tr key={row.id} className="bg-white">
-                          <td className="px-2 py-1 text-gray-700">{row.lgstSrNumber || "N/A"}</td>
-                          <td className="px-2 py-1 text-gray-700">{row.deliveryOrderNo || "N/A"}</td>
-                          <td className="px-2 py-1 text-gray-700">{row.productName || "N/A"}</td>
-                          <td className="px-2 py-1 text-gray-700 text-right">{row.actualTruckQty || row.qtyToBeDispatched || "N/A"}</td>
-                          <td className="px-2 py-1 text-orange-600 text-right whitespace-nowrap">{formatDateTime(row.planned2)}</td>
+                        <tr key={row.id} className={`transition-colors ${selectedRowIds.has(row.id) ? "bg-blue-50/30" : "bg-white opacity-60"}`}>
+                          <td className="px-2 py-1 text-center">
+                            <Checkbox 
+                              checked={selectedRowIds.has(row.id)} 
+                              onCheckedChange={() => toggleRow(row.id)}
+                            />
+                          </td>
+                          <td className="px-2 py-1">
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-blue-700 font-bold">{row.lgstSrNumber || "N/A"}</span>
+                                <span className="text-gray-900 font-bold">{row.truckNo || "N/A"}</span>
+                              </div>
+                              <div className="text-[10px] text-gray-500 flex flex-wrap gap-x-2">
+                                <span>{row.transporterName || "N/A"}</span>
+                                <span>• Driver: {row.driverMobileNo || "N/A"}</span>
+                                {row.biltyNo && <span>• Bilty: {row.biltyNo}</span>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 text-gray-700 font-medium">
+                            <div className="flex flex-col">
+                              <span>{row.productName || "N/A"}</span>
+                              <span className="text-[10px] text-gray-400">{row.deliveryOrderNo}</span>
+                            </div>
+                          </td>
+                          <td className="px-2 py-1 text-gray-700 text-right font-bold">{row.actualTruckQty || row.qtyToBeDispatched || "N/A"}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
 
-                {/* Shared logistic info from first row */}
-                {selectedGroup.rows[0] && (
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 pt-2 border-t text-xs">
-                    <div>
-                      <span className="text-gray-500">Transporter: </span>
-                      <span className="font-medium text-gray-800">{selectedGroup.rows[0].transporterName || "N/A"}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Truck No: </span>
-                      <span className="font-medium text-gray-800">{selectedGroup.rows[0].truckNo || "N/A"}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Driver: </span>
-                      <span className="font-medium text-gray-800">{selectedGroup.rows[0].driverMobileNo || "N/A"}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Bilty No: </span>
-                      <span className="font-medium text-gray-800">{selectedGroup.rows[0].biltyNo || "N/A"}</span>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Image upload section */}
@@ -686,7 +721,7 @@ export default function TestReportPage({ user }) {
                   <p className="text-xs text-blue-700 flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
                     <span>
-                      Submitting will set <strong>Actual2</strong> to the current date/time for all {selectedGroup.rows.length} row{selectedGroup.rows.length > 1 ? "s" : ""} in this PO group.
+                      Submitting will set <strong>Actual2</strong> to the current date/time for the {selectedRowIds.size} selected row{selectedRowIds.size > 1 ? "s" : ""}.
                     </span>
                   </p>
                 </div>

@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { X, Search, Loader2, CheckCircle2, Truck, ChevronDown, ChevronRight, Download, Building, User } from "lucide-react"
 import { exportToExcel } from "@/lib/exportUtils"
 import { supabase } from "@/lib/supabaseClient"
+import { Checkbox } from "@/components/ui/checkbox"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 const TRANSPORT_TYPES = [
@@ -67,6 +68,7 @@ export default function LogisticPage({ user }) {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [selectedGroup, setSelectedGroup] = useState(null)
+  const [selectedRowIds, setSelectedRowIds] = useState(new Set())
   const [expandedGroup, setExpandedGroup] = useState(null)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
@@ -110,7 +112,7 @@ export default function LogisticPage({ user }) {
         { data: approvedSplitsData, error: approvedSplitsError },
       ] = await Promise.all([
         dispatchQuery,
-        supabase.from("po_logistics_splits").select("id, payment_term_status, accounts_remarks").eq("status", "Accounts Approved"),
+        supabase.from("po_logistics_splits").select("id, payment_term_status, accounts_remarks").in("status", ["Accounts Approved", "Logistic Completed"]),
       ])
 
       if (dispatchError) throw dispatchError
@@ -263,6 +265,7 @@ export default function LogisticPage({ user }) {
     const types = [...new Set(group.rows.map(r => r.typeOfTransporting).filter(Boolean))]
     const sharedType = types.length === 1 ? types[0] : ""
     setSelectedGroup(group)
+    setSelectedRowIds(new Set(group.rows.map((r) => r.id)))
     setFormData({
       transporterName: firstRow.transporterName || "",
       truckNo: "",
@@ -276,8 +279,23 @@ export default function LogisticPage({ user }) {
     })
   }
 
+  const toggleRow = (id) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = (checked) => {
+    if (checked) setSelectedRowIds(new Set(selectedGroup.rows.map((r) => r.id)))
+    else setSelectedRowIds(new Set())
+  }
+
   const handleClose = () => {
     setSelectedGroup(null)
+    setSelectedRowIds(new Set())
     setFormData({
       transporterName: "",
       truckNo: "",
@@ -299,8 +317,14 @@ export default function LogisticPage({ user }) {
     try {
       setSubmitting(true)
 
+      const selectedRows = selectedGroup.rows.filter((r) => selectedRowIds.has(r.id))
+      if (selectedRows.length === 0) {
+        toast({ title: "Validation Error", description: "Please select at least one row to submit.", variant: "destructive" })
+        return
+      }
+
       const actualDate = getISTTimestamp()
-      const lgstNumbers = generateLGSTNumbers(selectedGroup.rows.length)
+      const lgstNumbers = generateLGSTNumbers(selectedRows.length)
 
       let vehicleImageUrl = ""
       if (formData.vehicleNoPlateImage) {
@@ -338,7 +362,7 @@ export default function LogisticPage({ user }) {
       }
 
       await Promise.all(
-        selectedGroup.rows.map((row, i) => {
+        selectedRows.map((row, i) => {
           const lgstNumber = lgstNumbers[i]
           return supabase
             .from("DISPATCH")
@@ -352,7 +376,7 @@ export default function LogisticPage({ user }) {
       )
 
       await Promise.all(
-        selectedGroup.rows
+        selectedRows
           .filter((row) => row.logisticsSplitId)
           .map((row, i) =>
             supabase
@@ -666,7 +690,7 @@ export default function LogisticPage({ user }) {
                 <div className="flex items-center justify-between">
                   <p className="font-semibold text-gray-900">PO: {selectedGroup.poNumber}</p>
                   <span className="text-xs text-blue-600 font-medium">
-                    LGST: {generateLGSTNumbers(selectedGroup.rows.length).join(", ")}
+                    LGST: {generateLGSTNumbers(selectedRowIds.size).join(", ")}
                   </span>
                 </div>
                 <p className="text-gray-600">Party: {selectedGroup.partyName}</p>
@@ -676,14 +700,25 @@ export default function LogisticPage({ user }) {
                     const isMixed = types.length > 1
                     return (
                       <>
+                        <div className="flex items-center justify-between px-2 py-1.5 bg-gray-100 border-b">
+                          <span className="text-[10px] font-bold text-gray-500 uppercase">Select Rows ({selectedRowIds.size}/{selectedGroup.rows.length})</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-gray-400">Select All</span>
+                            <Checkbox 
+                              checked={selectedRowIds.size === selectedGroup.rows.length} 
+                              onCheckedChange={toggleAll}
+                            />
+                          </div>
+                        </div>
                         {isMixed && (
-                          <div className="mb-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
-                            Mixed transport types in this PO. Select the type that applies to this logistic submission.
+                          <div className="px-2 py-1.5 bg-amber-50 border-b border-amber-200 text-[10px] text-amber-700">
+                            Mixed transport types. Selected type will apply to all checked rows.
                           </div>
                         )}
-                        <table className="w-full text-xs">
-                          <thead className="bg-gray-100">
+                        <table className="w-full text-[11px]">
+                          <thead className="bg-gray-50">
                             <tr>
+                              <th className="w-8 px-2 py-1"></th>
                               <th className="text-left px-2 py-1 font-medium text-gray-600">D-Sr</th>
                               <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
                               <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
@@ -692,12 +727,18 @@ export default function LogisticPage({ user }) {
                           </thead>
                           <tbody className="divide-y">
                             {selectedGroup.rows.map((row) => (
-                              <tr key={row.id} className="bg-white">
-                                <td className="px-2 py-1 text-gray-700">{row.dSrNumber}</td>
-                                <td className="px-2 py-1 text-gray-700">{row.productName}</td>
+                              <tr key={row.id} className={`transition-colors ${selectedRowIds.has(row.id) ? "bg-blue-50/30" : "bg-white opacity-60"}`}>
+                                <td className="px-2 py-1 text-center">
+                                  <Checkbox 
+                                    checked={selectedRowIds.has(row.id)} 
+                                    onCheckedChange={() => toggleRow(row.id)}
+                                  />
+                                </td>
+                                <td className="px-2 py-1 text-gray-700 font-mono">{row.dSrNumber}</td>
+                                <td className="px-2 py-1 text-gray-700 font-medium">{row.productName}</td>
                                 <td className="px-2 py-1 text-gray-700 text-right">{row.qtyToBeDispatched}</td>
                                 <td className="px-2 py-1">
-                                  <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium ${row.typeOfTransporting === "FOR" ? "bg-blue-100 text-blue-700" : row.typeOfTransporting === "Direct Supply" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                                  <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-medium ${row.typeOfTransporting === "FOR" ? "bg-blue-100 text-blue-700" : row.typeOfTransporting === "Direct Supply" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
                                     {row.typeOfTransporting || "—"}
                                   </span>
                                 </td>

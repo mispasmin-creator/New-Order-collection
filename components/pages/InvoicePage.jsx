@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Search, CheckCircle2, Loader2, X, AlertCircle, Truck, FileText, Download } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
 import { exportToExcel } from "@/lib/exportUtils"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
@@ -25,6 +26,7 @@ export default function MakeInvoicePage({ user }) {
 
   // Group-level modal state
   const [selectedGroup, setSelectedGroup] = useState(null)
+  const [selectedRowIds, setSelectedRowIds] = useState(new Set())
   const [invoiceNo, setInvoiceNo] = useState("")
   const [invoiceCopyFile, setInvoiceCopyFile] = useState(null)
   // Per-product editable lines: [{ id, productName, qty, rate, gstPct }]
@@ -162,6 +164,7 @@ export default function MakeInvoicePage({ user }) {
   // ── Modal open / close ──────────────────────────────────────────────────────
   const handleOpen = (group) => {
     setSelectedGroup(group)
+    setSelectedRowIds(new Set(group.rows.map((r) => r.id)))
     setProductLines(
       group.rows.map((row) => ({
         id: row.id,
@@ -169,14 +172,34 @@ export default function MakeInvoicePage({ user }) {
         qty: row.actualTruckQty || row.qtyToBeDispatched || 0,
         rate: row.rateOfMaterial || 0,
         gstPct: 18,
+        // Carry over other info for display
+        lgstSrNumber: row.lgstSrNumber,
+        truckNo: row.truckNo,
+        transporterName: row.transporterName,
+        deliveryOrderNo: row.deliveryOrderNo,
       }))
     )
     setInvoiceNo("")
     setInvoiceCopyFile(null)
   }
 
+  const toggleRow = (id) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = (checked) => {
+    if (checked) setSelectedRowIds(new Set(selectedGroup.rows.map((r) => r.id)))
+    else setSelectedRowIds(new Set())
+  }
+
   const handleClose = () => {
     setSelectedGroup(null)
+    setSelectedRowIds(new Set())
     setProductLines([])
     setInvoiceNo("")
     setInvoiceCopyFile(null)
@@ -194,14 +217,15 @@ export default function MakeInvoicePage({ user }) {
   const computedLines = useMemo(
     () =>
       productLines.map((line) => {
+        const isSelected = selectedRowIds.has(line.id)
         const qty = Number(line.qty) || 0
         const rate = Number(line.rate) || 0
         const gstPct = Number(line.gstPct) || 0
-        const total = qty * rate
-        const taxAmt = total * gstPct / 100
-        return { ...line, total, taxAmt, amountWithTax: total + taxAmt }
+        const total = isSelected ? (qty * rate) : 0
+        const taxAmt = isSelected ? (total * gstPct / 100) : 0
+        return { ...line, isSelected, total, taxAmt, amountWithTax: total + taxAmt }
       }),
-    [productLines]
+    [productLines, selectedRowIds]
   )
 
   const grandTotal = useMemo(() => computedLines.reduce((s, l) => s + l.total, 0), [computedLines])
@@ -211,6 +235,12 @@ export default function MakeInvoicePage({ user }) {
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!selectedGroup) return
+
+    const selectedRows = selectedGroup.rows.filter((r) => selectedRowIds.has(r.id))
+    if (selectedRows.length === 0) {
+      toast({ title: "Validation Error", description: "Please select at least one row to submit.", variant: "destructive" })
+      return
+    }
 
     if (!invoiceNo.trim()) {
       toast({ variant: "destructive", title: "Validation", description: "Invoice Number is required." })
@@ -238,9 +268,9 @@ export default function MakeInvoicePage({ user }) {
         .from("images")
         .getPublicUrl(fileName)
 
-      // Update every DISPATCH row in the group
+      // Update every selected DISPATCH row in the group
       await Promise.all(
-        selectedGroup.rows.map((row) =>
+        selectedRows.map((row) =>
           supabase
             .from("DISPATCH")
             .update({
@@ -254,7 +284,7 @@ export default function MakeInvoicePage({ user }) {
 
       toast({
         title: "Success",
-        description: `Invoice submitted for PO ${selectedGroup.poNumber} (${selectedGroup.rows.length} row${selectedGroup.rows.length > 1 ? "s" : ""}).`,
+        description: `Invoice submitted for PO ${selectedGroup.poNumber} (${selectedRows.length} row${selectedRows.length > 1 ? "s" : ""}).`,
       })
 
       handleClose()
@@ -505,8 +535,8 @@ export default function MakeInvoicePage({ user }) {
                       </a>
                     )}
                   </div>
-                  <div className="text-right text-xs text-slate-500 shrink-0">
-                    {selectedGroup.rows.length} product{selectedGroup.rows.length > 1 ? "s" : ""}
+                  <div className="text-right text-xs text-blue-600 font-medium shrink-0">
+                    {selectedRowIds.size} / {selectedGroup.rows.length} Selected
                   </div>
                 </div>
               </div>
@@ -519,22 +549,49 @@ export default function MakeInvoicePage({ user }) {
                 </h3>
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-100 text-xs">
+                    <thead className="bg-gray-100 text-[10px]">
                       <tr>
+                        <th className="w-8 px-2 py-2">
+                          <Checkbox 
+                            checked={selectedRowIds.size === selectedGroup.rows.length} 
+                            onCheckedChange={toggleAll}
+                          />
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-gray-600">Logistic Details</th>
                         <th className="text-left px-3 py-2 font-semibold text-gray-600">Product</th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-600">Qty</th>
-                        <th className="text-right px-3 py-2 font-semibold text-gray-600 min-w-[110px]">Rate (₹)</th>
-                        <th className="text-right px-3 py-2 font-semibold text-gray-600 min-w-[80px]">GST %</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600 min-w-[100px]">Rate (₹)</th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-600">Total (₹)</th>
-                        <th className="text-right px-3 py-2 font-semibold text-gray-600">Tax (₹)</th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-600">Amt w/ Tax (₹)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {computedLines.map((line, i) => (
-                        <tr key={line.id} className="bg-white">
-                          <td className="px-3 py-2 text-gray-800 font-medium">{line.productName || "—"}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">{line.qty}</td>
+                        <tr key={line.id} className={`transition-colors ${line.isSelected ? "bg-blue-50/30" : "bg-white opacity-60"}`}>
+                          <td className="px-2 py-2 text-center">
+                            <Checkbox 
+                              checked={line.isSelected} 
+                              onCheckedChange={() => toggleRow(line.id)}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-blue-700 font-bold text-[10px]">{line.lgstSrNumber || "N/A"}</span>
+                                <span className="text-gray-900 font-bold text-[11px]">{line.truckNo || "N/A"}</span>
+                              </div>
+                              <div className="text-[9px] text-gray-500 truncate max-w-[150px]">
+                                {line.transporterName || "N/A"}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-col">
+                              <span className="text-gray-800 font-medium text-[11px]">{line.productName || "—"}</span>
+                              <span className="text-[9px] text-gray-400">{line.deliveryOrderNo}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-700 font-bold">{line.qty}</td>
                           <td className="px-3 py-2 text-right">
                             <Input
                               type="number"
@@ -542,27 +599,20 @@ export default function MakeInvoicePage({ user }) {
                               min="0"
                               value={productLines[i].rate}
                               onChange={(e) => updateLine(i, "rate", e.target.value)}
-                              className="h-8 w-24 text-right ml-auto"
-                              disabled={submitting}
+                              className="h-7 w-20 text-right ml-auto text-xs"
+                              disabled={submitting || !line.isSelected}
                             />
                           </td>
-                          <td className="px-3 py-2 text-right">
-                            <div className="h-8 flex items-center justify-end font-medium text-gray-600">
-                              18%
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-right text-gray-700">{fmt(line.total)}</td>
-                          <td className="px-3 py-2 text-right text-gray-500 text-xs">{fmt(line.taxAmt)}</td>
-                          <td className="px-3 py-2 text-right font-semibold text-gray-900">{fmt(line.amountWithTax)}</td>
+                          <td className="px-3 py-2 text-right text-gray-700 font-medium">{fmt(line.total)}</td>
+                          <td className="px-3 py-2 text-right font-bold text-gray-900">{fmt(line.amountWithTax)}</td>
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot className="bg-gray-50 border-t-2 border-gray-200 text-xs font-semibold">
+                    <tfoot className="bg-gray-50 border-t-2 border-gray-200 text-[10px] font-bold">
                       <tr>
-                        <td colSpan={4} className="px-3 py-2 text-right text-gray-700">Grand Total</td>
+                        <td colSpan={5} className="px-3 py-2 text-right text-gray-700">Grand Total (Selected)</td>
                         <td className="px-3 py-2 text-right text-gray-800">{fmt(grandTotal)}</td>
-                        <td className="px-3 py-2 text-right text-gray-500">{fmt(grandTax)}</td>
-                        <td className="px-3 py-2 text-right text-green-700 text-sm">{fmt(grandWithTax)}</td>
+                        <td className="px-3 py-2 text-right text-green-700 text-xs">{fmt(grandWithTax)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -605,9 +655,8 @@ export default function MakeInvoicePage({ user }) {
               <div className="p-3 bg-green-50 border border-green-100 rounded-md text-xs text-green-700 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>
-                  Submitting will set <strong>Actual4</strong> to the current date/time for all{" "}
-                  {selectedGroup.rows.length} row{selectedGroup.rows.length > 1 ? "s" : ""} in this PO group.
-                  The same invoice copy will be linked to each dispatch row.
+                  Submitting will set <strong>Actual4</strong> to the current date/time for the {selectedRowIds.size} selected row{selectedRowIds.size > 1 ? "s" : ""}.
+                  The same invoice copy will be linked to each selected dispatch row.
                 </span>
               </div>
 
