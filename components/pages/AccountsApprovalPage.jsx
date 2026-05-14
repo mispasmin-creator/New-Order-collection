@@ -22,6 +22,7 @@ import {
 import { Loader2, Search, CheckCircle2, AlertCircle, BadgeCheck, ChevronDown, ChevronRight, FileText, XCircle, Download, Building, User } from "lucide-react"
 import { exportToExcel } from "@/lib/exportUtils"
 import { useNotification } from "@/components/providers/NotificationProvider"
+import { Checkbox } from "@/components/ui/checkbox"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 const STATUS_DISPATCHED = "Dispatched"
@@ -50,6 +51,7 @@ export default function AccountsApprovalPage({ user }) {
   const [filterFirm, setFilterFirm] = useState("all")
   const [filterParty, setFilterParty] = useState("all")
   const [selectedGroup, setSelectedGroup] = useState(null)
+  const [selectedSplitIds, setSelectedSplitIds] = useState(new Set())
   const [expandedGroup, setExpandedGroup] = useState(null)
 
   // Auto-reset filters when switching tabs
@@ -190,6 +192,7 @@ export default function AccountsApprovalPage({ user }) {
 
   const handleOpen = async (group) => {
     setSelectedGroup(group)
+    setSelectedSplitIds(new Set(group.rows.map((r) => r.id)))
     setPaymentTermStatus("")
     setRemarks("")
     setModalPIRecords([])
@@ -208,8 +211,23 @@ export default function AccountsApprovalPage({ user }) {
     }
   }
 
+  const toggleSplit = (id) => {
+    setSelectedSplitIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleAll = (checked) => {
+    if (checked) setSelectedSplitIds(new Set(selectedGroup.rows.map((r) => r.id)))
+    else setSelectedSplitIds(new Set())
+  }
+
   const handleClose = () => {
     setSelectedGroup(null)
+    setSelectedSplitIds(new Set())
     setPaymentTermStatus("")
     setRemarks("")
     setModalPIRecords([])
@@ -228,7 +246,11 @@ export default function AccountsApprovalPage({ user }) {
     try {
       setSubmitting(true)
 
-      const splitIds = selectedGroup.rows.map((r) => r.id)
+      const splitIds = Array.from(selectedSplitIds)
+      if (splitIds.length === 0) {
+        toast({ title: "Validation Error", description: "Please select at least one split to approve.", variant: "destructive" })
+        return
+      }
 
       const { error } = await supabase
         .from("po_logistics_splits")
@@ -556,7 +578,7 @@ export default function AccountsApprovalPage({ user }) {
               <span className="text-slate-600">PO: {selectedGroup?.poNumber} · {selectedGroup?.rows[0]?.partyName}</span>
               {selectedGroup && (
                 <span className="font-bold text-blue-700 bg-blue-100/80 px-2.5 py-1 rounded-lg border border-blue-200 w-fit text-sm shadow-sm">
-                  Total Qty: {selectedGroup.rows.reduce((sum, r) => sum + (parseFloat(r.allocatedQty) || 0), 0)} Tons
+                  Selected Total: {selectedGroup.rows.filter(r => selectedSplitIds.has(r.id)).reduce((sum, r) => sum + (parseFloat(r.allocatedQty) || 0), 0)} Tons
                 </span>
               )}
             </DialogDescription>
@@ -697,21 +719,38 @@ export default function AccountsApprovalPage({ user }) {
 
             {/* Products/splits */}
             <div className="bg-slate-50 rounded-xl p-4 space-y-3">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Splits</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Splits ({selectedSplitIds.size}/{selectedGroup?.rows.length})</p>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="select-all" className="text-xs text-slate-500 cursor-pointer">Select All</Label>
+                  <Checkbox 
+                    id="select-all" 
+                    checked={selectedSplitIds.size === selectedGroup?.rows.length} 
+                    onCheckedChange={toggleAll}
+                  />
+                </div>
+              </div>
               <div className="space-y-2">
                 {selectedGroup?.rows.map((row) => (
-                  <div key={row.id} className="bg-white rounded-lg px-3 py-2.5 border border-slate-100 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-slate-800 text-sm">{row.productName || "—"}</span>
-                      <span className="text-xs text-slate-500">{row.transporterName}</span>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs text-slate-600">
-                      {row.poRate && (
-                        <span>Rate: <span className="font-medium text-slate-800">₹{row.poRate}</span></span>
-                      )}
-                      {row.totalValue > 0 && (
-                        <span>Total Value: <span className="font-medium text-green-700">₹{Number(row.totalValue).toLocaleString("en-IN")}</span></span>
-                      )}
+                  <div key={row.id} className={`bg-white rounded-lg px-3 py-2.5 border transition-all flex items-center gap-3 ${selectedSplitIds.has(row.id) ? "border-blue-200 shadow-sm" : "border-slate-100 opacity-60"}`}>
+                    <Checkbox 
+                      checked={selectedSplitIds.has(row.id)} 
+                      onCheckedChange={() => toggleSplit(row.id)}
+                    />
+                    <div className="flex-1 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-slate-800 text-sm">{row.productName || "—"}</span>
+                        <span className="text-xs text-slate-500">{row.transporterName}</span>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-slate-600">
+                        <span>Qty: <span className="font-bold text-blue-600">{row.allocatedQty} Tons</span></span>
+                        {row.poRate && (
+                          <span>Rate: <span className="font-medium text-slate-800">₹{row.poRate}</span></span>
+                        )}
+                        {row.totalValue > 0 && (
+                          <span>Value: <span className="font-medium text-green-700">₹{Number(row.totalValue).toLocaleString("en-IN")}</span></span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
