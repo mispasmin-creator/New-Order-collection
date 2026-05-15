@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useState, useEffect, useCallback } from "react"
+import { Fragment, useState, useEffect, useCallback, useMemo } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
@@ -99,27 +99,22 @@ export default function ReturnOfMaterialPage({ user }) {
 
       let allowedDoNumbers = []
       const firmMap = {}
+      
+      let orQuery = supabase
+        .from('ORDER RECEIPT')
+        .select('"DO-Delivery Order No.", "Firm Name"')
+      
       if (shouldFilter) {
-        const { data: orRows } = await supabase
-          .from('ORDER RECEIPT')
-          .select('id, "DO-Delivery Order No.", "Firm Name"')
-          .in('Firm Name', userFirms)
-        orRows?.forEach(r => {
-          if (r['DO-Delivery Order No.']) {
-            allowedDoNumbers.push(r['DO-Delivery Order No.'])
-            firmMap[r['DO-Delivery Order No.']] = r['Firm Name']
-          }
-        })
-      } else {
-        const { data: orRows } = await supabase
-          .from('ORDER RECEIPT')
-          .select('"DO-Delivery Order No.", "Firm Name"')
-        orRows?.forEach(r => {
-          if (r['DO-Delivery Order No.']) {
-            firmMap[r['DO-Delivery Order No.']] = r['Firm Name']
-          }
-        })
+        orQuery = orQuery.in('Firm Name', userFirms)
       }
+      
+      const { data: orRows } = await orQuery
+      orRows?.forEach(r => {
+        if (r['DO-Delivery Order No.']) {
+          allowedDoNumbers.push(r['DO-Delivery Order No.'])
+          firmMap[r['DO-Delivery Order No.']] = r['Firm Name']
+        }
+      })
 
       // All reasons — management approved AND credit note issued
       let returnQuery = supabase
@@ -128,7 +123,11 @@ export default function ReturnOfMaterialPage({ user }) {
         .not("Actual5", "is", null)
         .not("Debit Note Issued At", "is", null)
         .order("id", { ascending: false })
-      if (shouldFilter) returnQuery = returnQuery.in('"D.O Number"', allowedDoNumbers)
+      
+      if (shouldFilter) {
+        returnQuery = returnQuery.in('"D.O Number"', allowedDoNumbers)
+      }
+      
       const { data, error } = await returnQuery
       if (error) throw error
 

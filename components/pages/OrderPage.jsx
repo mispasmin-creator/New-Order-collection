@@ -6,7 +6,19 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import OrderForm from "../forms/OrderForm"
 import { useNotification } from "@/components/providers/NotificationProvider"
-import { Plus, FileText, TrendingUp, CheckCircle, Search, Filter, Eye, RefreshCw, Loader2, X, ChevronDown, ChevronRight, Download, Clock } from "lucide-react"
+import { 
+  Search, Loader2, Upload, FileText, 
+  CheckCircle2, Clock, Truck, Eye, ArrowRight,
+  PackageCheck, Filter, ChevronDown, ChevronRight, Download, Building, User, Plus, RefreshCw, X, TrendingUp, CheckCircle
+} from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { exportToExcel } from "@/lib/exportUtils"
 import {
   Table,
@@ -21,6 +33,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { supabase } from "@/lib/supabaseClient"
 
+const COLUMN_CONFIG = [
+  { id: "date", label: "Date" },
+  { id: "poNumber", label: "PO / DO No." },
+  { id: "partyName", label: "Party Name" },
+  { id: "productName", label: "Product" },
+  { id: "transport", label: "Transport" },
+  { id: "quantity", label: "Qty" },
+  { id: "rate", label: "Rate" },
+  { id: "totalValue", label: "Total Value" },
+  { id: "manager", label: "Manager" },
+  { id: "status", label: "Status" },
+  { id: "firmName", label: "Firm" },
+]
+
 export default function OrderPage({ user }) {
   const [showForm, setShowForm] = useState(false)
   const [orders, setOrders] = useState([])
@@ -28,6 +54,37 @@ export default function OrderPage({ user }) {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [firmFilter, setFirmFilter] = useState("all")
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    // Try to load from localStorage during initialization
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("orderPageVisibleColumns")
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch (e) {
+          console.error("Failed to parse column settings:", e)
+        }
+      }
+    }
+    return {
+      date: true,
+      poNumber: true,
+      partyName: true,
+      productName: true,
+      transport: true,
+      quantity: true,
+      rate: true,
+      totalValue: true,
+      manager: true,
+      status: true,
+      firmName: true,
+    }
+  })
+
+  // Save column visibility to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem("orderPageVisibleColumns", JSON.stringify(visibleColumns))
+  }, [visibleColumns])
   const { toast } = useToast()
   const [refreshing, setRefreshing] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState(null)
@@ -44,8 +101,6 @@ export default function OrderPage({ user }) {
     }
     setExpandedPOs(newExpanded)
   }
-
-
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -204,32 +259,6 @@ export default function OrderPage({ user }) {
 
   const handleExport = () => {
     exportToExcel(filteredOrders, "Orders")
-  }
-
-  const handleSendToDispatch = async (order) => {
-    try {
-      // Update status to "Dispatched" in Supabase
-      const { error } = await supabase
-        .from('ORDER RECEIPT')
-        .update({ "Status": "Dispatched" })
-        .eq('id', order.id)
-
-      if (error) throw error
-
-      // Update local state
-      setOrders(prevOrders =>
-        prevOrders.map(o =>
-          o.id === order.id ? { ...o, status: "Dispatched" } : o
-        )
-      )
-    } catch (error) {
-      console.error("Error sending to dispatch:", error)
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to update status. Please try again.",
-      })
-    }
   }
 
   const handlePOUpdate = async (e) => {
@@ -494,8 +523,6 @@ export default function OrderPage({ user }) {
             </div>
           </CardContent>
         </Card>
-
-
       </div>
 
       <div className="bg-white border rounded-md shadow-sm p-4">
@@ -539,13 +566,39 @@ export default function OrderPage({ user }) {
             </Select>
 
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => {
-                setSearchTerm("")
-                setStatusFilter("all")
-                setFirmFilter("all")
-              }} className="h-9 px-3">
-                <Filter className="h-4 w-4" />
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="h-9 px-3">
+                    <Filter className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>Visible Columns</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {COLUMN_CONFIG.map((column) => (
+                    <DropdownMenuCheckboxItem
+                      key={column.id}
+                      checked={visibleColumns[column.id]}
+                      onCheckedChange={(checked) =>
+                        setVisibleColumns((prev) => ({ ...prev, [column.id]: checked }))
+                      }
+                    >
+                      {column.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel
+                    className="text-xs text-blue-600 cursor-pointer hover:underline"
+                    onClick={() => {
+                      setSearchTerm("")
+                      setStatusFilter("all")
+                      setFirmFilter("all")
+                    }}
+                  >
+                    Reset Filters
+                  </DropdownMenuLabel>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               <Button
                 variant="outline"
@@ -598,63 +651,46 @@ export default function OrderPage({ user }) {
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
-                  <TableHead className="font-semibold text-gray-900">Date</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Party PO / DO No.</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Party Name</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Product</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Transport</TableHead>
-                  <TableHead className="font-semibold text-gray-900 text-right">Qty</TableHead>
-                  <TableHead className="font-semibold text-gray-900 text-right">Rate</TableHead>
-                  <TableHead className="font-semibold text-gray-900 text-right">Total Value</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Manager</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Status</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Firm</TableHead>
+                  <TableHead className="w-10"></TableHead>
+                  {visibleColumns.date && <TableHead className="font-semibold text-gray-900">Date</TableHead>}
+                  {visibleColumns.poNumber && <TableHead className="font-semibold text-gray-900">Party PO / DO No.</TableHead>}
+                  {visibleColumns.partyName && <TableHead className="font-semibold text-gray-900">Party Name</TableHead>}
+                  {visibleColumns.productName && <TableHead className="font-semibold text-gray-900">Product</TableHead>}
+                  {visibleColumns.transport && <TableHead className="font-semibold text-gray-900">Transport</TableHead>}
+                  {visibleColumns.quantity && <TableHead className="font-semibold text-gray-900 text-right">Qty</TableHead>}
+                  {visibleColumns.rate && <TableHead className="font-semibold text-gray-900 text-right">Rate</TableHead>}
+                  {visibleColumns.totalValue && <TableHead className="font-semibold text-gray-900 text-right">Total Value</TableHead>}
+                  {visibleColumns.manager && <TableHead className="font-semibold text-gray-900">Manager</TableHead>}
+                  {visibleColumns.status && <TableHead className="font-semibold text-gray-900">Status</TableHead>}
+                  {visibleColumns.firmName && <TableHead className="font-semibold text-gray-900">Firm</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {groupedOrders.map((group) => {
                   const isExpanded = expandedPOs.has(group.poNumber)
+                  const visibleCount = Object.values(visibleColumns).filter(Boolean).length
                   return (
                     <React.Fragment key={group.poNumber}>
                       <TableRow 
-                        className="bg-blue-50/20 hover:bg-blue-100/30 cursor-pointer font-medium border-l-4 border-l-blue-600 transition-colors"
-                        onClick={() => togglePO(group.poNumber)}
+                         className="bg-blue-50/20 hover:bg-blue-100/30 cursor-pointer font-medium border-l-4 border-l-blue-600 transition-colors"
+                         onClick={() => togglePO(group.poNumber)}
                       >
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {isExpanded ? <ChevronDown className="h-4 w-4 text-blue-600" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+                        <TableCell className="pl-4">
+                          {isExpanded ? <ChevronDown className="h-4 w-4 text-blue-600" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+                        </TableCell>
+                        {visibleColumns.date && (
+                          <TableCell>
                             <span className="text-xs text-gray-500">{group.date}</span>
+                          </TableCell>
+                        )}
+                        <TableCell colSpan={visibleCount - (visibleColumns.date ? 1 : 0)}>
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold text-blue-700">{group.poNumber}</span>
+                            <span className="text-slate-500 text-sm">| {group.partyName}</span>
+                            <Badge variant="secondary" className="font-normal text-xs bg-gray-100">
+                              {group.items.length} {group.items.length === 1 ? 'item' : 'items'}
+                            </Badge>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-bold text-blue-700">{group.poNumber}</div>
-                        </TableCell>
-                        <TableCell>{group.partyName}</TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="font-normal text-xs bg-gray-100">
-                            {group.items.length} {group.items.length === 1 ? 'item' : 'items'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-gray-500 text-xs">
-                          {group.items[0]?.typeOfTransporting || "—"}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">{group.totalQuantity.toLocaleString()}</TableCell>
-                        <TableCell className="text-right text-gray-400 text-sm">-</TableCell>
-                        <TableCell className="text-right font-bold text-blue-900">
-                          ₹{group.totalValue.toLocaleString("en-IN")}
-                        </TableCell>
-                        <TableCell className="text-xs text-gray-600">
-                          {group.items[0]?.marketingManager || "—"}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-[10px] font-medium bg-white capitalize">
-                            {group.items[0]?.status || "New"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                            {group.firmName}
-                          </Badge>
                         </TableCell>
                       </TableRow>
                       
@@ -667,38 +703,61 @@ export default function OrderPage({ user }) {
                             viewOrderDetails(order);
                           }}
                         >
-                          <TableCell>
-                            <span className="text-[10px] text-gray-400">{formatDate(order.timestamp)}</span>
-                          </TableCell>
-                          <TableCell className="pl-6 italic text-gray-600 font-medium group-hover:text-blue-600">
-                            {order.doNumber}
-                          </TableCell>
-                          <TableCell className="text-gray-500">
-                            {order.partyName}
-                          </TableCell>
-                          <TableCell>{order.productName}</TableCell>
-                          <TableCell className="text-[10px] text-gray-400">
-                            {order.typeOfTransporting}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div>{order.quantity || "0"}</div>
-                            {order.typeOfMeasurement && (
-                              <div className="text-xs text-gray-400">{order.typeOfMeasurement}</div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right text-gray-600">₹{(order.rate || 0).toLocaleString("en-IN")}</TableCell>
-                          <TableCell className="text-right font-semibold text-gray-700">
-                            ₹{(order.totalValue || 0).toLocaleString("en-IN")}
-                          </TableCell>
-                          <TableCell className="text-[10px] text-gray-400">
-                            {order.marketingManager}
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-[10px] text-gray-400">{order.status}</span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-xs text-gray-400">{order.firmName}</div>
-                          </TableCell>
+                          <TableCell></TableCell>
+                          {visibleColumns.date && (
+                            <TableCell>
+                              <span className="text-[10px] text-gray-400">{formatDate(order.timestamp)}</span>
+                            </TableCell>
+                          )}
+                          {visibleColumns.poNumber && (
+                            <TableCell className="pl-6 italic text-gray-600 font-medium group-hover:text-blue-600">
+                              {order.doNumber}
+                            </TableCell>
+                          )}
+                          {visibleColumns.partyName && (
+                            <TableCell className="text-gray-500">
+                              {order.partyName}
+                            </TableCell>
+                          )}
+                          {visibleColumns.productName && (
+                            <TableCell>{order.productName}</TableCell>
+                          )}
+                          {visibleColumns.transport && (
+                            <TableCell className="text-[10px] text-gray-400">
+                              {order.typeOfTransporting}
+                            </TableCell>
+                          )}
+                          {visibleColumns.quantity && (
+                            <TableCell className="text-right">
+                              <div>{order.quantity || "0"}</div>
+                              {order.typeOfMeasurement && (
+                                <div className="text-xs text-gray-400">{order.typeOfMeasurement}</div>
+                              )}
+                            </TableCell>
+                          )}
+                          {visibleColumns.rate && (
+                            <TableCell className="text-right text-gray-600">₹{(order.rate || 0).toLocaleString("en-IN")}</TableCell>
+                          )}
+                          {visibleColumns.totalValue && (
+                            <TableCell className="text-right font-semibold text-gray-700">
+                              ₹{(order.totalValue || 0).toLocaleString("en-IN")}
+                            </TableCell>
+                          )}
+                          {visibleColumns.manager && (
+                            <TableCell className="text-[10px] text-gray-400">
+                              {order.marketingManager}
+                            </TableCell>
+                          )}
+                          {visibleColumns.status && (
+                            <TableCell>
+                              <span className="text-[10px] text-gray-400">{order.status}</span>
+                            </TableCell>
+                          )}
+                          {visibleColumns.firmName && (
+                            <TableCell>
+                              <div className="text-xs text-gray-400">{order.firmName}</div>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </React.Fragment>

@@ -26,7 +26,7 @@ import { Loader2, CheckSquare, XCircle, LayoutList, Truck, ChevronDown, ChevronR
 import { exportToExcel } from "@/lib/exportUtils"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
-export default function LogisticsApproval() {
+export default function LogisticsApproval({ user }) {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedGroup, setSelectedGroup] = useState(null)
@@ -92,11 +92,21 @@ export default function LogisticsApproval() {
   const fetchOrders = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      
+      let query = supabase
         .from("ORDER RECEIPT")
         .select("*")
         .in("logistics_status", ["Pending Approval", "Approved"])
         .order("id", { ascending: false })
+
+      if (user?.role !== "ADMIN") {
+        const userFirms = user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : []
+        if (!userFirms.includes('all') && userFirms.length > 0) {
+          query = query.in('Firm Name', userFirms)
+        }
+      }
+
+      const { data, error } = await query
       if (error) throw error
       
       const pending = []

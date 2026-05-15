@@ -104,11 +104,21 @@ export default function ArrangeLogistics({ user }) {
   const fetchOrders = async () => {
     try {
       setLoading(true)
-      const { data, error } = await supabase
+      
+      let query = supabase
         .from("ORDER RECEIPT")
         .select("*")
         .not("Actual 2", "is", null)
         .not("check_delivery_actual", "is", null)
+
+      if (user?.role !== "ADMIN") {
+        const userFirms = user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : []
+        if (!userFirms.includes('all') && userFirms.length > 0) {
+          query = query.in('Firm Name', userFirms)
+        }
+      }
+
+      const { data, error } = await query
       if (error) throw error
       
       const pending = []
