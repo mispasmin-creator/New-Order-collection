@@ -33,6 +33,7 @@ export default function OrderPage({ user }) {
   const [selectedOrder, setSelectedOrder] = useState(null)
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [expandedPOs, setExpandedPOs] = useState(new Set())
+  const [uploadingPO, setUploadingPO] = useState(false)
 
   const togglePO = (poNumber) => {
     const newExpanded = new Set(expandedPOs)
@@ -231,6 +232,72 @@ export default function OrderPage({ user }) {
     }
   }
 
+  const handlePOUpdate = async (e) => {
+    const file = e.target.files[0]
+    if (!file || !selectedOrder) return
+
+    try {
+      setUploadingPO(true)
+      
+      const timestamp = Date.now()
+      const fileExt = file.name.split('.').pop()
+      const fileName = `orders/so_${timestamp}.${fileExt}`
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('images')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) throw uploadError
+
+      // Get Public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('images')
+        .getPublicUrl(fileName)
+
+      // Update in Supabase Table
+      let query = supabase.from('ORDER RECEIPT').update({ "Upload SO": publicUrl })
+      
+      // If order has a PO number, update all items associated with that PO
+      if (selectedOrder.partyPONumber && selectedOrder.partyPONumber !== "No PO") {
+        query = query.eq('PARTY PO NO (As Per Po Exact)', selectedOrder.partyPONumber)
+      } else {
+        query = query.eq('id', selectedOrder.id)
+      }
+
+      const { error: updateError } = await query
+      if (updateError) throw updateError
+
+      // Update local state for all orders sharing the same PO or same ID
+      setOrders(prevOrders => prevOrders.map(o => {
+        if (selectedOrder.partyPONumber && selectedOrder.partyPONumber !== "No PO") {
+          return o.partyPONumber === selectedOrder.partyPONumber ? { ...o, uploadSO: publicUrl } : o
+        }
+        return o.id === selectedOrder.id ? { ...o, uploadSO: publicUrl } : o
+      }))
+
+      // Update selected order in modal
+      setSelectedOrder(prev => ({ ...prev, uploadSO: publicUrl }))
+
+      toast({
+        title: "Success",
+        description: "PO Copy updated successfully",
+      })
+    } catch (error) {
+      console.error("Error updating PO:", error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update PO: " + error.message,
+      })
+    } finally {
+      setUploadingPO(false)
+    }
+  }
+
   // Filter orders based on user role and search/filters
   const getFilteredOrders = () => {
     let filtered = orders
@@ -408,7 +475,7 @@ export default function OrderPage({ user }) {
           <CardContent className="p-6 flex justify-between items-center">
             <div>
               <p className="text-sm font-medium text-purple-600">Total Quantity</p>
-              <div className="text-2xl font-bold text-purple-900">{totalQuantity}</div>
+              <div className="text-2xl font-bold text-purple-900">{totalQuantity.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</div>
             </div>
             <div className="h-10 w-10 bg-purple-600 rounded-lg flex items-center justify-center text-white shadow-purple-200 shadow-lg">
               <CheckCircle className="h-5 w-5" />
@@ -745,16 +812,56 @@ export default function OrderPage({ user }) {
                   <DetailField label="Type of Packaging" value={selectedOrder.packagingType || selectedOrder.rawData?.["Type of Packaging"]} />
                   <DetailField label="Lead Time (Reach Factory)" value={selectedOrder.leadTimeReachFactory ? `${selectedOrder.leadTimeReachFactory} days` : null} />
                   <DetailField label="TC Required" value={selectedOrder.tcRequired} />
-                  {selectedOrder.uploadSO && (
+                  {selectedOrder.uploadSO ? (
                     <div className="space-y-1">
                       <p className="text-xs font-medium text-gray-500">PO Copy</p>
-                      <button
-                        onClick={() => window.open(selectedOrder.uploadSO, "_blank")}
-                        className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2"
-                      >
-                        <Eye className="w-4 h-4" />
-                        View PO
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => window.open(selectedOrder.uploadSO, "_blank")}
+                          className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2"
+                        >
+                          <Eye className="w-4 h-4" />
+                          View PO
+                        </button>
+                        <div className="relative">
+                          <input
+                            type="file"
+                            id="po-replace-upload"
+                            className="hidden"
+                            onChange={handlePOUpdate}
+                            disabled={uploadingPO}
+                            accept="image/*,.pdf"
+                          />
+                          <label
+                            htmlFor="po-replace-upload"
+                            className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 font-medium cursor-pointer transition-colors"
+                          >
+                            {uploadingPO ? <Loader2 className="w-4 h-4 animate-spin text-blue-600" /> : <RefreshCw className="w-4 h-4" />}
+                            {uploadingPO ? "Updating..." : "Replace PO"}
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-gray-500">PO Copy</p>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          id="po-new-upload"
+                          className="hidden"
+                          onChange={handlePOUpdate}
+                          disabled={uploadingPO}
+                          accept="image/*,.pdf"
+                        />
+                        <label
+                          htmlFor="po-new-upload"
+                          className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
+                        >
+                          {uploadingPO ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                          {uploadingPO ? "Uploading..." : "Upload PO"}
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
