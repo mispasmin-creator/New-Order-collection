@@ -471,8 +471,8 @@ export default function LogisticsApproval({ user }) {
         </div>
       </div>
 
-      <Card className="shadow-sm border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
+      <Card className="shadow-sm border-gray-200">
+        <div className="overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">

@@ -650,8 +650,8 @@ export default function CheckPOPage({ user, onNavigate }) {
         </div>
       </div>
 
-      <div className="bg-white border rounded-md shadow-sm overflow-hidden mt-4">
-        <div className="overflow-x-auto">
+      <div className="bg-white border rounded-md shadow-sm mt-4">
+        <div className="overflow-auto max-h-[calc(100vh-280px)]">
           <div className="min-w-[1400px]">
             <Table>
               <TableHeader>

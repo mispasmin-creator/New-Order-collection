@@ -247,7 +247,7 @@ export default function ManageUsersPage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
               <TableHeader className="bg-slate-50">
                 <TableRow>

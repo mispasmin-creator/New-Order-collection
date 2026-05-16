@@ -504,8 +504,8 @@ export default function MakePIPage({ user }) {
       </div>
 
       {/* Table */}
-      <div className="bg-white border rounded-md shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white border rounded-md shadow-sm mt-4">
+        <div className="overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
             <TableHeader className="bg-gray-50">
               <TableRow>
@@ -599,7 +599,7 @@ export default function MakePIPage({ user }) {
                 </div>
               </div>
 
-              <div className="border rounded-md overflow-x-auto">
+              <div className="border rounded-md overflow-auto max-h-[calc(100vh-280px)]">
                 <Table>
                   <TableHeader className="bg-slate-50">
                     <TableRow>

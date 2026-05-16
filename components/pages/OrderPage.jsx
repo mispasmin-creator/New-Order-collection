@@ -627,7 +627,7 @@ export default function OrderPage({ user }) {
       )}
 
       {/* Orders Table */}
-      <div className="bg-white border rounded-md shadow-sm overflow-hidden">
+      <div className="bg-white border rounded-md shadow-sm">
         <div className="p-4 border-b flex justify-between items-center bg-gray-50">
           <h2 className="font-semibold text-gray-700">Order List</h2>
           <span className="text-sm text-gray-500">
@@ -647,7 +647,7 @@ export default function OrderPage({ user }) {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-280px)]">
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50">
@@ -827,9 +827,9 @@ export default function OrderPage({ user }) {
                   const showAdvance = poItems.some(o => o.advance != null && o.advance !== 0)
                   const showBasic = poItems.some(o => o.basic != null && o.basic !== 0)
                   return (
-                    <div className="overflow-x-auto rounded-md border">
+                    <div className="overflow-auto max-h-[calc(100vh-280px)] rounded-md border">
                       <table className="w-full text-sm">
-                        <thead>
+                        <thead className="sticky top-0 bg-white z-10">
                           <tr className="bg-gray-50 border-b">
                             <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">DO No.</th>
                             <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Product</th>

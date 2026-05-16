@@ -331,8 +331,7 @@ export default function ManagementApprovalPage({ user }) {
       </div>
 
       {/* Table */}
-      <div className="bg-white border rounded-md shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white border rounded-md shadow-sm overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
             <TableHeader className="bg-gray-50">
               <TableRow>
@@ -459,7 +458,6 @@ export default function ManagementApprovalPage({ user }) {
             </TableBody>
           </Table>
         </div>
-      </div>
 
       {/* Approval Dialog */}
       <Dialog open={!!selectedEntry} onOpenChange={(open) => !open && handleClose()}>

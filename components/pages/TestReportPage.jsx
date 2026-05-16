@@ -423,8 +423,8 @@ export default function TestReportPage({ user }) {
         </div>
       </div>
 
-      <div className="bg-white border rounded-md shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white border rounded-md shadow-sm mt-4">
+        <div className="overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50 border-b border-gray-200">

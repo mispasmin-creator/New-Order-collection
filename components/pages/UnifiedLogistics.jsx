@@ -447,123 +447,124 @@ export default function UnifiedLogistics({ user }) {
           </div>
         </div>
 
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50/50">
-              <TableHead className="w-8" />
-              <TableHead>Action</TableHead>
-              <TableHead>Invoice / Shipment</TableHead>
-              <TableHead>Party</TableHead>
-              <TableHead>Bilty Stage</TableHead>
-              <TableHead>Receipt Stage</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {groupedShipments.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
+        <div className="overflow-auto max-h-[calc(100vh-280px)]">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50/50">
+                <TableHead className="w-8" />
+                <TableHead>Action</TableHead>
+                <TableHead>Invoice / Shipment</TableHead>
+                <TableHead>Party</TableHead>
+                <TableHead>Bilty Stage</TableHead>
+                <TableHead>Receipt Stage</TableHead>
               </TableRow>
-            ) : (
-              groupedShipments.map((group, gi) => {
-                const groupKey = group.billNo || `stray-${gi}`
-                const isExpanded = !!expandedGroups[groupKey]
-                const isStray = group.stray
-                const allDone = group.rows.every(r => r.isReceiptDone)
-                const biltyDone = group.rows.every(r => r.isBiltyDone)
+            </TableHeader>
+            <TableBody>
+              {groupedShipments.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
+                </TableRow>
+              ) : (
+                groupedShipments.map((group, gi) => {
+                  const groupKey = group.billNo || `stray-${gi}`
+                  const isExpanded = !!expandedGroups[groupKey]
+                  const isStray = group.stray
+                  const allDone = group.rows.every(r => r.isReceiptDone)
+                  const biltyDone = group.rows.every(r => r.isBiltyDone)
 
-                return (
-                  <>
-                    {/* Group / stray header row */}
-                    <TableRow
-                      key={`group-${groupKey}`}
-                      className={`transition-colors cursor-pointer ${isStray ? "bg-white hover:bg-gray-50/80" : "bg-slate-50 hover:bg-slate-100"}`}
-                      onClick={() => !isStray && toggleGroup(groupKey)}
-                    >
-                      <TableCell className="pl-3 text-gray-400">
-                        {!isStray && (isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />)}
-                      </TableCell>
-                      <TableCell onClick={e => e.stopPropagation()}>
-                        {!allDone ? (
-                          <Button size="sm" onClick={() => openModal(group)} className="bg-blue-600 hover:bg-blue-700 h-8">
-                            Fill Details
-                          </Button>
-                        ) : (
-                          <Button variant="ghost" size="sm" className="text-green-600" disabled>
-                            <CheckCircle2 className="w-4 h-4 mr-1" /> Done
-                          </Button>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-0.5">
-                          {group.billNo ? (
-                            <Badge className="bg-indigo-500 text-white text-xs w-fit">{group.billNo}</Badge>
+                  return (
+                    <Fragment key={`group-${groupKey}`}>
+                      {/* Group / stray header row */}
+                      <TableRow
+                        className={`transition-colors cursor-pointer ${isStray ? "bg-white hover:bg-gray-50/80" : "bg-slate-50 hover:bg-slate-100"}`}
+                        onClick={() => !isStray && toggleGroup(groupKey)}
+                      >
+                        <TableCell className="pl-3 text-gray-400">
+                          {!isStray && (isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />)}
+                        </TableCell>
+                        <TableCell onClick={e => e.stopPropagation()}>
+                          {!allDone ? (
+                            <Button size="sm" onClick={() => openModal(group)} className="bg-blue-600 hover:bg-blue-700 h-8">
+                              Fill Details
+                            </Button>
                           ) : (
-                            <span className="text-gray-400 text-xs italic">No Invoice</span>
-                          )}
-                          {!isStray && (
-                            <span className="text-[10px] text-slate-500">{group.rows.length} product{group.rows.length > 1 ? "s" : ""}</span>
-                          )}
-                          {isStray && (
-                            <span className="text-xs text-gray-500">{group.rows[0]?.orderNo}</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm font-medium">{group.partyName}</TableCell>
-                      <TableCell>
-                        {biltyDone ? (
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-green-500" />
-                            <span className="text-xs font-medium text-green-700">{group.rows[0]?.biltyNo}</span>
-                            {group.rows[0]?.biltyCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(group.rows[0].biltyCopy)}><Eye className="h-3 w-3" /></Button>}
-                          </div>
-                        ) : (
-                          <Badge variant="outline" className="text-amber-600 bg-amber-50 border-amber-200">Pending Docs</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {allDone ? (
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-green-500" />
-                            <span className="text-xs font-medium text-green-700">{group.rows[0]?.grnNumber}</span>
-                            {group.rows[0]?.receiptCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(group.rows[0].receiptCopy)}><Eye className="h-3 w-3" /></Button>}
-                          </div>
-                        ) : (
-                          <Badge variant="outline" className="text-gray-400 bg-gray-50 border-gray-200 font-normal">
-                            {biltyDone ? "Awaiting GRN" : "Waiting for Bilty"}
-                          </Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-
-                    {/* Expanded product rows (only for invoice groups) */}
-                    {!isStray && isExpanded && group.rows.map(s => (
-                      <TableRow key={s.id} className="bg-white hover:bg-gray-50/50 border-b border-gray-100">
-                        <TableCell />
-                        <TableCell />
-                        <TableCell className="py-2 text-xs text-gray-500 font-mono">{s.orderNo}</TableCell>
-                        <TableCell className="py-2 text-sm text-gray-700">{s.productName}</TableCell>
-                        <TableCell className="py-2">
-                          {s.isBiltyDone ? (
-                            <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{s.biltyNo}</span>
-                          ) : (
-                            <span className="text-xs text-amber-500">Pending</span>
+                            <Button variant="ghost" size="sm" className="text-green-600" disabled>
+                              <CheckCircle2 className="w-4 h-4 mr-1" /> Done
+                            </Button>
                           )}
                         </TableCell>
-                        <TableCell className="py-2">
-                          {s.isReceiptDone ? (
-                            <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{s.grnNumber}</span>
+                        <TableCell>
+                          <div className="flex flex-col gap-0.5">
+                            {group.billNo ? (
+                              <Badge className="bg-indigo-500 text-white text-xs w-fit">{group.billNo}</Badge>
+                            ) : (
+                              <span className="text-gray-400 text-xs italic">No Invoice</span>
+                            )}
+                            {!isStray && (
+                              <span className="text-[10px] text-slate-500">{group.rows.length} product{group.rows.length > 1 ? "s" : ""}</span>
+                            )}
+                            {isStray && (
+                              <span className="text-xs text-gray-500">{group.rows[0]?.orderNo}</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm font-medium">{group.partyName}</TableCell>
+                        <TableCell>
+                          {biltyDone ? (
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-green-500" />
+                              <span className="text-xs font-medium text-green-700">{group.rows[0]?.biltyNo}</span>
+                              {group.rows[0]?.biltyCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(group.rows[0].biltyCopy)}><Eye className="h-3 w-3" /></Button>}
+                            </div>
                           ) : (
-                            <span className="text-xs text-gray-400">Pending</span>
+                            <Badge variant="outline" className="text-amber-600 bg-amber-50 border-amber-200">Pending Docs</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {allDone ? (
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-green-500" />
+                              <span className="text-xs font-medium text-green-700">{group.rows[0]?.grnNumber}</span>
+                              {group.rows[0]?.receiptCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(group.rows[0].receiptCopy)}><Eye className="h-3 w-3" /></Button>}
+                            </div>
+                          ) : (
+                            <Badge variant="outline" className="text-gray-400 bg-gray-50 border-gray-200 font-normal">
+                              {biltyDone ? "Awaiting GRN" : "Waiting for Bilty"}
+                            </Badge>
                           )}
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </>
-                )
-              })
-            )}
-          </TableBody>
-        </Table>
+
+                      {/* Expanded product rows (only for invoice groups) */}
+                      {!isStray && isExpanded && group.rows.map(s => (
+                        <TableRow key={s.id} className="bg-white hover:bg-gray-50/50 border-b border-gray-100">
+                          <TableCell />
+                          <TableCell />
+                          <TableCell className="py-2 text-xs text-gray-500 font-mono">{s.orderNo}</TableCell>
+                          <TableCell className="py-2 text-sm text-gray-700">{s.productName}</TableCell>
+                          <TableCell className="py-2">
+                            {s.isBiltyDone ? (
+                              <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{s.biltyNo}</span>
+                            ) : (
+                              <span className="text-xs text-amber-500">Pending</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-2">
+                            {s.isReceiptDone ? (
+                              <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{s.grnNumber}</span>
+                            ) : (
+                              <span className="text-xs text-gray-400">Pending</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </Fragment>
+                  )
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       {/* Combined Documentation + Receipt Modal */}

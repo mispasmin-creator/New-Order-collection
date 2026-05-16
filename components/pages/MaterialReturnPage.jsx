@@ -768,9 +768,9 @@ export default function MaterialReturnPage({ user }) {
                 <span className="ml-2 text-xs font-normal text-gray-500">(remove products that are in good condition using the trash icon)</span>
               </p>
 
-              <div className="border rounded-lg overflow-x-auto">
+              <div className="border rounded-lg overflow-auto max-h-[calc(100vh-280px)]">
                 <table className="w-full text-sm min-w-[900px]">
-                  <thead className="bg-gray-100 text-xs">
+                  <thead className="bg-gray-100 text-xs sticky top-0 z-10 shadow-sm">
                     <tr>
                       <th className="text-left px-3 py-2 font-semibold text-gray-600">Product</th>
                       <th className="text-right px-3 py-2 font-semibold text-gray-600">Total Qty</th>
@@ -1037,7 +1037,7 @@ export default function MaterialReturnPage({ user }) {
           </div>
         </div>
 
-        <div className="bg-white border rounded-lg shadow-sm overflow-hidden overflow-x-auto">
+        <div className="bg-white border rounded-lg shadow-sm overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
             <TableHeader className="bg-gray-50 border-b">
               <TableRow>
@@ -1267,7 +1267,7 @@ export default function MaterialReturnPage({ user }) {
           </div>
         </div>
 
-        <div className="bg-white border rounded-lg shadow-sm overflow-hidden overflow-x-auto">
+        <div className="bg-white border rounded-lg shadow-sm overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
             <TableHeader className="bg-gray-50 border-b">
               <TableRow>
@@ -1525,7 +1525,7 @@ export default function MaterialReturnPage({ user }) {
           </div>
         </div>
 
-        <div className="bg-white border rounded-lg shadow-sm overflow-hidden overflow-x-auto">
+        <div className="bg-white border rounded-lg shadow-sm overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
             <TableHeader className="bg-gray-50 border-b">
               <TableRow>
@@ -1799,7 +1799,7 @@ export default function MaterialReturnPage({ user }) {
           </div>
         </div>
 
-        <div className="bg-white border rounded-lg shadow-sm overflow-hidden overflow-x-auto">
+        <div className="bg-white border rounded-lg shadow-sm overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
             <TableHeader className="bg-gray-50 border-b">
               <TableRow>
@@ -1985,7 +1985,7 @@ export default function MaterialReturnPage({ user }) {
           </div>
         </div>
 
-        <div className="bg-white border rounded-lg shadow-sm overflow-hidden overflow-x-auto">
+        <div className="bg-white border rounded-lg shadow-sm overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
             <TableHeader className="bg-gray-50 border-b">
               <TableRow>
