@@ -40,8 +40,12 @@ const COLUMN_CONFIG = [
   { id: "productName", label: "Product" },
   { id: "transport", label: "Transport" },
   { id: "quantity", label: "Qty" },
+  { id: "pendingQty", label: "Pending Qty" },
   { id: "rate", label: "Rate" },
   { id: "totalValue", label: "Total Value" },
+  { id: "paymentToBeTaken", label: "Pending PO" },
+  { id: "retentionPayment", label: "Retention Payment" },
+  { id: "retentionPercentage", label: "Retention %" },
   { id: "manager", label: "Manager" },
   { id: "status", label: "Status" },
   { id: "firmName", label: "Firm" },
@@ -54,31 +58,38 @@ export default function OrderPage({ user }) {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [firmFilter, setFirmFilter] = useState("all")
+  const [managerFilter, setManagerFilter] = useState("all")
   const [visibleColumns, setVisibleColumns] = useState(() => {
-    // Try to load from localStorage during initialization
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("orderPageVisibleColumns")
-      if (saved) {
-        try {
-          return JSON.parse(saved)
-        } catch (e) {
-          console.error("Failed to parse column settings:", e)
-        }
-      }
-    }
-    return {
+    const defaultState = {
       date: true,
       poNumber: true,
       partyName: true,
       productName: true,
       transport: true,
       quantity: true,
+      pendingQty: true,
       rate: true,
       totalValue: true,
+      paymentToBeTaken: true,
+      retentionPayment: true,
+      retentionPercentage: true,
       manager: true,
       status: true,
       firmName: true,
     }
+    // Try to load from localStorage during initialization
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("orderPageVisibleColumns")
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          return { ...defaultState, ...parsed }
+        } catch (e) {
+          console.error("Failed to parse column settings:", e)
+        }
+      }
+    }
+    return defaultState
   })
 
   // Save column visibility to localStorage when it changes
@@ -166,8 +177,8 @@ export default function OrderPage({ user }) {
           typeOfMeasurement: row["Type Of Measurement"],
           contactPerson: row["Contact Person Name"],
           contactWhatsapp: row["Contact Person WhatsApp No."],
-          alumina: parseFloat(row["Alumina%"]) || 0,
-          iron: row["Iron%"] || "",
+          alumina: row["Alumina%"] != null && row["Alumina%"] !== "" ? String(row["Alumina%"]) : "",
+          iron: row["Iron%"] != null && row["Iron%"] !== "" ? String(row["Iron%"]) : "",
           typeOfPI: row["Type Of PI"],
           leadTimeFinalPayment: row["Lead Time For Collection Of Final Payment"],
           typeOfApplication: row["Type Of Application"],
@@ -188,8 +199,11 @@ export default function OrderPage({ user }) {
           adjustedAmount: parseFloat(row["Adjusted Amount"]) || 0,
           marketingManager: row["Marketing Mangager Name"],
 
-          // Status and Tracking
-          status: row["Status"] || "New Order",
+          // Status and Tracking (Dynamically Computed)
+          status: row["logistics_status"] === "Order Cancelled" ? "Cancelled" :
+                  row["Actual 4"] ? "Completed" :
+                  (row["logistics_status"] === "Approved" || row["logistics_status"] === "Pending Arrangement" || row["Actual 1"] || row["Actual 2"] || row["Actual 3"]) ? "Pending" :
+                  "New Order",
           delivered: parseFloat(row["Delivered"]) || 0,
           pendingQty: parseFloat(row["Pending Qty"]) || 0,
           materialReturn: row["Material Return"],
@@ -340,11 +354,12 @@ export default function OrderPage({ user }) {
 
     // Apply status filter
     if (statusFilter !== "all") {
-      if (statusFilter === "Pending") {
-        filtered = filtered.filter(order => !order.actual1 && order.rawData?.logistics_status !== "Order Cancelled")
-      } else {
-        filtered = filtered.filter(order => order.status === statusFilter)
-      }
+      filtered = filtered.filter(order => order.status === statusFilter)
+    }
+
+    // Apply manager filter
+    if (managerFilter !== "all") {
+      filtered = filtered.filter(order => order.marketingManager === managerFilter)
     }
 
     // Apply search filter
@@ -416,13 +431,16 @@ export default function OrderPage({ user }) {
     return sum + (order.quantity || 0)
   }, 0)
 
-  const pendingOrdersCount = statsOrders.filter(order => !order.actual1 && order.rawData?.logistics_status !== "Order Cancelled").length
+  const pendingOrdersCount = statsOrders.filter(order => order.status === "Pending" || order.status === "New Order").length
 
   // Get unique firms for filter
   const uniqueFirms = [...new Set(orders.map(order => order.firmName).filter(Boolean))]
 
   // Get unique statuses for filter
   const uniqueStatuses = [...new Set(orders.map(order => order.status || "New Order").filter(Boolean))]
+
+  // Get unique managers for filter
+  const uniqueManagers = [...new Set(orders.map(order => order.marketingManager).filter(Boolean))]
 
   // View order details
   const viewOrderDetails = (order) => {
@@ -558,9 +576,20 @@ export default function OrderPage({ user }) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="Pending">Pending</SelectItem>
-                {uniqueStatuses.filter(s => s !== "Pending").map(status => (
+                {uniqueStatuses.map(status => (
                   <SelectItem key={status} value={status}>{status}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={managerFilter} onValueChange={setManagerFilter}>
+              <SelectTrigger className="w-[180px] h-9">
+                <SelectValue placeholder="Manager" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Managers</SelectItem>
+                {uniqueManagers.map(manager => (
+                  <SelectItem key={manager} value={manager}>{manager}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -572,7 +601,7 @@ export default function OrderPage({ user }) {
                     <Filter className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuContent align="end" className="w-56 max-h-[60vh] overflow-y-auto">
                   <DropdownMenuLabel>Visible Columns</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {COLUMN_CONFIG.map((column) => (
@@ -658,8 +687,12 @@ export default function OrderPage({ user }) {
                   {visibleColumns.productName && <TableHead className="font-semibold text-gray-900">Product</TableHead>}
                   {visibleColumns.transport && <TableHead className="font-semibold text-gray-900">Transport</TableHead>}
                   {visibleColumns.quantity && <TableHead className="font-semibold text-gray-900 text-right">Qty</TableHead>}
+                  {visibleColumns.pendingQty && <TableHead className="font-semibold text-gray-900 text-right">Pending Qty</TableHead>}
                   {visibleColumns.rate && <TableHead className="font-semibold text-gray-900 text-right">Rate</TableHead>}
                   {visibleColumns.totalValue && <TableHead className="font-semibold text-gray-900 text-right">Total Value</TableHead>}
+                  {visibleColumns.paymentToBeTaken && <TableHead className="font-semibold text-gray-900 text-right">Pending PO</TableHead>}
+                  {visibleColumns.retentionPayment && <TableHead className="font-semibold text-gray-900 text-right">Retention Payment</TableHead>}
+                  {visibleColumns.retentionPercentage && <TableHead className="font-semibold text-gray-900 text-right">Retention %</TableHead>}
                   {visibleColumns.manager && <TableHead className="font-semibold text-gray-900">Manager</TableHead>}
                   {visibleColumns.status && <TableHead className="font-semibold text-gray-900">Status</TableHead>}
                   {visibleColumns.firmName && <TableHead className="font-semibold text-gray-900">Firm</TableHead>}
@@ -735,12 +768,32 @@ export default function OrderPage({ user }) {
                               )}
                             </TableCell>
                           )}
+                          {visibleColumns.pendingQty && (
+                            <TableCell className="text-right font-medium text-amber-600">
+                              {order.pendingQty || "0"}
+                            </TableCell>
+                          )}
                           {visibleColumns.rate && (
                             <TableCell className="text-right text-gray-600">₹{(order.rate || 0).toLocaleString("en-IN")}</TableCell>
                           )}
                           {visibleColumns.totalValue && (
                             <TableCell className="text-right font-semibold text-gray-700">
                               ₹{(order.totalValue || 0).toLocaleString("en-IN")}
+                            </TableCell>
+                          )}
+                          {visibleColumns.paymentToBeTaken && (
+                            <TableCell className="text-right font-medium text-gray-600">
+                              {order.paymentToBeTaken || "-"}
+                            </TableCell>
+                          )}
+                          {visibleColumns.retentionPayment && (
+                            <TableCell className="text-right text-gray-600">
+                              {order.retentionPayment || "-"}
+                            </TableCell>
+                          )}
+                          {visibleColumns.retentionPercentage && (
+                            <TableCell className="text-right text-gray-600">
+                              {order.retentionPercentage ? `${order.retentionPercentage}%` : "-"}
                             </TableCell>
                           )}
                           {visibleColumns.manager && (
@@ -822,7 +875,7 @@ export default function OrderPage({ user }) {
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b">Products</h3>
                 {(() => {
                   const poItems = orders.filter(o => o.partyPONumber === selectedOrder.partyPONumber)
-                  const showAlumina = poItems.some(o => o.alumina != null && o.alumina !== 0)
+                  const showAlumina = poItems.some(o => o.alumina != null && o.alumina !== "")
                   const showIron = poItems.some(o => o.iron != null && o.iron !== "")
                   const showAdvance = poItems.some(o => o.advance != null && o.advance !== 0)
                   const showBasic = poItems.some(o => o.basic != null && o.basic !== 0)
@@ -850,7 +903,7 @@ export default function OrderPage({ user }) {
                               <td className="py-2 px-3 text-right whitespace-nowrap">{item.quantity != null ? `${item.quantity}${item.typeOfMeasurement ? ` ${item.typeOfMeasurement}` : ""}` : "—"}</td>
                               <td className="py-2 px-3 text-right whitespace-nowrap">{item.rate ? `₹${Number(item.rate).toLocaleString("en-IN")}` : "—"}</td>
                               <td className="py-2 px-3 text-right font-semibold whitespace-nowrap">{item.totalValue ? `₹${Number(item.totalValue).toLocaleString("en-IN")}` : "—"}</td>
-                              {showAlumina && <td className="py-2 px-3 text-right whitespace-nowrap">{item.alumina != null && item.alumina !== 0 ? `${item.alumina}%` : "—"}</td>}
+                              {showAlumina && <td className="py-2 px-3 text-right whitespace-nowrap">{item.alumina != null && item.alumina !== "" ? `${item.alumina}%` : "—"}</td>}
                               {showIron && <td className="py-2 px-3 text-right whitespace-nowrap">{item.iron != null && item.iron !== "" ? `${item.iron}%` : "—"}</td>}
                               {showAdvance && <td className="py-2 px-3 text-right whitespace-nowrap">{item.advance != null && item.advance !== 0 ? `${item.advance}%` : "—"}</td>}
                               {showBasic && <td className="py-2 px-3 text-right whitespace-nowrap">{item.basic != null && item.basic !== 0 ? `${item.basic}%` : "—"}</td>}

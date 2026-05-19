@@ -130,7 +130,7 @@ export default function DispatchPlanningPage({ user }) {
       ] = await Promise.all([
         orderQuery,
         supabase.from("po_logistics_splits").select("*").in("status", [STATUS_CHECKED, STATUS_DISPATCHED, "Logistic Completed"]).order("id", { ascending: false }),
-        supabase.from("po_logistics_splits").select("po_id, status, allocated_qty, transporter_name, dispatch_record_id"),
+        supabase.from("po_logistics_splits").select("id, po_id, status, allocated_qty, transporter_name, dispatch_record_id"),
         supabase.from("DISPATCH").select("*").order("id", { ascending: false }),
       ])
 
@@ -294,6 +294,14 @@ export default function DispatchPlanningPage({ user }) {
             partyName: row["Party Name"] || order?.["Party Names"] || "",
             productName: row["Product Name"] || order?.["Product Name"] || "",
             qtyToBeDispatched: row["Qty To Be Dispatched"] || 0,
+            allocatedQty: (() => {
+              // Exact match by dispatch_record_id or split_id link
+              const split = (allSplitsDataInit || []).find(s => 
+                (row.id && String(s.dispatch_record_id) === String(row.id)) ||
+                (row.split_id && String(s.id) === String(row.split_id))
+              )
+              return split ? parseFloat(split.allocated_qty) : (parseFloat(row["Qty To Be Dispatched"]) || 0)
+            })(),
             quantity: parseFloat(order?.["Quantity"]) || 0,
             quantityDelivered: parseFloat(order?.["Delivered"]) || 0,
             pendingQty: parseFloat(order?.["Pending Qty"]) || Math.max(0, (parseFloat(order?.["Quantity"]) || 0) - (parseFloat(order?.["Delivered"]) || 0)),
@@ -522,9 +530,9 @@ export default function DispatchPlanningPage({ user }) {
   const updateLineQty = (idx, value) =>
     setDispatchLines((prev) => {
       const n = [...prev]
-      const maxQty = Math.max(0, n[idx].allocatedQty || 0)
-      const clamped = value === "" ? "" : String(Math.min(parseFloat(value) || 0, maxQty))
-      n[idx] = { ...n[idx], dispatchQty: clamped }
+      // No hard limit, allow any quantity
+      const qty = value === "" ? "" : String(Math.max(0, parseFloat(value) || 0))
+      n[idx] = { ...n[idx], dispatchQty: qty }
       return n
     })
 
@@ -552,10 +560,7 @@ export default function DispatchPlanningPage({ user }) {
       if (qty <= 0) {
         toast({ variant: "destructive", title: "Validation", description: `Dispatch qty must be > 0 for "${line.productName}".` }); return
       }
-      const maxDispatchable = line.allocatedQty
-      if (qty > maxDispatchable + 0.0001) {
-        toast({ variant: "destructive", title: "Validation", description: `Dispatch qty for "${line.productName}" cannot exceed pending qty (${maxDispatchable}).` }); return
-      }
+      // Hard limit removed to allow over-dispatch as per user request
     }
 
     try {
@@ -564,9 +569,6 @@ export default function DispatchPlanningPage({ user }) {
 
       // Generate sequential D-Sr numbers upfront (only for active lines)
       const dSrNumbers = await generateDSrNumbers(activeLines.length)
-
-      // Removed test cert upload logic as it's now handled in the TC module
-      let testCertUrl = null
 
       // Group active lines by poId to avoid race conditions when updating the same ORDER RECEIPT
       const linesByPo = {}
@@ -1089,6 +1091,11 @@ export default function DispatchPlanningPage({ user }) {
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                         Pending: {row.pendingQty != null ? row.pendingQty : Math.max(0, (row.quantity || 0) - (row.quantityDelivered || 0))}
                                       </span>
+                                      {activeTab === "history" && (parseFloat(row.qtyToBeDispatched) > parseFloat(row.allocatedQty) + 0.011) && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">
+                                          +{ (parseFloat(row.qtyToBeDispatched) - parseFloat(row.allocatedQty)).toFixed(2) } Extra
+                                        </span>
+                                      )}
                                       {row.status && (
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${row.status === 'Order Cancelled' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
                                           {row.status}
@@ -1233,8 +1240,18 @@ export default function DispatchPlanningPage({ user }) {
                           <td className="px-4 py-3 text-right text-gray-700">0</td>
                           <td className="px-4 py-3 text-right font-medium">
                             {(() => {
-                              const pending = Math.max(0, line.allocatedQty - (parseFloat(line.dispatchQty) || 0))
-                              return <span className={pending > 0 ? "text-amber-600" : "text-green-600"}>{pending}</span>
+                              const dispatchQty = parseFloat(line.dispatchQty) || 0
+                              const allocated = line.allocatedQty || 0
+                              const pending = Math.max(0, allocated - dispatchQty)
+                              const extra = Math.max(0, dispatchQty - allocated)
+                              return (
+                                <div className="flex flex-col items-end">
+                                  <span className={pending > 0 ? "text-amber-600" : "text-green-600"}>{pending.toFixed(2)}</span>
+                                  {extra > 0 && (
+                                    <span className="text-[10px] text-red-500 font-bold">+{extra.toFixed(2)} Extra</span>
+                                  )}
+                                </div>
+                              )
                             })()}
                           </td>
                           <td className="px-4 py-3 text-right">
