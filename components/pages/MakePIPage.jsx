@@ -357,7 +357,7 @@ export default function MakePIPage({ user }) {
                 </Button>
                 {isPartial && (
                   <span className="text-[10px] text-orange-600 font-medium">
-                    Pending: {pendingQtyBalance} tons
+                    Pending: {pendingQtyBalance} {group.rows[0]?.rawData?.["Type Of Measurement"] || "tons"}
                   </span>
                 )}
               </div>
@@ -638,7 +638,7 @@ export default function MakePIPage({ user }) {
                               <span>{row.productName}</span>
                               {row.rate > 0 && (
                                 <span className="text-[10px] text-violet-500 font-semibold tabular-nums">
-                                  ₹{Number(row.rate).toLocaleString("en-IN")}/t
+                                  ₹{Number(row.rate).toLocaleString("en-IN")}/{row.rawData?.["Type Of Measurement"] || "t"}
                                 </span>
                               )}
                             </div>
@@ -646,13 +646,13 @@ export default function MakePIPage({ user }) {
                           <TableCell className="text-right tabular-nums font-semibold text-emerald-700">
                             {row.rate > 0 ? formatCurrency(row.rate) : "—"}
                           </TableCell>
-                          <TableCell className="text-right">{row.quantity} t</TableCell>
-                          <TableCell className="text-right font-medium text-blue-600">{formatQty(dispatchedQty)} t</TableCell>
-                          <TableCell className="text-right">{formatQty(pendingDispatchQty)} t</TableCell>
-                          <TableCell className="text-right font-semibold text-slate-800">{formatQty(row.quantity)} t</TableCell>
-                          <TableCell className="text-right tabular-nums text-slate-600">{formatQty(proportionalQtyRaised)} t</TableCell>
+                          <TableCell className="text-right">{row.quantity} {row.rawData?.["Type Of Measurement"] || "t"}</TableCell>
+                          <TableCell className="text-right font-medium text-blue-600">{formatQty(dispatchedQty)} {row.rawData?.["Type Of Measurement"] || "t"}</TableCell>
+                          <TableCell className="text-right">{formatQty(pendingDispatchQty)} {row.rawData?.["Type Of Measurement"] || "t"}</TableCell>
+                          <TableCell className="text-right font-semibold text-slate-800">{formatQty(row.quantity)} {row.rawData?.["Type Of Measurement"] || "t"}</TableCell>
+                          <TableCell className="text-right tabular-nums text-slate-600">{formatQty(proportionalQtyRaised)} {row.rawData?.["Type Of Measurement"] || "t"}</TableCell>
                           <TableCell className="text-right tabular-nums text-orange-600 font-medium">
-                            {formatQty(Math.max(0, pendingToPI - enteredQty))} t
+                            {formatQty(Math.max(0, pendingToPI - enteredQty))} {row.rawData?.["Type Of Measurement"] || "t"}
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-col items-end gap-0.5">
@@ -743,7 +743,7 @@ export default function MakePIPage({ user }) {
                   <div>
                     <span className="text-sm font-semibold text-slate-700">Total Qty to PI</span>
                     <div className="text-lg font-bold text-violet-700">
-                      {formatQty(selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeQtys[r.id]) || 0), 0))} tons
+                      {formatQty(selectedGroup.rows.reduce((sum, r) => sum + (Number(piToMakeQtys[r.id]) || 0), 0))} {selectedGroup.rows[0]?.rawData?.["Type Of Measurement"] || "tons"}
                     </div>
                   </div>
                   <div className="text-right space-y-1">

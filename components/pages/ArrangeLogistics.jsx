@@ -559,7 +559,7 @@ export default function ArrangeLogistics({ user }) {
                     <div className="flex flex-col min-w-0">
                       <span className="font-medium text-gray-800 truncate text-xs" title={row["Product Name"]}>{row["Product Name"]}</span>
                       <span className="text-[10px] font-bold text-gray-500">
-                        {Math.max(0, (parseFloat(row.Quantity) || 0) - (parseFloat(row.logistics_approved_qty) || 0))} Tons
+                        {Math.max(0, (parseFloat(row.Quantity) || 0) - (parseFloat(row.logistics_approved_qty) || 0))} {row["Type Of Measurement"] || "Tons"}
                       </span>
                     </div>
                   </div>

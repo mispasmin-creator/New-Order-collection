@@ -89,7 +89,7 @@ export default function AccountsApprovalPage({ user }) {
       const { data: splitData, error: splitError } = await supabase
         .from("po_logistics_splits")
         .select("*")
-        .in("status", [STATUS_DISPATCHED, STATUS_ACCOUNTS_APPROVED])
+        .in("status", [STATUS_DISPATCHED, STATUS_ACCOUNTS_APPROVED, "Logistic Completed"])
         .order("id", { ascending: false })
 
       if (splitError) throw splitError
@@ -124,6 +124,7 @@ export default function AccountsApprovalPage({ user }) {
           retentionPercentage: parseFloat(order["Retention Percentage"]) || 0,
           leadTimeFinalPayment: order["Lead Time For Collection Of Final Payment"] || "",
           specificConcern: order["Specific Concern"] || "",
+          typeOfMeasurement: order["Type Of Measurement"] || "Tons",
         }
       }
 
@@ -578,7 +579,7 @@ export default function AccountsApprovalPage({ user }) {
               <span className="text-slate-600">PO: {selectedGroup?.poNumber} · {selectedGroup?.rows[0]?.partyName}</span>
               {selectedGroup && (
                 <span className="font-bold text-blue-700 bg-blue-100/80 px-2.5 py-1 rounded-lg border border-blue-200 w-fit text-sm shadow-sm">
-                  Selected Total: {selectedGroup.rows.filter(r => selectedSplitIds.has(r.id)).reduce((sum, r) => sum + (parseFloat(r.allocatedQty) || 0), 0)} Tons
+                  Selected Total: {selectedGroup.rows.filter(r => selectedSplitIds.has(r.id)).reduce((sum, r) => sum + (parseFloat(r.allocatedQty) || 0), 0)} {selectedGroup?.rows[0]?.typeOfMeasurement || "Tons"}
                 </span>
               )}
             </DialogDescription>
@@ -684,7 +685,7 @@ export default function AccountsApprovalPage({ user }) {
                         </div>
                         <div>
                           <span className="text-gray-500">Quantity</span>
-                          <p className="font-medium text-gray-800">{pi.pi_quantity ? `${pi.pi_quantity} tons` : "—"}</p>
+                          <p className="font-medium text-gray-800">{pi.pi_quantity ? `${pi.pi_quantity} ${selectedGroup?.rows[0]?.typeOfMeasurement || "tons"}` : "—"}</p>
                         </div>
                         {pi.actual_amount > 0 && (
                           <div>
@@ -743,7 +744,7 @@ export default function AccountsApprovalPage({ user }) {
                         <span className="text-xs text-slate-500">{row.transporterName}</span>
                       </div>
                       <div className="flex items-center gap-4 text-xs text-slate-600">
-                        <span>Qty: <span className="font-bold text-blue-600">{row.allocatedQty} Tons</span></span>
+                        <span>Qty: <span className="font-bold text-blue-600">{row.allocatedQty} {row.typeOfMeasurement || "Tons"}</span></span>
                         {row.poRate && (
                           <span>Rate: <span className="font-medium text-slate-800">₹{row.poRate}</span></span>
                         )}
