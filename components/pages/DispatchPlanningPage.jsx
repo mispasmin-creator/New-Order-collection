@@ -530,8 +530,19 @@ export default function DispatchPlanningPage({ user }) {
   const updateLineQty = (idx, value) =>
     setDispatchLines((prev) => {
       const n = [...prev]
-      // No hard limit, allow any quantity
-      const qty = value === "" ? "" : String(Math.max(0, parseFloat(value) || 0))
+      // Keep value as a raw string so decimals/trailing zeros are typable.
+      // Filter out negative values to match min="0".
+      let qty = value
+      if (qty !== "") {
+        if (qty.startsWith("-")) {
+          qty = ""
+        } else {
+          const parsed = parseFloat(qty)
+          if (!isNaN(parsed) && parsed < 0) {
+            qty = "0"
+          }
+        }
+      }
       n[idx] = { ...n[idx], dispatchQty: qty }
       return n
     })
