@@ -604,11 +604,11 @@ export default function DispatchPlanningPage({ user }) {
 
         const latestDelivered = parseFloat(latestOrder?.Delivered) || 0
         const totalQty = parseFloat(latestOrder?.Quantity) || 0
-        const latestPending = parseFloat(latestOrder?.["Pending Qty"]) || Math.max(0, totalQty - latestDelivered)
-
-        if (totalDispatchQtyForPo > latestPending + 0.0001) {
-          throw new Error(`Total dispatch quantity (${totalDispatchQtyForPo}) for this batch exceeds the current pending quantity (${latestPending}) for this PO.`)
-        }
+        // Commented out to allow over-dispatch as per user request
+        // const latestPending = parseFloat(latestOrder?.["Pending Qty"]) || Math.max(0, totalQty - latestDelivered)
+        // if (totalDispatchQtyForPo > latestPending + 0.0001) {
+        //   throw new Error(`Total dispatch quantity (${totalDispatchQtyForPo}) for this batch exceeds the current pending quantity (${latestPending}) for this PO.`)
+        // }
 
         // Update ORDER RECEIPT
         const newDelivered = latestDelivered + totalDispatchQtyForPo
