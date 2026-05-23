@@ -47,7 +47,7 @@ export default function MakeInvoicePage({ user }) {
 
       let orQuery = supabase
         .from("ORDER RECEIPT")
-        .select('id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Gst Number", "Address", "Rate Of Material", "Upload SO"')
+        .select('id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Gst Number", "Address", "Rate Of Material", "Upload SO", "Freight", "Freight Amount"')
       if (shouldFilter) orQuery = orQuery.in('Firm Name', userFirms)
       const { data: orData, error: orError } = await orQuery
 
@@ -91,6 +91,8 @@ export default function MakeInvoicePage({ user }) {
           gstNumber: or["Gst Number"] || "",
           address: or["Address"] || "",
           rateOfMaterial: Number(or["Rate Of Material"]) || 0,
+          freight: or["Freight"] || "",
+          freightAmount: Number(or["Freight Amount"]) || 0,
           uploadSO: or["Upload SO"] || "",
           planned4: row["Planned4"],
           actual4: row["Actual4"],
@@ -171,6 +173,8 @@ export default function MakeInvoicePage({ user }) {
         productName: row.productName,
         qty: row.actualTruckQty || row.qtyToBeDispatched || 0,
         rate: row.rateOfMaterial || 0,
+        freight: row.freight,
+        freightAmount: row.freight?.toString().trim().toLowerCase() === "yes" ? row.freightAmount || 0 : 0,
         gstPct: 18,
         // Carry over other info for display
         lgstSrNumber: row.lgstSrNumber,
@@ -220,8 +224,9 @@ export default function MakeInvoicePage({ user }) {
         const isSelected = selectedRowIds.has(line.id)
         const qty = Number(line.qty) || 0
         const rate = Number(line.rate) || 0
+        const freightAmount = Number(line.freightAmount) || 0
         const gstPct = Number(line.gstPct) || 0
-        const total = isSelected ? (qty * rate) : 0
+        const total = isSelected ? (qty * rate) + freightAmount : 0
         const taxAmt = isSelected ? (total * gstPct / 100) : 0
         return { ...line, isSelected, total, taxAmt, amountWithTax: total + taxAmt }
       }),
@@ -231,6 +236,10 @@ export default function MakeInvoicePage({ user }) {
   const grandTotal = useMemo(() => computedLines.reduce((s, l) => s + l.total, 0), [computedLines])
   const grandTax = useMemo(() => computedLines.reduce((s, l) => s + l.taxAmt, 0), [computedLines])
   const grandWithTax = useMemo(() => computedLines.reduce((s, l) => s + l.amountWithTax, 0), [computedLines])
+  const hasFreightAmount = useMemo(
+    () => computedLines.some((line) => Number(line.freightAmount) > 0),
+    [computedLines]
+  )
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -561,6 +570,9 @@ export default function MakeInvoicePage({ user }) {
                         <th className="text-left px-3 py-2 font-semibold text-gray-600">Product</th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-600">Qty</th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-600 min-w-[100px]">Rate (₹)</th>
+                        {hasFreightAmount && (
+                          <th className="text-right px-3 py-2 font-semibold text-gray-600">Freight Amount</th>
+                        )}
                         <th className="text-right px-3 py-2 font-semibold text-gray-600">Total (₹)</th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-600">Amt w/ Tax (₹)</th>
                       </tr>
@@ -603,6 +615,11 @@ export default function MakeInvoicePage({ user }) {
                               disabled={submitting || !line.isSelected}
                             />
                           </td>
+                          {hasFreightAmount && (
+                            <td className="px-3 py-2 text-right text-gray-700 font-medium">
+                              {Number(line.freightAmount) > 0 ? fmt(line.freightAmount) : "-"}
+                            </td>
+                          )}
                           <td className="px-3 py-2 text-right text-gray-700 font-medium">{fmt(line.total)}</td>
                           <td className="px-3 py-2 text-right font-bold text-gray-900">{fmt(line.amountWithTax)}</td>
                         </tr>
@@ -610,7 +627,7 @@ export default function MakeInvoicePage({ user }) {
                     </tbody>
                     <tfoot className="bg-gray-50 border-t-2 border-gray-200 text-[10px] font-bold">
                       <tr>
-                        <td colSpan={5} className="px-3 py-2 text-right text-gray-700">Grand Total (Selected)</td>
+                        <td colSpan={hasFreightAmount ? 6 : 5} className="px-3 py-2 text-right text-gray-700">Grand Total (Selected)</td>
                         <td className="px-3 py-2 text-right text-gray-800">{fmt(grandTotal)}</td>
                         <td className="px-3 py-2 text-right text-green-700 text-xs">{fmt(grandWithTax)}</td>
                       </tr>
@@ -690,3 +707,4 @@ export default function MakeInvoicePage({ user }) {
     </div>
   )
 }
+

@@ -96,7 +96,7 @@ export default function LogisticPage({ user }) {
         : null
       const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
 
-      let orderQuery = supabase.from("ORDER RECEIPT").select('id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Firm Name"')
+      let orderQuery = supabase.from("ORDER RECEIPT").select('id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Firm Name", "Freight", "Freight Amount"')
       if (shouldFilter) orderQuery = orderQuery.in('Firm Name', userFirms)
       const { data: orderData, error: orderError } = await orderQuery
 
@@ -141,6 +141,8 @@ export default function LogisticPage({ user }) {
           id: row.id,
           partyPONumber: order?.["PARTY PO NO (As Per Po Exact)"] || "",
           firmName: order?.["Firm Name"] || "",
+          freight: order?.["Freight"] || "",
+          freightAmount: Number(order?.["Freight Amount"]) || 0,
           dSrNumber: row[DB_COLUMNS.DSR_NUMBER] || "",
           deliveryOrderNo: row[DB_COLUMNS.DELIVERY_ORDER_NO] || "",
           partyName: row[DB_COLUMNS.PARTY_NAME] || order?.["Party Names"] || "",
@@ -622,6 +624,12 @@ export default function LogisticPage({ user }) {
                                       <span className="text-gray-500">Transporter</span>
                                       <p className="font-medium text-gray-800">{row.transporterName || "—"}</p>
                                     </div>
+                                    {row.freight?.toString().trim().toLowerCase() === "yes" && row.freightAmount > 0 && (
+                                      <div>
+                                        <span className="text-gray-500">Freight Amount</span>
+                                        <p className="font-medium text-green-700">₹{Number(row.freightAmount).toLocaleString()}</p>
+                                      </div>
+                                    )}
                                     <div>
                                       <span className="text-gray-500">Date of Dispatch</span>
                                       <p className="font-medium text-gray-800">{row.dateOfDispatch || "—"}</p>

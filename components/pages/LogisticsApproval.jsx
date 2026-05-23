@@ -557,6 +557,22 @@ export default function LogisticsApproval({ user }) {
                                       <p className="font-medium text-green-700">{order["Total PO Basic Value"] ? `₹${Number(order["Total PO Basic Value"]).toLocaleString()}` : "—"}</p>
                                     </div>
                                     <div>
+                                      <span className="text-gray-500">PO Amount + GST</span>
+                                      <p className="font-medium text-green-700">
+                                        {order["Adjusted Amount"] !== null &&
+                                        order["Adjusted Amount"] !== undefined &&
+                                        order["Adjusted Amount"] !== ""
+                                          ? Number(order["Adjusted Amount"]).toLocaleString()
+                                          : "—"}
+                                      </p>
+                                    </div>
+                                    {order["Freight"]?.toString().trim().toLowerCase() === "yes" && Number(order["Freight Amount"]) > 0 && (
+                                      <div>
+                                        <span className="text-gray-500">Freight Amount</span>
+                                        <p className="font-medium text-green-700">₹{Number(order["Freight Amount"]).toLocaleString()}</p>
+                                      </div>
+                                    )}
+                                    <div>
                                       <span className="text-gray-500">Transport Type</span>
                                       <p className="font-medium text-gray-800">{order["Type Of Transporting"] || "—"}</p>
                                     </div>

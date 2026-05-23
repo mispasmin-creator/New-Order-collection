@@ -115,6 +115,8 @@ export default function AccountsApprovalPage({ user }) {
           quantity: parseFloat(order["Quantity"]) || 0,
           totalValue: parseFloat(order["Total PO Basic Value"]) || 0,
           poRate: order["Rate Of Material"] || "",
+          freight: order["Freight"] || "",
+          freightAmount: parseFloat(order["Freight Amount"]) || 0,
           gstNumber: order["Gst Number"] || "",
           contactPersonName: order["Contact Person Name"] || "",
           partyPODate: order["Party PO Date"] || "",
@@ -504,6 +506,12 @@ export default function AccountsApprovalPage({ user }) {
                                       <span className="text-gray-500">Total PO Value</span>
                                       <p className="font-medium text-green-700">{row.totalValue ? `₹${Number(row.totalValue).toLocaleString()}` : "—"}</p>
                                     </div>
+                                    {row.freight?.toString().trim().toLowerCase() === "yes" && row.freightAmount > 0 && (
+                                      <div>
+                                        <span className="text-gray-500">Freight Amount</span>
+                                        <p className="font-medium text-green-700">₹{Number(row.freightAmount).toLocaleString()}</p>
+                                      </div>
+                                    )}
                                     <div>
                                       <span className="text-gray-500">Transporter</span>
                                       <p className="font-medium text-gray-800">{row.transporterName || "—"}</p>

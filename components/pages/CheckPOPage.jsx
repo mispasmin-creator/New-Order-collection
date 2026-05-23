@@ -141,6 +141,8 @@ export default function CheckPOPage({ user, onNavigate }) {
           specificConcern: row["Specific Concern"],
           referenceNo: row["Reference No."],
           adjustedAmount: parseFloat(row["Adjusted Amount"]) || 0,
+          freight: row["Freight"] ?? row["freight"] ?? row["Is Freight"] ?? row["Freight Is"] ?? row["Freight Required"],
+          freightAmount: parseFloat(row["Freight Amount"] ?? row["freight_amount"] ?? row["Freight amount"] ?? row["Adjusted Amount"]) || 0,
           plannedDate: formatDate(row["Planned 1"]),
           actualDate: formatDate(row["Actual 1"]),
           expectedDeliveryDate: formatDate(row["Expected Delivery Date"]),
@@ -475,6 +477,12 @@ export default function CheckPOPage({ user, onNavigate }) {
                 <span className="text-gray-600">GST:</span>
                 <span className="font-medium text-right">{order.gstNumber}</span>
               </div>
+              {order.freight?.toString().trim().toLowerCase() === "yes" && (
+                <div className="flex justify-between border-b pb-1">
+                  <span className="text-gray-600">Freight Amount:</span>
+                  <span className="font-medium text-right">â‚¹{order.freightAmount.toLocaleString()}</span>
+                </div>
+              )}
               {order.poCopyUrl && (
                 <div className="flex justify-between pt-2">
                   <span className="text-gray-600 font-semibold">PO Copy:</span>

@@ -100,6 +100,8 @@ export default function CheckDeliveryPage({ user }) {
         partyPODate: formatDate(order["Party PO Date"]),
         rateOfMaterial: order["Rate Of Material"] || "",
         totalPOValue: order["Total PO Basic Value"] || "",
+        freight: order["Freight"] || "",
+        freightAmount: parseFloat(order["Freight Amount"]) || 0,
         transportType: order["Type Of Transporting"] || "",
         paymentTerms: order["Payment to Be Taken"] || "",
         gstNumber: order["Gst Number"] || "",
@@ -456,6 +458,12 @@ export default function CheckDeliveryPage({ user }) {
                                       <span className="text-gray-500">Total PO Value</span>
                                       <p className="font-medium text-green-700">{row.totalPOValue ? `₹${Number(row.totalPOValue).toLocaleString()}` : "—"}</p>
                                     </div>
+                                    {row.freight?.toString().trim().toLowerCase() === "yes" && row.freightAmount > 0 && (
+                                      <div>
+                                        <span className="text-gray-500">Freight Amount</span>
+                                        <p className="font-medium text-green-700">₹{Number(row.freightAmount).toLocaleString()}</p>
+                                      </div>
+                                    )}
                                     <div>
                                       <span className="text-gray-500">Transport Type</span>
                                       <p className="font-medium text-gray-800">{row.transportType || "—"}</p>

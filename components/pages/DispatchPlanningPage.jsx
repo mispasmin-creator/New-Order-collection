@@ -217,6 +217,8 @@ export default function DispatchPlanningPage({ user }) {
           transporterRate: split.rate || "",
           rate: order["Rate Of Material"] || "",
           totalPOValue: order["Total PO Basic Value"] || "",
+          freight: order["Freight"] || "",
+          freightAmount: parseFloat(order["Freight Amount"]) || 0,
           partyPODate: order["Party PO Date"] || "",
           paymentToBeTaken: order["Payment to Be Taken"] || "",
           gstNumber: order["Gst Number"] || "",
@@ -259,6 +261,8 @@ export default function DispatchPlanningPage({ user }) {
             transporterRate: "",
             rate: order["Rate Of Material"] || "",
             totalPOValue: order["Total PO Basic Value"] || "",
+            freight: order["Freight"] || "",
+            freightAmount: parseFloat(order["Freight Amount"]) || 0,
             partyPODate: order["Party PO Date"] || "",
             paymentToBeTaken: order["Payment to Be Taken"] || "",
             gstNumber: order["Gst Number"] || "",
@@ -747,6 +751,11 @@ export default function DispatchPlanningPage({ user }) {
               <div className="flex justify-between border-b pb-1">
                 <span className="text-gray-600">Transport:</span><span className="font-medium text-right">{order["Type Of Transporting"]}</span>
               </div>
+              {order["Freight"]?.toString().trim().toLowerCase() === "yes" && Number(order["Freight Amount"]) > 0 && (
+                <div className="flex justify-between border-b pb-1">
+                  <span className="text-gray-600">Freight Amount:</span><span className="font-medium text-right text-green-700">₹{Number(order["Freight Amount"]).toLocaleString()}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1131,6 +1140,12 @@ export default function DispatchPlanningPage({ user }) {
                                       <span className="text-gray-500">Total PO Value</span>
                                       <p className="font-medium text-green-700">{row.totalPOValue ? `₹${Number(row.totalPOValue).toLocaleString()}` : "—"}</p>
                                     </div>
+                                    {row.freight?.toString().trim().toLowerCase() === "yes" && row.freightAmount > 0 && (
+                                      <div>
+                                        <span className="text-gray-500">Freight Amount</span>
+                                        <p className="font-medium text-green-700">₹{Number(row.freightAmount).toLocaleString()}</p>
+                                      </div>
+                                    )}
                                     <div>
                                       <span className="text-gray-500">Transport Type</span>
                                       <p className="font-medium text-gray-800">{row.typeOfTransporting || "—"}</p>

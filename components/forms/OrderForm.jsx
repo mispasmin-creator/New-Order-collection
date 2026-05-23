@@ -91,6 +91,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
 
     // Contact & Transport
     "Type Of Transporting": "",
+    "Freight Amount": "",
     "Contact Person Name": "",
     "Contact Person WhatsApp No.": "",
 
@@ -360,6 +361,9 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
     } else {
       setFormData(prev => {
         const updated = { ...prev, [field]: value };
+        if (field === "Type Of Transporting" && value !== "Ex Factory But paid by Us") {
+          updated["Freight Amount"] = "";
+        }
         updated["PI Due Date"] = computePiDueDate(updated);
         return updated;
       });
@@ -461,6 +465,8 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       "Quantity": 0,
       "Rate Of Material": 0,
       "Type Of Transporting": formData["Type Of Transporting"],
+      "Freight": formData["Type Of Transporting"] === "Ex Factory But paid by Us" ? "Yes" : "No",
+      "Freight Amount": formData["Type Of Transporting"] === "Ex Factory But paid by Us" ? parseFloat(formData["Freight Amount"]) || 0 : 0,
       "Type Of Packaging": formData["Type of Packaging"],
       "Upload SO": uploadedFileUrl,
       "Order Received From": formData["Order Received From"],
@@ -535,6 +541,15 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
         })
         return;
       }
+    }
+
+    if (formData["Type Of Transporting"] === "Ex Factory But paid by Us" && !formData["Freight Amount"]) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please fill in Freight Amount",
+      })
+      return;
     }
 
     try {
@@ -626,6 +641,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
         "Address": "",
         "Firm Name": user.role === "ADMIN" ? "" : user.firm,
         "Type Of Transporting": "",
+        "Freight Amount": "",
         "Contact Person Name": "",
         "Contact Person WhatsApp No.": "",
         "Order Received From": "",
@@ -951,6 +967,23 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                   </SelectContent>
                 </Select>
               </div>
+
+              {formData["Type Of Transporting"] === "Ex Factory But paid by Us" && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">
+                    Freight Amount <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData["Freight Amount"]}
+                    onChange={(e) => handleInputChange("Freight Amount", e.target.value)}
+                    className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="Enter freight amount"
+                  />
+                </div>
+              )}
 
               {/* Type of Packaging */}
               <div className="space-y-2">

@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge"
 import { supabase } from "@/lib/supabaseClient"
 
 const COLUMN_CONFIG = [
-  { id: "date", label: "Date" },
+  { id: "date", label: "PO Date" },
   { id: "poNumber", label: "PO / DO No." },
   { id: "partyName", label: "Party Name" },
   { id: "productName", label: "Product" },
@@ -59,6 +59,7 @@ export default function OrderPage({ user }) {
   const [statusFilter, setStatusFilter] = useState("all")
   const [firmFilter, setFirmFilter] = useState("all")
   const [managerFilter, setManagerFilter] = useState("all")
+  const [productFilter, setProductFilter] = useState("all")
   const [visibleColumns, setVisibleColumns] = useState(() => {
     const defaultState = {
       date: true,
@@ -113,6 +114,17 @@ export default function OrderPage({ user }) {
     setExpandedPOs(newExpanded)
   }
 
+  const getUniqueDisplayValue = (items, key, formatter = (value) => value) => {
+    const values = [...new Set(items
+      .map((item) => item[key])
+      .filter((value) => value !== null && value !== undefined && value !== "")
+      .map(formatter))]
+
+    if (values.length === 0) return "-"
+    if (values.length === 1) return values[0]
+    return values.join(", ")
+  }
+
   // Format date for display
   const formatDate = (dateString) => {
     if (!dateString) return ""
@@ -165,7 +177,7 @@ export default function OrderPage({ user }) {
           timestamp: row["Timestamp"],
           doNumber: row["DO-Delivery Order No."],
           partyPONumber: row["PARTY PO NO (As Per Po Exact)"],
-          partyPODate: formatDate(row["Expected Delivery Date"] || row["Party PO Date"]),
+          partyPODate: formatDate(row["Party PO Date"]),
           partyName: row["Party Names"],
           productName: row["Product Name"],
           quantity: parseFloat(row["Quantity"]) || 0,
@@ -192,7 +204,9 @@ export default function OrderPage({ user }) {
           advance: parseFloat(row["Advance"]) || 0,
           basic: parseFloat(row["Basic"]) || 0,
           retentionPayment: row["Retention Payment"],
-          retentionPercentage: parseFloat(row["Retention Percentage"]) || 0,
+          retentionPercentage: row["Retention Percentage"] !== null && row["Retention Percentage"] !== undefined && row["Retention Percentage"] !== ""
+            ? parseFloat(row["Retention Percentage"])
+            : null,
           leadTimeRetention: row["Lead Time for Retention"],
           specificConcern: row["Specific Concern"],
           referenceNo: row["Reference No."],
@@ -362,6 +376,11 @@ export default function OrderPage({ user }) {
       filtered = filtered.filter(order => order.marketingManager === managerFilter)
     }
 
+    // Apply product filter
+    if (productFilter !== "all") {
+      filtered = filtered.filter(order => order.productName === productFilter)
+    }
+
     // Apply search filter
     if (searchTerm) {
       filtered = filtered.filter(order => {
@@ -400,6 +419,7 @@ export default function OrderPage({ user }) {
           totalQuantity: 0,
           totalValue: 0,
           date: order.partyPODate,
+          products: new Set(),
           maxId: order.id
         }
         order_of_first_seen.push(po)
@@ -407,10 +427,20 @@ export default function OrderPage({ user }) {
       groups[po].items.push(order)
       groups[po].totalQuantity += (order.quantity || 0)
       groups[po].totalValue += (order.totalValue || 0)
+      if (order.productName) groups[po].products.add(order.productName)
       if (order.id > groups[po].maxId) groups[po].maxId = order.id
     })
     return order_of_first_seen
-      .map(po => groups[po])
+      .map(po => {
+        const group = groups[po]
+        const productNames = Array.from(group.products)
+        return {
+          ...group,
+          productName: productNames.length === 1 ? productNames[0] : `${productNames.length} products`,
+          retentionPayment: getUniqueDisplayValue(group.items, "retentionPayment"),
+          retentionPercentage: getUniqueDisplayValue(group.items, "retentionPercentage", (value) => `${value}%`),
+        }
+      })
       .sort((a, b) => b.maxId - a.maxId)
   }, [filteredOrders])
 
@@ -441,6 +471,9 @@ export default function OrderPage({ user }) {
 
   // Get unique managers for filter
   const uniqueManagers = [...new Set(orders.map(order => order.marketingManager).filter(Boolean))]
+
+  // Get unique products for filter
+  const uniqueProducts = [...new Set(orders.map(order => order.productName).filter(Boolean))]
 
   // View order details
   const viewOrderDetails = (order) => {
@@ -594,6 +627,18 @@ export default function OrderPage({ user }) {
               </SelectContent>
             </Select>
 
+            <Select value={productFilter} onValueChange={setProductFilter}>
+              <SelectTrigger className="w-[220px] h-9">
+                <SelectValue placeholder="Product" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Products</SelectItem>
+                {uniqueProducts.map(product => (
+                  <SelectItem key={product} value={product}>{product}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <div className="flex gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -622,6 +667,8 @@ export default function OrderPage({ user }) {
                       setSearchTerm("")
                       setStatusFilter("all")
                       setFirmFilter("all")
+                      setManagerFilter("all")
+                      setProductFilter("all")
                     }}
                   >
                     Reset Filters
@@ -681,7 +728,7 @@ export default function OrderPage({ user }) {
               <TableHeader>
                 <TableRow className="bg-gray-50">
                   <TableHead className="w-10"></TableHead>
-                  {visibleColumns.date && <TableHead className="font-semibold text-gray-900">Date</TableHead>}
+                  {visibleColumns.date && <TableHead className="font-semibold text-gray-900">PO Date</TableHead>}
                   {visibleColumns.poNumber && <TableHead className="font-semibold text-gray-900">Party PO / DO No.</TableHead>}
                   {visibleColumns.partyName && <TableHead className="font-semibold text-gray-900">Party Name</TableHead>}
                   {visibleColumns.productName && <TableHead className="font-semibold text-gray-900">Product</TableHead>}
@@ -689,7 +736,7 @@ export default function OrderPage({ user }) {
                   {visibleColumns.quantity && <TableHead className="font-semibold text-gray-900 text-right">Qty</TableHead>}
                   {visibleColumns.pendingQty && <TableHead className="font-semibold text-gray-900 text-right">Pending Qty</TableHead>}
                   {visibleColumns.rate && <TableHead className="font-semibold text-gray-900 text-right">Rate</TableHead>}
-                  {visibleColumns.totalValue && <TableHead className="font-semibold text-gray-900 text-right">Total Value</TableHead>}
+                  {visibleColumns.totalValue && <TableHead className="font-semibold text-gray-900 text-right">Basic Value</TableHead>}
                   {visibleColumns.paymentToBeTaken && <TableHead className="font-semibold text-gray-900 text-right">Pending PO</TableHead>}
                   {visibleColumns.retentionPayment && <TableHead className="font-semibold text-gray-900 text-right">Retention Payment</TableHead>}
                   {visibleColumns.retentionPercentage && <TableHead className="font-semibold text-gray-900 text-right">Retention %</TableHead>}
@@ -701,7 +748,6 @@ export default function OrderPage({ user }) {
               <TableBody>
                 {groupedOrders.map((group) => {
                   const isExpanded = expandedPOs.has(group.poNumber)
-                  const visibleCount = Object.values(visibleColumns).filter(Boolean).length
                   return (
                     <React.Fragment key={group.poNumber}>
                       <TableRow 
@@ -716,15 +762,49 @@ export default function OrderPage({ user }) {
                             <span className="text-xs text-gray-500">{group.date}</span>
                           </TableCell>
                         )}
-                        <TableCell colSpan={visibleCount - (visibleColumns.date ? 1 : 0)}>
-                          <div className="flex items-center gap-3">
+                        {visibleColumns.poNumber && (
+                          <TableCell>
+                            <div className="flex items-center gap-3">
                             <span className="font-bold text-blue-700">{group.poNumber}</span>
-                            <span className="text-slate-500 text-sm">| {group.partyName}</span>
                             <Badge variant="secondary" className="font-normal text-xs bg-gray-100">
                               {group.items.length} {group.items.length === 1 ? 'item' : 'items'}
                             </Badge>
-                          </div>
-                        </TableCell>
+                            </div>
+                          </TableCell>
+                        )}
+                        {visibleColumns.partyName && (
+                          <TableCell className="text-slate-600 text-sm">{group.partyName}</TableCell>
+                        )}
+                        {visibleColumns.productName && (
+                          <TableCell className="text-slate-600 text-sm">{group.productName}</TableCell>
+                        )}
+                        {visibleColumns.transport && <TableCell></TableCell>}
+                        {visibleColumns.quantity && (
+                          <TableCell className="text-right font-semibold text-gray-700">
+                            {group.totalQuantity.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                          </TableCell>
+                        )}
+                        {visibleColumns.pendingQty && <TableCell></TableCell>}
+                        {visibleColumns.rate && <TableCell></TableCell>}
+                        {visibleColumns.totalValue && (
+                          <TableCell className="text-right font-semibold text-gray-700">
+                            {group.totalValue.toLocaleString("en-IN")}
+                          </TableCell>
+                        )}
+                        {visibleColumns.paymentToBeTaken && <TableCell></TableCell>}
+                        {visibleColumns.retentionPayment && (
+                          <TableCell className="text-right text-gray-700">{group.retentionPayment}</TableCell>
+                        )}
+                        {visibleColumns.retentionPercentage && (
+                          <TableCell className="text-right text-gray-700">{group.retentionPercentage}</TableCell>
+                        )}
+                        {visibleColumns.manager && <TableCell></TableCell>}
+                        {visibleColumns.status && <TableCell></TableCell>}
+                        {visibleColumns.firmName && (
+                          <TableCell>
+                            <div className="text-xs text-gray-400">{group.firmName}</div>
+                          </TableCell>
+                        )}
                       </TableRow>
                       
                       {isExpanded && group.items.map((order) => (
@@ -739,7 +819,7 @@ export default function OrderPage({ user }) {
                           <TableCell></TableCell>
                           {visibleColumns.date && (
                             <TableCell>
-                              <span className="text-[10px] text-gray-400">{formatDate(order.timestamp)}</span>
+                              <span className="text-[10px] text-gray-400">{order.partyPODate}</span>
                             </TableCell>
                           )}
                           {visibleColumns.poNumber && (
@@ -778,7 +858,7 @@ export default function OrderPage({ user }) {
                           )}
                           {visibleColumns.totalValue && (
                             <TableCell className="text-right font-semibold text-gray-700">
-                              ₹{(order.totalValue || 0).toLocaleString("en-IN")}
+                              {(order.totalValue || 0).toLocaleString("en-IN")}
                             </TableCell>
                           )}
                           {visibleColumns.paymentToBeTaken && (
@@ -793,7 +873,7 @@ export default function OrderPage({ user }) {
                           )}
                           {visibleColumns.retentionPercentage && (
                             <TableCell className="text-right text-gray-600">
-                              {order.retentionPercentage ? `${order.retentionPercentage}%` : "-"}
+                              {order.retentionPercentage !== null && order.retentionPercentage !== undefined ? `${order.retentionPercentage}%` : "-"}
                             </TableCell>
                           )}
                           {visibleColumns.manager && (
@@ -888,7 +968,7 @@ export default function OrderPage({ user }) {
                             <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Product</th>
                             <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Qty</th>
                             <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Rate</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Total Value</th>
+                            <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Basic Value</th>
                             {showAlumina && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Alumina %</th>}
                             {showIron && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Iron %</th>}
                             {showAdvance && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Advance %</th>}
@@ -987,7 +1067,7 @@ export default function OrderPage({ user }) {
                   <DetailField label="Iron %" value={selectedOrder.iron ? `${selectedOrder.iron}%` : null} />
                   <DetailField label="Type of Application" value={selectedOrder.typeOfApplication} />
                   <DetailField label="Reference No." value={selectedOrder.referenceNo} />
-                  <DetailField label="Adjusted Amount" value={selectedOrder.adjustedAmount ? `₹${Number(selectedOrder.adjustedAmount).toLocaleString("en-IN")}` : null} />
+                  <DetailField label="PO Amount + GST" value={selectedOrder.adjustedAmount ? `₹${Number(selectedOrder.adjustedAmount).toLocaleString("en-IN")}` : null} />
                 </div>
               </section>
 
