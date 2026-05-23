@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  distDir: process.env.NODE_ENV === "production" ? ".next-build" : ".next",
+  distDir: process.env.VERCEL ? ".next" : process.env.NODE_ENV === "production" ? ".next-build" : ".next",
   typescript: {
     ignoreBuildErrors: true,
   },
