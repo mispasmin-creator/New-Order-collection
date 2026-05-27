@@ -272,6 +272,10 @@ export default function UnifiedLogistics({ user }) {
     if (!combinedForm.biltyNo.trim()) {
       toast({ variant: "destructive", title: "Validation", description: "Bilty number is required." }); return
     }
+    const existingBiltyCopy = selectedGroup?.rows?.[0]?.biltyCopy
+    if (!combinedForm.biltyCopy && !existingBiltyCopy) {
+      toast({ variant: "destructive", title: "Validation", description: "Bilty copy is required." }); return
+    }
     if (!combinedForm.materialReceivedDate) {
       toast({ variant: "destructive", title: "Validation", description: "Receipt date is required." }); return
     }
@@ -629,7 +633,7 @@ export default function UnifiedLogistics({ user }) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Bilty Copy (optional)</Label>
+                  <Label>Bilty Copy <span className="text-red-500">*</span></Label>
                   <Input
                     type="file"
                     accept="image/*,.pdf"
@@ -694,7 +698,13 @@ export default function UnifiedLogistics({ user }) {
               <Button
                 className="flex-1 bg-blue-600 hover:bg-blue-700 font-semibold"
                 onClick={handleCombinedSubmit}
-                disabled={submitting || !combinedForm.biltyNo.trim() || !combinedForm.materialReceivedDate || !combinedForm.grnNumber.trim()}
+                disabled={
+                  submitting ||
+                  !combinedForm.biltyNo.trim() ||
+                  (!combinedForm.biltyCopy && !selectedGroup?.rows?.[0]?.biltyCopy) ||
+                  !combinedForm.materialReceivedDate ||
+                  !combinedForm.grnNumber.trim()
+                }
               >
                 {submitting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Submitting...</> : "Submit All Details"}
               </Button>

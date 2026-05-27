@@ -70,6 +70,30 @@ const formatDate = (value) => {
   } catch { return String(value) }
 }
 
+const toNumber = (value, fallback = 0) => {
+  const parsed = parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+const getOrderPendingQty = (order) => {
+  const totalQty = toNumber(order?.["Quantity"])
+  const deliveredQty = toNumber(order?.["Delivered"])
+  if (order?.["Pending Qty"] !== null && order?.["Pending Qty"] !== undefined && order?.["Pending Qty"] !== "") {
+    return Math.max(0, toNumber(order["Pending Qty"]))
+  }
+  return Math.max(0, totalQty - deliveredQty)
+}
+
+const formatQty = (value) =>
+  toNumber(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })
+
+const getLineDispatchableQty = (line) => {
+  const allocatedQty = Math.max(0, toNumber(line?.allocatedQty))
+  const pendingQty = Math.max(0, toNumber(line?.pendingQty, allocatedQty))
+  if (allocatedQty > 0 && pendingQty > 0) return Math.min(allocatedQty, pendingQty)
+  return Math.max(allocatedQty, pendingQty)
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function DispatchPlanningPage({ user }) {
   const { updateCount } = useNotification()
@@ -231,9 +255,9 @@ export default function DispatchPlanningPage({ user }) {
           partyName: order["Party Names"] || "",
           productName: order["Product Name"] || "",
           firmName: order["Firm Name"] || "",
-          quantity: parseFloat(order["Quantity"]) || 0,
-          quantityDelivered: parseFloat(order["Delivered"]) || 0,
-          pendingQty: parseFloat(order["Pending Qty"]) || 0,
+          quantity: toNumber(order["Quantity"]),
+          quantityDelivered: toNumber(order["Delivered"]),
+          pendingQty: getOrderPendingQty(order),
           typeOfTransporting: order["Type Of Transporting"] || "",
         }
       }).filter(Boolean)
@@ -243,9 +267,9 @@ export default function DispatchPlanningPage({ user }) {
       const dispatchedPoIds = new Set((dispatchData || []).map(d => d.po_id).filter(Boolean));
 
       (orderData || []).forEach(order => {
-        const totalQty = parseFloat(order["Quantity"]) || 0;
-        const deliveredQty = parseFloat(order["Delivered"]) || 0;
-        const pendingQty = order["Pending Qty"] != null ? parseFloat(order["Pending Qty"]) : Math.max(0, totalQty - deliveredQty);
+        const totalQty = toNumber(order["Quantity"]);
+        const deliveredQty = toNumber(order["Delivered"]);
+        const pendingQty = getOrderPendingQty(order);
         
         const isEligible = order.logistics_status === "Approved" || dispatchedPoIds.has(order.id);
         
@@ -262,7 +286,7 @@ export default function DispatchPlanningPage({ user }) {
             rate: order["Rate Of Material"] || "",
             totalPOValue: order["Total PO Basic Value"] || "",
             freight: order["Freight"] || "",
-            freightAmount: parseFloat(order["Freight Amount"]) || 0,
+            freightAmount: toNumber(order["Freight Amount"]),
             partyPODate: order["Party PO Date"] || "",
             paymentToBeTaken: order["Payment to Be Taken"] || "",
             gstNumber: order["Gst Number"] || "",
@@ -306,9 +330,9 @@ export default function DispatchPlanningPage({ user }) {
               )
               return split ? parseFloat(split.allocated_qty) : (parseFloat(row["Qty To Be Dispatched"]) || 0)
             })(),
-            quantity: parseFloat(order?.["Quantity"]) || 0,
-            quantityDelivered: parseFloat(order?.["Delivered"]) || 0,
-            pendingQty: parseFloat(order?.["Pending Qty"]) || Math.max(0, (parseFloat(order?.["Quantity"]) || 0) - (parseFloat(order?.["Delivered"]) || 0)),
+            quantity: toNumber(order?.["Quantity"]),
+            quantityDelivered: toNumber(order?.["Delivered"]),
+            pendingQty: getOrderPendingQty(order),
             transporterName: row["Transporter Name"] || "",
             dateOfDispatch: formatDate(row["Date Of Dispatch"]),
             timestamp: formatDate(row["Timestamp"]),
@@ -325,9 +349,9 @@ export default function DispatchPlanningPage({ user }) {
           partyName: order["Party Names"] || "",
           productName: order["Product Name"] || "",
           qtyToBeDispatched: order["Quantity"] || 0,
-          quantity: parseFloat(order["Quantity"]) || 0,
-          quantityDelivered: parseFloat(order["Delivered"]) || 0,
-          pendingQty: parseFloat(order["Pending Qty"]) || Math.max(0, (parseFloat(order["Quantity"]) || 0) - (parseFloat(order["Delivered"]) || 0)),
+          quantity: toNumber(order["Quantity"]),
+          quantityDelivered: toNumber(order["Delivered"]),
+          pendingQty: getOrderPendingQty(order),
           transporterName: "—",
           dateOfDispatch: formatDate(order.order_cancelled_at),
           timestamp: formatDate(order.order_cancelled_at),
@@ -470,6 +494,7 @@ export default function DispatchPlanningPage({ user }) {
         allocatedQty: row.allocatedQty,
         quantityDelivered: row.quantityDelivered || 0,
         quantity: row.quantity,
+        pendingQty: row.pendingQty,
         dispatchQty: "",
         included: true, // can be toggled off to skip this row
       }))
@@ -542,8 +567,13 @@ export default function DispatchPlanningPage({ user }) {
           qty = ""
         } else {
           const parsed = parseFloat(qty)
-          if (!isNaN(parsed) && parsed < 0) {
-            qty = "0"
+          if (!isNaN(parsed)) {
+            const maxQty = getLineDispatchableQty(n[idx])
+            if (parsed > maxQty) {
+              qty = String(maxQty)
+            } else if (parsed < 0) {
+              qty = "0"
+            }
           }
         }
       }
@@ -575,7 +605,10 @@ export default function DispatchPlanningPage({ user }) {
       if (qty <= 0) {
         toast({ variant: "destructive", title: "Validation", description: `Dispatch qty must be > 0 for "${line.productName}".` }); return
       }
-      // Hard limit removed to allow over-dispatch as per user request
+      const maxDispatchable = getLineDispatchableQty(line)
+      if (qty > maxDispatchable + 0.0001) {
+        toast({ variant: "destructive", title: "Validation", description: `Dispatch qty for "${line.productName}" cannot exceed pending qty (${maxDispatchable}).` }); return
+      }
     }
 
     try {
@@ -606,13 +639,12 @@ export default function DispatchPlanningPage({ user }) {
           .single()
         if (loErr) throw loErr
 
-        const latestDelivered = parseFloat(latestOrder?.Delivered) || 0
-        const totalQty = parseFloat(latestOrder?.Quantity) || 0
-        // Commented out to allow over-dispatch as per user request
-        // const latestPending = parseFloat(latestOrder?.["Pending Qty"]) || Math.max(0, totalQty - latestDelivered)
-        // if (totalDispatchQtyForPo > latestPending + 0.0001) {
-        //   throw new Error(`Total dispatch quantity (${totalDispatchQtyForPo}) for this batch exceeds the current pending quantity (${latestPending}) for this PO.`)
-        // }
+        const latestDelivered = toNumber(latestOrder?.Delivered)
+        const totalQty = toNumber(latestOrder?.Quantity)
+        const latestPending = getOrderPendingQty(latestOrder)
+        if (totalDispatchQtyForPo > latestPending + 0.0001) {
+          throw new Error(`Total dispatch quantity (${totalDispatchQtyForPo}) for this batch exceeds the current pending quantity (${latestPending}) for this PO.`)
+        }
 
         // Update ORDER RECEIPT
         const newDelivered = latestDelivered + totalDispatchQtyForPo
@@ -644,7 +676,7 @@ export default function DispatchPlanningPage({ user }) {
               plan_id: finalPlanId,
               po_id: line.poId,
               transporter_name: line.transporterName || commonForm.typeOfTransporting || "—",
-              allocated_qty: line.allocatedQty,
+              allocated_qty: getLineDispatchableQty(line),
               status: STATUS_CHECKED,
             }]).select("id").single();
             if (nsErr) throw nsErr;
@@ -680,7 +712,7 @@ export default function DispatchPlanningPage({ user }) {
           if (splitErr) throw splitErr
 
           // If partial dispatch, create a new Checked split for the remaining qty
-          const remainingQty = line.allocatedQty - dispatchQty
+          const remainingQty = getLineDispatchableQty(line) - dispatchQty
           if (remainingQty > 0.001) {
             const { error: remainErr } = await supabase
               .from("po_logistics_splits")
@@ -1262,14 +1294,14 @@ export default function DispatchPlanningPage({ user }) {
                             {!line.included && <span className="inline-block mr-2 text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-normal">Excluded</span>}
                             {line.productName}
                           </td>
-                          <td className="px-4 py-3 text-right text-gray-700">{line.allocatedQty}</td>
-                          <td className="px-4 py-3 text-right text-gray-700">0</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{formatQty(line.quantity)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{formatQty(line.quantityDelivered)}</td>
                           <td className="px-4 py-3 text-right font-medium">
                             {(() => {
                               const dispatchQty = parseFloat(line.dispatchQty) || 0
-                              const allocated = line.allocatedQty || 0
-                              const pending = Math.max(0, allocated - dispatchQty)
-                              const extra = Math.max(0, dispatchQty - allocated)
+                              const dispatchable = getLineDispatchableQty(line)
+                              const pending = Math.max(0, dispatchable - dispatchQty)
+                              const extra = Math.max(0, dispatchQty - dispatchable)
                               return (
                                 <div className="flex flex-col items-end">
                                   <span className={pending > 0 ? "text-amber-600" : "text-green-600"}>{pending.toFixed(2)}</span>
@@ -1285,7 +1317,7 @@ export default function DispatchPlanningPage({ user }) {
                               type="number"
                               step="0.01"
                               min="0"
-                              max={line.allocatedQty}
+                              max={getLineDispatchableQty(line)}
                               value={line.dispatchQty}
                               onChange={(e) => updateLineQty(idx, e.target.value)}
                               className="h-8 w-28 text-right ml-auto"
