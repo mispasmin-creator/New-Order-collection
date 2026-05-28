@@ -209,6 +209,17 @@ export default function WeighmentEntryPage({ user }) {
 
   const groupedDisplayOrders = useMemo(() => groupRowsByPo(displayOrders), [displayOrders])
 
+  const selectedDispatchQtyTotal = useMemo(() => {
+    if (!selectedGroup) return 0
+    return selectedGroup.rows
+      .filter((row) => selectedRowIds.has(row.id))
+      .reduce((sum, row) => sum + (parseFloat(row.qtyToBeDispatched) || 0), 0)
+  }, [selectedGroup, selectedRowIds])
+
+  const actualTruckQtyValue = parseFloat(formData.actualQtyLoadedInTruck) || 0
+  const extraQtyValue = Math.max(0, actualTruckQtyValue - selectedDispatchQtyTotal)
+  const shortQtyValue = Math.max(0, selectedDispatchQtyTotal - actualTruckQtyValue)
+
   const [collapsedGroups, setCollapsedGroups] = useState({})
   const toggleGroup = (key) => setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }))
 
@@ -333,7 +344,7 @@ export default function WeighmentEntryPage({ user }) {
       const updatePromises = selectedRows.map(order => {
         const rowPayload = {
           ...commonPayload,
-          "Actual Truck Qty": order.actualTruckQty,
+          "Actual Truck Qty": formData.actualQtyLoadedInTruck ? parseFloat(formData.actualQtyLoadedInTruck) : null,
           "Actual Qty As Per Weighment Slip": formData.actualQtyAsPerWeighmentSlip ? parseFloat(formData.actualQtyAsPerWeighmentSlip) : null,
         }
         return supabase
@@ -889,6 +900,21 @@ export default function WeighmentEntryPage({ user }) {
                       placeholder="Enter weighment quantity"
                       disabled={submitting}
                     />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-lg border bg-slate-50 p-3 text-sm">
+                    <div>
+                      <p className="text-xs text-slate-500">Dispatch Qty</p>
+                      <p className="font-semibold text-slate-900">{selectedDispatchQtyTotal.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Extra Qty</p>
+                      <p className="font-semibold text-green-700">{extraQtyValue.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Short Qty</p>
+                      <p className="font-semibold text-amber-700">{shortQtyValue.toFixed(2)}</p>
+                    </div>
                   </div>
 
                   <div className="space-y-2">

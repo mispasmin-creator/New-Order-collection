@@ -81,6 +81,10 @@ export default function MakeInvoicePage({ user }) {
           productName: row["Product Name"] || "",
           qtyToBeDispatched: Number(row["Qty To Be Dispatched"]) || 0,
           actualTruckQty: Number(row["Actual Truck Qty"]) || 0,
+          actualQtyAsPerWeighmentSlip: Number(row["Actual Qty As Per Weighment Slip"]) || 0,
+          imageOfSlip: row["Image Of Slip"] || "",
+          imageOfSlip2: row["Image Of Slip2"] || "",
+          imageOfSlip3: row["Image Of Slip3"] || "",
           typeOfTransporting: row["Type Of Transporting  "] || "",
           transporterName: row["Transporter Name"] || "",
           truckNo: row["Truck No."] || "",
@@ -181,6 +185,11 @@ export default function MakeInvoicePage({ user }) {
         truckNo: row.truckNo,
         transporterName: row.transporterName,
         deliveryOrderNo: row.deliveryOrderNo,
+        actualTruckQty: row.actualTruckQty || 0,
+        actualQtyAsPerWeighmentSlip: row.actualQtyAsPerWeighmentSlip || 0,
+        imageOfSlip: row.imageOfSlip || "",
+        imageOfSlip2: row.imageOfSlip2 || "",
+        imageOfSlip3: row.imageOfSlip3 || "",
       }))
     )
     setInvoiceNo("")
@@ -240,6 +249,54 @@ export default function MakeInvoicePage({ user }) {
     () => computedLines.some((line) => Number(line.freightAmount) > 0),
     [computedLines]
   )
+
+  const selectedInvoiceLines = useMemo(
+    () => productLines.filter((line) => selectedRowIds.has(line.id)),
+    [productLines, selectedRowIds]
+  )
+  const totalActualTruckQty = useMemo(
+    () => selectedInvoiceLines.reduce((sum, line) => sum + (Number(line.actualTruckQty) || 0), 0),
+    [selectedInvoiceLines]
+  )
+  const getWeighmentGroupKey = (line) =>
+    [
+      line.imageOfSlip || "",
+      line.imageOfSlip2 || "",
+      line.imageOfSlip3 || "",
+      Number(line.actualQtyAsPerWeighmentSlip) || 0,
+    ].join("|")
+  const weighmentGroups = useMemo(() => {
+    const groups = new Map()
+    selectedInvoiceLines.forEach((line) => {
+      const key = getWeighmentGroupKey(line)
+      const current = groups.get(key) || {
+        key,
+        firstLineId: line.id,
+        lines: [],
+        actualQty: 0,
+        weighmentQty: Number(line.actualQtyAsPerWeighmentSlip) || 0,
+      }
+      current.lines.push(line)
+      current.actualQty += Number(line.actualTruckQty) || 0
+      groups.set(key, current)
+    })
+    return Array.from(groups.values())
+  }, [selectedInvoiceLines])
+  const totalWeighmentQty = useMemo(
+    () => weighmentGroups.reduce((sum, group) => sum + group.weighmentQty, 0),
+    [weighmentGroups]
+  )
+  const weighmentActualDiff = totalWeighmentQty - totalActualTruckQty
+  const getWeighmentProductLabel = (group) => {
+    const products = group.lines.map((line) => line.productName).filter(Boolean)
+    return [...new Set(products)].join(", ") || "—"
+  }
+  const getWeighmentDeliveryLabel = (group) => {
+    const deliveryNos = group.lines.map((line) => line.deliveryOrderNo).filter(Boolean)
+    return [...new Set(deliveryNos)].join(", ")
+  }
+  const fmtQty = (value) =>
+    (Number(value) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
@@ -547,6 +604,88 @@ export default function MakeInvoicePage({ user }) {
                   <div className="text-right text-xs text-blue-600 font-medium shrink-0">
                     {selectedRowIds.size} / {selectedGroup.rows.length} Selected
                   </div>
+                </div>
+              </div>
+
+              {/* Weighment details */}
+              <div>
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <span className="w-1 h-5 bg-blue-600 rounded-full inline-block" />
+                  Weighment Details
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                  <div className="rounded-lg border bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Actual Truck Qty</p>
+                    <p className="font-semibold text-slate-900">{fmtQty(totalActualTruckQty)}</p>
+                  </div>
+                  <div className="rounded-lg border bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Total Weighment Qty</p>
+                    <p className="font-semibold text-slate-900">{fmtQty(totalWeighmentQty)}</p>
+                  </div>
+                  <div className="rounded-lg border bg-slate-50 p-3">
+                    <p className="text-xs text-slate-500">Difference</p>
+                    <p className={`font-semibold ${weighmentActualDiff >= 0 ? "text-green-700" : "text-amber-700"}`}>
+                      {weighmentActualDiff >= 0 ? "+" : ""}{fmtQty(weighmentActualDiff)}
+                    </p>
+                  </div>
+                </div>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100 text-[10px]">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-semibold text-gray-600">Product</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">Actual Qty</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">Weighment Qty</th>
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600">Diff</th>
+                        <th className="text-left px-3 py-2 font-semibold text-gray-600">Slip Image</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {weighmentGroups.map((group) => {
+                        const firstLine = group.lines[0] || {}
+                        const diff = group.weighmentQty - group.actualQty
+                        const slips = [
+                          { label: "Slip 1", url: firstLine.imageOfSlip },
+                          { label: "Slip 2", url: firstLine.imageOfSlip2 },
+                          { label: "Slip 3", url: firstLine.imageOfSlip3 },
+                        ].filter((slip) => slip.url)
+                        return (
+                          <tr key={`weighment_${group.key}`} className="bg-blue-50/30">
+                            <td className="px-3 py-2">
+                              <div className="flex flex-col">
+                                <span className="text-gray-800 font-medium text-[11px]">{getWeighmentProductLabel(group)}</span>
+                                <span className="text-[9px] text-gray-400">{getWeighmentDeliveryLabel(group)}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium text-gray-700">{fmtQty(group.actualQty)}</td>
+                            <td className="px-3 py-2 text-right font-medium text-gray-700">{fmtQty(group.weighmentQty)}</td>
+                            <td className={`px-3 py-2 text-right font-bold ${diff >= 0 ? "text-green-700" : "text-amber-700"}`}>
+                              {diff >= 0 ? "+" : ""}{fmtQty(diff)}
+                            </td>
+                            <td className="px-3 py-2">
+                              {slips.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {slips.map((slip) => (
+                                    <a
+                                      key={slip.label}
+                                      href={slip.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center rounded-sm bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 hover:bg-blue-100"
+                                    >
+                                      {slip.label}
+                                    </a>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400">N/A</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
