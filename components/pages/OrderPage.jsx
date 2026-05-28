@@ -736,7 +736,7 @@ export default function OrderPage({ user }) {
                   {visibleColumns.quantity && <TableHead className="font-semibold text-gray-900 text-right">Qty</TableHead>}
                   {visibleColumns.pendingQty && <TableHead className="font-semibold text-gray-900 text-right">Pending Qty</TableHead>}
                   {visibleColumns.rate && <TableHead className="font-semibold text-gray-900 text-right">Rate</TableHead>}
-                  {visibleColumns.totalValue && <TableHead className="font-semibold text-gray-900 text-right">Basic Value</TableHead>}
+                  {/* {visibleColumns.totalValue && <TableHead className="font-semibold text-gray-900 text-right">Basic Value</TableHead>} */}
                   {visibleColumns.paymentToBeTaken && <TableHead className="font-semibold text-gray-900 text-right">Pending PO</TableHead>}
                   {visibleColumns.retentionPayment && <TableHead className="font-semibold text-gray-900 text-right">Retention Payment</TableHead>}
                   {visibleColumns.retentionPercentage && <TableHead className="font-semibold text-gray-900 text-right">Retention %</TableHead>}
@@ -786,11 +786,11 @@ export default function OrderPage({ user }) {
                         )}
                         {visibleColumns.pendingQty && <TableCell></TableCell>}
                         {visibleColumns.rate && <TableCell></TableCell>}
-                        {visibleColumns.totalValue && (
+                        {/* {visibleColumns.totalValue && (
                           <TableCell className="text-right font-semibold text-gray-700">
                             {group.totalValue.toLocaleString("en-IN")}
                           </TableCell>
-                        )}
+                        )} */}
                         {visibleColumns.paymentToBeTaken && <TableCell></TableCell>}
                         {visibleColumns.retentionPayment && (
                           <TableCell className="text-right text-gray-700">{group.retentionPayment}</TableCell>
@@ -856,11 +856,11 @@ export default function OrderPage({ user }) {
                           {visibleColumns.rate && (
                             <TableCell className="text-right text-gray-600">₹{(order.rate || 0).toLocaleString("en-IN")}</TableCell>
                           )}
-                          {visibleColumns.totalValue && (
+                          {/* {visibleColumns.totalValue && (
                             <TableCell className="text-right font-semibold text-gray-700">
                               {(order.totalValue || 0).toLocaleString("en-IN")}
                             </TableCell>
-                          )}
+                          )} */}
                           {visibleColumns.paymentToBeTaken && (
                             <TableCell className="text-right font-medium text-gray-600">
                               {order.paymentToBeTaken || "-"}
@@ -968,7 +968,7 @@ export default function OrderPage({ user }) {
                             <th className="text-left py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Product</th>
                             <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Qty</th>
                             <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Rate</th>
-                            <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Basic Value</th>
+                            {/* <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Basic Value</th> */}
                             {showAlumina && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Alumina %</th>}
                             {showIron && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Iron %</th>}
                             {showAdvance && <th className="text-right py-2 px-3 font-medium text-gray-600 whitespace-nowrap">Advance %</th>}
@@ -982,7 +982,7 @@ export default function OrderPage({ user }) {
                               <td className="py-2 px-3 font-medium">{item.productName || "—"}</td>
                               <td className="py-2 px-3 text-right whitespace-nowrap">{item.quantity != null ? `${item.quantity}${item.typeOfMeasurement ? ` ${item.typeOfMeasurement}` : ""}` : "—"}</td>
                               <td className="py-2 px-3 text-right whitespace-nowrap">{item.rate ? `₹${Number(item.rate).toLocaleString("en-IN")}` : "—"}</td>
-                              <td className="py-2 px-3 text-right font-semibold whitespace-nowrap">{item.totalValue ? `₹${Number(item.totalValue).toLocaleString("en-IN")}` : "—"}</td>
+                              {/* <td className="py-2 px-3 text-right font-semibold whitespace-nowrap">{item.totalValue ? `₹${Number(item.totalValue).toLocaleString("en-IN")}` : "—"}</td> */}
                               {showAlumina && <td className="py-2 px-3 text-right whitespace-nowrap">{item.alumina != null && item.alumina !== "" ? `${item.alumina}%` : "—"}</td>}
                               {showIron && <td className="py-2 px-3 text-right whitespace-nowrap">{item.iron != null && item.iron !== "" ? `${item.iron}%` : "—"}</td>}
                               {showAdvance && <td className="py-2 px-3 text-right whitespace-nowrap">{item.advance != null && item.advance !== 0 ? `${item.advance}%` : "—"}</td>}
