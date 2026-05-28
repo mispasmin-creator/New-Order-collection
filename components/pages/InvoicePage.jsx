@@ -691,7 +691,7 @@ export default function MakeInvoicePage({ user }) {
                           {order.productName || "N/A"}
                         </TableCell>
                         <TableCell className="py-2 px-4 text-sm font-medium">
-                          {order.actualTruckQty || "N/A"}
+                          {getInvoiceLineQty(order) || "N/A"}
                         </TableCell>
                         <TableCell className="py-2 px-4 text-sm">
                           {order.transporterName || "N/A"}
