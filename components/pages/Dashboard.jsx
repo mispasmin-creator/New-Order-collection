@@ -593,9 +593,10 @@ export default function AnalyticsDashboard({ user }) {
     console.log("Total Revenue Calculated:", totalRevenue);
     console.log("Displayed as Lakhs:", (totalRevenue / 100000).toFixed(1) + "L");
 
-    const pendingOrders = filteredOrders.filter(order => !order["Actual 1"]).length;
-    const inProgressOrders = filteredOrders.filter(order => order["Actual 1"] && !order["Actual 2"]).length;
-    const completedOrders = filteredOrders.filter(order => order["Actual 2"]).length;
+    const activeOrders = filteredOrders.filter(order => order.logistics_status !== "Order Cancelled");
+    const pendingOrders = activeOrders.filter(order => !order["Actual 1"]).length;
+    const inProgressOrders = activeOrders.filter(order => order["Actual 1"] && !order["Actual 2"]).length;
+    const completedOrders = activeOrders.filter(order => order["Actual 2"]).length;
     const cancelledOrders = filteredOrders.filter(order => order.logistics_status === "Order Cancelled").length;
     const completionRate = totalOrders > 0 ? (completedOrders / totalOrders) * 100 : 0;
 
