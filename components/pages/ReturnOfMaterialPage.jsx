@@ -47,10 +47,14 @@ const reasonBadgeClass = (reason) => {
 }
 
 const EMPTY_FORM = {
+  hasTransporterInfo: "",
   transporterName: "",
   transporterMobile: "",
   vehicleNo: "",
   receivedDate: "",
+  returnFreightPaidBy: "",
+  returnBiltyNo: "",
+  returnBiltyCopy: null,
   remarks: "",
 }
 
@@ -194,10 +198,14 @@ export default function ReturnOfMaterialPage({ user }) {
   const handleOpen = (entry) => {
     setSelectedEntry(entry)
     setForm({
+      hasTransporterInfo: entry["Return Transporter Info"] || "",
       transporterName: entry["Return Transporter Name"] || "",
       transporterMobile: entry["Return Transporter Mobile"] || "",
       vehicleNo: entry["Return Vehicle No"] || "",
       receivedDate: entry["Return Received At"] ? new Date(entry["Return Received At"]).toISOString().split("T")[0] : "",
+      returnFreightPaidBy: entry["Return Freight Paid By"] || "",
+      returnBiltyNo: entry["Return Bilty No"] || "",
+      returnBiltyCopy: null,
       remarks: "",
     })
   }
@@ -219,22 +227,47 @@ export default function ReturnOfMaterialPage({ user }) {
   }
 
   const handleSubmit = async () => {
-    if (!form.transporterName.trim()) {
+    if (!form.hasTransporterInfo) {
+      toast({ title: "Required", description: "Select whether transporter info is available.", variant: "destructive" })
+      return
+    }
+    if (form.hasTransporterInfo === "Yes" && !form.transporterName.trim()) {
       toast({ title: "Required", description: "Enter the transporter name.", variant: "destructive" })
       return
     }
-    if (!form.transporterMobile.trim()) {
+    if (form.hasTransporterInfo === "Yes" && !form.transporterMobile.trim()) {
       toast({ title: "Required", description: "Enter the transporter mobile number.", variant: "destructive" })
+      return
+    }
+    if (form.hasTransporterInfo === "Yes" && !form.returnFreightPaidBy) {
+      toast({ title: "Required", description: "Select who paid the return freight.", variant: "destructive" })
       return
     }
     try {
       setSubmitting(true)
+      let returnBiltyCopyUrl = ""
+      if (form.hasTransporterInfo === "Yes" && form.returnFreightPaidBy === "Paid by Us" && form.returnBiltyCopy) {
+        const safeName = form.returnBiltyCopy.name.replace(/[^a-zA-Z0-9.]/g, "_")
+        const path = `return_dispatch/bilty_${selectedEntry.id}_${Date.now()}_${safeName}`
+        const { error: uploadErr } = await supabase.storage
+          .from("images")
+          .upload(path, form.returnBiltyCopy, { cacheControl: "3600", upsert: false })
+        if (uploadErr) throw uploadErr
+        returnBiltyCopyUrl = supabase.storage.from("images").getPublicUrl(path).data.publicUrl
+      }
+
       const payload = {
-        "Return Transporter Name": form.transporterName.trim(),
-        "Return Transporter Mobile": form.transporterMobile.trim(),
-        "Return Vehicle No": form.vehicleNo.trim(),
+        "Return Transporter Info": form.hasTransporterInfo,
         "Return Dispatched At": getISTTimestamp(),
-        ...(form.receivedDate ? { "Return Received At": form.receivedDate } : {}),
+      }
+      if (form.hasTransporterInfo === "Yes") {
+        payload["Return Transporter Name"] = form.transporterName.trim()
+        payload["Return Transporter Mobile"] = form.transporterMobile.trim()
+        payload["Return Vehicle No"] = form.vehicleNo.trim()
+        payload["Return Freight Paid By"] = form.returnFreightPaidBy
+        payload["Return Bilty No"] = form.returnFreightPaidBy === "Paid by Us" ? form.returnBiltyNo.trim() || null : null
+        payload["Return Bilty Copy"] = form.returnFreightPaidBy === "Paid by Us" ? returnBiltyCopyUrl || null : null
+        if (form.receivedDate) payload["Return Received At"] = form.receivedDate
       }
       if (form.remarks.trim()) {
         payload["Remarks"] = (selectedEntry["Remarks"]
@@ -506,6 +539,26 @@ export default function ReturnOfMaterialPage({ user }) {
                             {entry["Return Received At"] && (
                               <div><p className="text-gray-500 text-xs mb-0.5">Received Date</p><p className="font-medium text-green-700">{formatDate(entry["Return Received At"])}</p></div>
                             )}
+                            {entry["Return Freight Paid By"] && (
+                              <div><p className="text-gray-500 text-xs mb-0.5">Freight Paid By</p><p className="font-medium">{entry["Return Freight Paid By"]}</p></div>
+                            )}
+                            {entry["Return Bilty No"] && (
+                              <div><p className="text-gray-500 text-xs mb-0.5">Return Bilty No.</p><p className="font-mono font-medium">{entry["Return Bilty No"]}</p></div>
+                            )}
+                            {entry["Return Bilty Copy"] && (
+                              <div>
+                                <p className="text-gray-500 text-xs mb-0.5">Return Bilty Image</p>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                                  onClick={() => handleViewFile(entry["Return Bilty Copy"])}
+                                >
+                                  <Eye className="w-3.5 h-3.5 mr-1" /> View
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -609,6 +662,38 @@ export default function ReturnOfMaterialPage({ user }) {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2 col-span-2">
+                  <Label className="text-sm font-medium">
+                    Add Transporter Details? <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={form.hasTransporterInfo}
+                    onValueChange={(v) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        hasTransporterInfo: v,
+                        transporterName: v === "Yes" ? prev.transporterName : "",
+                        transporterMobile: v === "Yes" ? prev.transporterMobile : "",
+                        vehicleNo: v === "Yes" ? prev.vehicleNo : "",
+                        receivedDate: v === "Yes" ? prev.receivedDate : "",
+                        returnFreightPaidBy: v === "Yes" ? prev.returnFreightPaidBy : "",
+                        returnBiltyNo: v === "Yes" ? prev.returnBiltyNo : "",
+                        returnBiltyCopy: v === "Yes" ? prev.returnBiltyCopy : null,
+                      }))
+                    }
+                    disabled={submitting}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue placeholder="Select Yes or No" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Yes">Yes</SelectItem>
+                      <SelectItem value="No">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {form.hasTransporterInfo === "Yes" && (
+                  <>
                 <div className="space-y-2 col-span-2 md:col-span-1">
                   <Label className="text-sm font-medium">
                     Transporter Name <span className="text-red-500">*</span>
@@ -671,6 +756,60 @@ export default function ReturnOfMaterialPage({ user }) {
                     className="h-10"
                   />
                 </div>
+                <div className="space-y-2 col-span-2">
+                  <Label className="text-sm font-medium">
+                    Freight Paid By <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={form.returnFreightPaidBy}
+                    onValueChange={(v) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        returnFreightPaidBy: v,
+                        returnBiltyNo: v === "Paid by Us" ? prev.returnBiltyNo : "",
+                        returnBiltyCopy: v === "Paid by Us" ? prev.returnBiltyCopy : null,
+                      }))
+                    }
+                    disabled={submitting}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue placeholder="Select paid by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Paid by Party">Paid by Party</SelectItem>
+                      <SelectItem value="Paid by Us">Paid by Us</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {form.returnFreightPaidBy === "Paid by Us" && (
+                  <>
+                    <div className="space-y-2 col-span-2 md:col-span-1">
+                      <Label className="text-sm font-medium">Bilty Number</Label>
+                      <Input
+                        name="returnBiltyNo"
+                        placeholder="Enter bilty number"
+                        value={form.returnBiltyNo}
+                        onChange={handleChange}
+                        disabled={submitting}
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-2 col-span-2 md:col-span-1">
+                      <Label className="text-sm font-medium">Bilty Image</Label>
+                      <Input
+                        type="file"
+                        accept="image/*,.pdf"
+                        onChange={(e) =>
+                          setForm((prev) => ({ ...prev, returnBiltyCopy: e.target.files?.[0] || null }))
+                        }
+                        disabled={submitting}
+                        className="h-10"
+                      />
+                    </div>
+                  </>
+                )}
+                  </>
+                )}
               </div>
 
 
@@ -694,7 +833,15 @@ export default function ReturnOfMaterialPage({ user }) {
             <Button variant="outline" onClick={handleClose} disabled={submitting}>Cancel</Button>
             <Button
               onClick={handleSubmit}
-              disabled={submitting || !form.transporterName.trim() || !form.transporterMobile.trim()}
+              disabled={
+                submitting ||
+                !form.hasTransporterInfo ||
+                (form.hasTransporterInfo === "Yes" && (
+                  !form.transporterName.trim() ||
+                  !form.transporterMobile.trim() ||
+                  !form.returnFreightPaidBy
+                ))
+              }
               className="bg-teal-600 hover:bg-teal-700"
             >
               {submitting
