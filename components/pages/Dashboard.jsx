@@ -11,6 +11,21 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   ShoppingCart,
   TrendingUp,
   Clock,
@@ -38,6 +53,7 @@ import {
   Download,
   FileBarChart,
   Bell,
+  Plus,
 } from "lucide-react";
 import {
   LineChart,
@@ -73,6 +89,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 
+const MASTER_ADD_OPTIONS = [
+  { label: "Party Name", column: "Party Name" },
+  { label: "Product Name", column: "Product Name" },
+  { label: "Transporter Name", column: "Transporter Name" },
+  { label: "Return Transporter Name", column: "Material Return Transporter Name" },
+];
+
 export default function AnalyticsDashboard({ user }) {
   const [timeRange, setTimeRange] = useState("30");
   const [selectedMetric, setSelectedMetric] = useState("orders");
@@ -82,6 +105,13 @@ export default function AnalyticsDashboard({ user }) {
   const [error, setError] = useState(null);
   const [alerts, setAlerts] = useState([]);
   const [showAlerts, setShowAlerts] = useState(false);
+  const [masterAddOption, setMasterAddOption] = useState(null);
+  const [masterAddValue, setMasterAddValue] = useState("");
+  const [masterPartyDetails, setMasterPartyDetails] = useState({
+    address: "",
+    gstNumber: "",
+  });
+  const [masterAddSubmitting, setMasterAddSubmitting] = useState(false);
   const [sheetData, setSheetData] = useState({
     orderReceipt: [],
     dispatch: [],
@@ -143,6 +173,60 @@ export default function AnalyticsDashboard({ user }) {
     } catch (error) {
       console.error("Export error:", error);
       toast.error("Failed to export data");
+    }
+  };
+
+  const openMasterAddDialog = (option) => {
+    setMasterAddOption(option);
+    setMasterAddValue("");
+    setMasterPartyDetails({ address: "", gstNumber: "" });
+  };
+
+  const closeMasterAddDialog = () => {
+    setMasterAddOption(null);
+    setMasterAddValue("");
+    setMasterPartyDetails({ address: "", gstNumber: "" });
+  };
+
+  const handleMasterAddSubmit = async () => {
+    if (!masterAddOption) return;
+
+    const value = masterAddValue.trim();
+    if (!value) {
+      toast.error(`Enter ${masterAddOption.label}`);
+      return;
+    }
+    if (masterAddOption.label === "Party Name") {
+      if (!masterPartyDetails.address.trim()) {
+        toast.error("Enter Address");
+        return;
+      }
+      if (!masterPartyDetails.gstNumber.trim()) {
+        toast.error("Enter GST Number");
+        return;
+      }
+    }
+
+    try {
+      setMasterAddSubmitting(true);
+      const payload = { [masterAddOption.column]: value };
+      if (masterAddOption.label === "Party Name") {
+        payload["Address"] = masterPartyDetails.address.trim();
+        payload["GST Number"] = masterPartyDetails.gstNumber.trim();
+      }
+      const { error } = await supabase
+        .from("MASTER")
+        .insert([payload]);
+
+      if (error) throw error;
+
+      toast.success(`${masterAddOption.label} added successfully`);
+      closeMasterAddDialog();
+    } catch (error) {
+      console.error("MASTER add error:", error);
+      toast.error(error.message || "Failed to add data");
+    } finally {
+      setMasterAddSubmitting(false);
     }
   };
 
@@ -646,6 +730,24 @@ export default function AnalyticsDashboard({ user }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                Add Data
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {MASTER_ADD_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.label}
+                  onClick={() => openMasterAddDialog(option)}
+                >
+                  {option.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="outline"
             size="sm"
@@ -1058,6 +1160,82 @@ export default function AnalyticsDashboard({ user }) {
       </Tabs>
 
       {/* Quick Actions */}
+      <Dialog open={!!masterAddOption} onOpenChange={(open) => !open && closeMasterAddDialog()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add {masterAddOption?.label}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="master-add-value">{masterAddOption?.label}</Label>
+              <Input
+                id="master-add-value"
+                value={masterAddValue}
+                onChange={(e) => setMasterAddValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && masterAddOption?.label !== "Party Name") handleMasterAddSubmit();
+                }}
+                placeholder={`Enter ${masterAddOption?.label || "value"}`}
+                disabled={masterAddSubmitting}
+                autoFocus
+              />
+            </div>
+            {masterAddOption?.label === "Party Name" && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="master-party-address">Address</Label>
+                  <Input
+                    id="master-party-address"
+                    value={masterPartyDetails.address}
+                    onChange={(e) =>
+                      setMasterPartyDetails((prev) => ({ ...prev, address: e.target.value }))
+                    }
+                    placeholder="Enter Address"
+                    disabled={masterAddSubmitting}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="master-party-gst">GST Number</Label>
+                  <Input
+                    id="master-party-gst"
+                    value={masterPartyDetails.gstNumber}
+                    onChange={(e) =>
+                      setMasterPartyDetails((prev) => ({ ...prev, gstNumber: e.target.value }))
+                    }
+                    placeholder="Enter GST Number"
+                    disabled={masterAddSubmitting}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeMasterAddDialog} disabled={masterAddSubmitting}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleMasterAddSubmit}
+              disabled={
+                masterAddSubmitting ||
+                !masterAddValue.trim() ||
+                (masterAddOption?.label === "Party Name" && (
+                  !masterPartyDetails.address.trim() ||
+                  !masterPartyDetails.gstNumber.trim()
+                ))
+              }
+            >
+              {masterAddSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
