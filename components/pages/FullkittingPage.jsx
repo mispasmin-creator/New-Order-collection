@@ -249,6 +249,7 @@ export default function FullkittingPage({ user }) {
             }
           : {
               "Fullkitting Status": "No",
+              "Fullkitting Actual": getISTTimestamp(),
             }
 
       const { error } = await supabase
