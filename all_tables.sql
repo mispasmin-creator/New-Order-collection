@@ -82,6 +82,7 @@ CREATE TABLE public.DISPATCH (
   Fullkitting Actual timestamp without time zone,
   Fullkitting Amount numeric,
   Fullkitting Remarks text,
+  Fullkitting Status text,
   Trust Certificate Made text,
   TC Required text,
   CONSTRAINT DISPATCH_pkey PRIMARY KEY (id)

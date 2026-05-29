@@ -11,9 +11,27 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle2, Download, Loader2, PackageCheck, Search, X } from "lucide-react"
+import { CheckCircle2, Download, Eye, Loader2, PackageCheck, Search, X } from "lucide-react"
+
+const HIDDEN_DETAIL_FIELDS = new Set([
+  "id",
+  "po_id",
+  "Timestamp",
+  "PARTY PO NO (As Per Po Exact)",
+  "Party Names",
+  "Firm Name",
+  "Product Name",
+  "Rate Of Material",
+])
+
+const formatDetailLabel = (key) =>
+  key
+    .replace(/\s+/g, " ")
+    .replace(/\s+\./g, ".")
+    .trim()
 
 export default function FullkittingPage({ user }) {
   const [pendingRows, setPendingRows] = useState([])
@@ -24,6 +42,7 @@ export default function FullkittingPage({ user }) {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedRow, setSelectedRow] = useState(null)
   const [form, setForm] = useState({
+    status: "No",
     productName: "",
     truckQty: "",
     transporter: "",
@@ -50,9 +69,7 @@ export default function FullkittingPage({ user }) {
           : null
       const shouldFilter = userFirms && !userFirms.includes("all") && userFirms.length > 0
 
-      let orderQuery = supabase
-        .from("ORDER RECEIPT")
-        .select('id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Firm Name", "Rate Of Material"')
+      let orderQuery = supabase.from("ORDER RECEIPT").select("*")
       if (shouldFilter) orderQuery = orderQuery.in("Firm Name", userFirms)
 
       const { data: orderData, error: orderError } = await orderQuery
@@ -78,6 +95,25 @@ export default function FullkittingPage({ user }) {
         const truckQty = Number(row["Actual Truck Qty"]) || Number(row["Qty To Be Dispatched"]) || 0
         const rate = Number(po["Rate Of Material"]) || 0
         const amount = Number(row["Fullkitting Amount"] ?? row["Fixed Amount"]) || truckQty * rate || 0
+        const rateType = row["Type Of Rate"] || ""
+        const biltyCopy = row["Bilty Copy"] || ""
+        const fullkittingStatus = row["Fullkitting Status"] || ""
+
+        const additionalDetails = [
+          ...Object.entries(po)
+            .filter(([key, value]) => !HIDDEN_DETAIL_FIELDS.has(key) && value !== null && value !== undefined && String(value).trim() !== "")
+            .map(([key, value]) => ({ label: formatDetailLabel(key), value })),
+          ...[
+            ["LGST-Sr Number", row["LGST-Sr Number"]],
+            ["Driver Mobile No.", row["Driver Mobile No."]],
+            ["Vehicle No. Plate Image", row["Vehicle No. Plate Image"]],
+            ["Loading Image 1", row["Loading Image 1"]],
+            ["Loading Image 2", row["Loading Image 2"]],
+            ["Loading Image 3", row["Loading Image 3"]],
+          ]
+            .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "")
+            .map(([label, value]) => ({ label, value })),
+        ]
 
         const item = {
           id: row.id,
@@ -96,12 +132,16 @@ export default function FullkittingPage({ user }) {
           transporter: row["Transporter Name"] || "",
           truckNo: row["Truck No."] || "",
           biltyNo: row["Bilty No."] || "",
+          biltyCopy,
           typeOfTransporting,
+          rateType,
           rateOfMaterial: rate,
           amount,
           invoiceAt: row["Actual4"] || "",
           fullkittingAt: row["Fullkitting Actual"] || "",
+          fullkittingStatus,
           remarks: row["Fullkitting Remarks"] || "",
+          additionalDetails,
         }
 
         if (item.fullkittingAt && String(item.fullkittingAt).trim() !== "") history.push(item)
@@ -146,6 +186,8 @@ export default function FullkittingPage({ user }) {
     return number.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
+  const isFileUrl = (value) => /^https?:\/\//i.test(String(value || ""))
+
   const sourceRows = activeTab === "pending" ? pendingRows : historyRows
   const displayRows = useMemo(() => {
     if (!searchTerm.trim()) return sourceRows
@@ -160,6 +202,7 @@ export default function FullkittingPage({ user }) {
   const handleOpen = (row) => {
     setSelectedRow(row)
     setForm({
+      status: row.fullkittingStatus || "No",
       productName: row.productName || "",
       truckQty: row.truckQty || "",
       transporter: row.transporter || "",
@@ -171,7 +214,7 @@ export default function FullkittingPage({ user }) {
 
   const handleClose = () => {
     setSelectedRow(null)
-    setForm({ productName: "", truckQty: "", transporter: "", truckNo: "", amount: "", remarks: "" })
+    setForm({ status: "No", productName: "", truckQty: "", transporter: "", truckNo: "", amount: "", remarks: "" })
   }
 
   const updateForm = (field, value) => {
@@ -180,7 +223,8 @@ export default function FullkittingPage({ user }) {
 
   const handleSubmit = async () => {
     if (!selectedRow) return
-    if (!form.productName.trim() || !form.truckQty || !form.transporter.trim() || !form.truckNo.trim() || !form.amount) {
+    const status = form.status || "No"
+    if (status === "Yes" && (!form.productName.trim() || !form.truckQty || !form.transporter.trim() || !form.truckNo.trim() || !form.amount)) {
       toast({
         variant: "destructive",
         title: "Validation",
@@ -191,24 +235,35 @@ export default function FullkittingPage({ user }) {
 
     try {
       setSubmitting(true)
+      const payload =
+        status === "Yes"
+          ? {
+              "Fullkitting Status": "Yes",
+              "Product Name": form.productName.trim(),
+              "Actual Truck Qty": Number(form.truckQty) || null,
+              "Transporter Name": form.transporter.trim(),
+              "Truck No.": form.truckNo.trim(),
+              "Fullkitting Amount": Number(form.amount) || 0,
+              "Fullkitting Remarks": form.remarks.trim() || null,
+              "Fullkitting Actual": getISTTimestamp(),
+            }
+          : {
+              "Fullkitting Status": "No",
+            }
+
       const { error } = await supabase
         .from("DISPATCH")
-        .update({
-          "Product Name": form.productName.trim(),
-          "Actual Truck Qty": Number(form.truckQty) || null,
-          "Transporter Name": form.transporter.trim(),
-          "Truck No.": form.truckNo.trim(),
-          "Fullkitting Amount": Number(form.amount) || 0,
-          "Fullkitting Remarks": form.remarks.trim() || null,
-          "Fullkitting Actual": getISTTimestamp(),
-        })
+        .update(payload)
         .eq("id", selectedRow.id)
 
       if (error) throw error
 
       toast({
         title: "Success",
-        description: `${selectedRow.dSrNumber || "Entry"} moved to TC after Fullkitting.`,
+        description:
+          status === "Yes"
+            ? `${selectedRow.dSrNumber || "Entry"} moved to TC after Fullkitting.`
+            : `${selectedRow.dSrNumber || "Entry"} status saved as No.`,
       })
       handleClose()
       await fetchData()
@@ -313,15 +368,20 @@ export default function FullkittingPage({ user }) {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50">
+                <TableHead>D-Sr Number</TableHead>
+                <TableHead>Status</TableHead>
                 {activeTab === "pending" && <TableHead>Action</TableHead>}
                 <TableHead>Invoice</TableHead>
                 <TableHead>PO / Party</TableHead>
                 <TableHead>DO Number</TableHead>
-                <TableHead>D-Sr Number</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Truck Qty</TableHead>
                 <TableHead>Transporter Type</TableHead>
-                <TableHead>Truck No</TableHead>
+                <TableHead>Transporter Name</TableHead>
+                <TableHead>Vehicle Number</TableHead>
+                <TableHead>Bilty Number</TableHead>
+                <TableHead>Rate Type</TableHead>
+                <TableHead>Bilty Image</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>{activeTab === "pending" ? "Invoice Date" : "Fullkitting Date"}</TableHead>
               </TableRow>
@@ -329,7 +389,7 @@ export default function FullkittingPage({ user }) {
             <TableBody>
               {groupedRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "pending" ? 11 : 10} className="py-8 text-center text-gray-500">
+                  <TableCell colSpan={activeTab === "pending" ? 16 : 15} className="py-8 text-center text-gray-500">
                     No {activeTab} Fullkitting entries found
                   </TableCell>
                 </TableRow>
@@ -337,7 +397,7 @@ export default function FullkittingPage({ user }) {
                 groupedRows.map((group) => (
                   <Fragment key={group.key}>
                     <TableRow className="bg-slate-50">
-                      <TableCell colSpan={activeTab === "pending" ? 11 : 10} className="py-2 px-4">
+                      <TableCell colSpan={activeTab === "pending" ? 16 : 15} className="py-2 px-4">
                         <div className="flex flex-wrap items-center gap-3 text-sm">
                           <span className="font-semibold text-slate-900">{group.poNumber}</span>
                           <span className="text-slate-500">{group.partyName}</span>
@@ -347,6 +407,12 @@ export default function FullkittingPage({ user }) {
                     </TableRow>
                     {group.rows.map((row) => (
                       <TableRow key={row.id} className="hover:bg-gray-50">
+                        <TableCell className="text-sm font-mono text-blue-700">{row.dSrNumber || "N/A"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="rounded-sm">
+                            {row.fullkittingStatus || "Pending"}
+                          </Badge>
+                        </TableCell>
                         {activeTab === "pending" && (
                           <TableCell>
                             <Button size="sm" className="h-8 bg-blue-600 hover:bg-blue-700" onClick={() => handleOpen(row)}>
@@ -369,11 +435,23 @@ export default function FullkittingPage({ user }) {
                           <div className="text-xs text-gray-500">{row.partyName || "N/A"}</div>
                         </TableCell>
                         <TableCell className="text-sm">{row.deliveryOrderNo || "N/A"}</TableCell>
-                        <TableCell className="text-sm font-mono text-blue-700">{row.dSrNumber || "N/A"}</TableCell>
                         <TableCell className="text-sm">{row.productName || "N/A"}</TableCell>
                         <TableCell className="text-sm font-medium">{fmt(row.truckQty)}</TableCell>
                         <TableCell className="text-sm">{row.typeOfTransporting || "N/A"}</TableCell>
+                        <TableCell className="text-sm">{row.transporter || "N/A"}</TableCell>
                         <TableCell className="text-sm">{row.truckNo || "N/A"}</TableCell>
+                        <TableCell className="text-sm">{row.biltyNo || "N/A"}</TableCell>
+                        <TableCell className="text-sm">{row.rateType || "N/A"}</TableCell>
+                        <TableCell className="text-sm">
+                          {row.biltyCopy ? (
+                            <a href={row.biltyCopy} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+                              <Eye className="h-3.5 w-3.5" />
+                              View
+                            </a>
+                          ) : (
+                            "N/A"
+                          )}
+                        </TableCell>
                         <TableCell className="text-right font-semibold">{fmt(row.amount)}</TableCell>
                         <TableCell className="text-sm">{formatDateTime(activeTab === "pending" ? row.invoiceAt : row.fullkittingAt)}</TableCell>
                       </TableRow>
@@ -411,37 +489,111 @@ export default function FullkittingPage({ user }) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Product Name *</Label>
-                  <Input value={form.productName} onChange={(event) => updateForm("productName", event.target.value)} disabled={submitting} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Truck Qty *</Label>
-                  <Input type="number" step="0.01" min="0" value={form.truckQty} onChange={(event) => updateForm("truckQty", event.target.value)} disabled={submitting} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Transporter *</Label>
-                  <Input value={form.transporter} onChange={(event) => updateForm("transporter", event.target.value)} disabled={submitting} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Truck No *</Label>
-                  <Input value={form.truckNo} onChange={(event) => updateForm("truckNo", event.target.value)} disabled={submitting} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Amount *</Label>
-                  <Input type="number" step="0.01" min="0" value={form.amount} onChange={(event) => updateForm("amount", event.target.value)} disabled={submitting} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Remarks</Label>
-                  <Input value={form.remarks} onChange={(event) => updateForm("remarks", event.target.value)} disabled={submitting} />
-                </div>
+              <div className="space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-md border p-4">
+                    <div>
+                      <p className="text-xs text-gray-500">Transporter Name</p>
+                      <p className="text-sm font-medium text-gray-900">{selectedRow.transporter || "N/A"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Vehicle Number</p>
+                      <p className="text-sm font-medium text-gray-900">{selectedRow.truckNo || "N/A"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Bilty Number</p>
+                      <p className="text-sm font-medium text-gray-900">{selectedRow.biltyNo || "N/A"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Rate Type</p>
+                      <p className="text-sm font-medium text-gray-900">{selectedRow.rateType || "N/A"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Amount</p>
+                      <p className="text-sm font-medium text-gray-900">{fmt(selectedRow.amount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Bilty Image</p>
+                      {selectedRow.biltyCopy ? (
+                        <a href={selectedRow.biltyCopy} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline">
+                          <Eye className="h-3.5 w-3.5" />
+                          View
+                        </a>
+                      ) : (
+                        <p className="text-sm font-medium text-gray-900">N/A</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {selectedRow.additionalDetails?.length > 0 && (
+                    <div className="rounded-md border p-4">
+                      <h3 className="text-sm font-semibold text-gray-900 mb-3">Additional Details</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+                        {selectedRow.additionalDetails.map((detail) => (
+                          <div key={`${detail.label}-${detail.value}`} className="min-w-0">
+                            <p className="text-xs text-gray-500">{detail.label}</p>
+                            {isFileUrl(detail.value) ? (
+                              <a href={detail.value} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline break-all">
+                                <Eye className="h-3.5 w-3.5 shrink-0" />
+                                View
+                              </a>
+                            ) : (
+                              <p className="text-sm font-medium text-gray-900 break-words">{String(detail.value)}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label>Status *</Label>
+                    <Select value={form.status} onValueChange={(value) => updateForm("status", value)} disabled={submitting}>
+                      <SelectTrigger className="h-10">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="No">No</SelectItem>
+                        <SelectItem value="Yes">Yes</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
               </div>
+
+              {form.status === "Yes" && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Product Name *</Label>
+                      <Input value={form.productName} onChange={(event) => updateForm("productName", event.target.value)} disabled={submitting} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Truck Qty *</Label>
+                      <Input type="number" step="0.01" min="0" value={form.truckQty} onChange={(event) => updateForm("truckQty", event.target.value)} disabled={submitting} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Transporter *</Label>
+                      <Input value={form.transporter} onChange={(event) => updateForm("transporter", event.target.value)} disabled={submitting} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Truck No *</Label>
+                      <Input value={form.truckNo} onChange={(event) => updateForm("truckNo", event.target.value)} disabled={submitting} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Amount *</Label>
+                      <Input type="number" step="0.01" min="0" value={form.amount} onChange={(event) => updateForm("amount", event.target.value)} disabled={submitting} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Remarks</Label>
+                      <Input value={form.remarks} onChange={(event) => updateForm("remarks", event.target.value)} disabled={submitting} />
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="border-t pt-4 flex flex-col sm:flex-row justify-end gap-3">
                 <Button variant="outline" onClick={handleClose} disabled={submitting}>Cancel</Button>
                 <Button onClick={handleSubmit} disabled={submitting} className="bg-green-600 hover:bg-green-700">
-                  {submitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting...</> : <><CheckCircle2 className="w-4 h-4 mr-2" />Submit & Send to TC</>}
+                  {submitting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting...</> : <><CheckCircle2 className="w-4 h-4 mr-2" />{form.status === "Yes" ? "Submit & Send to TC" : "Submit Status"}</>}
                 </Button>
               </div>
             </CardContent>
