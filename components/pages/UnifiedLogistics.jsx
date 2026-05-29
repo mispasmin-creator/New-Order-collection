@@ -154,6 +154,7 @@ export default function UnifiedLogistics({ user }) {
         billNo: del["Bill No."],
         partyName: del["Party Name"],
         productName: del["Product Name"],
+        typeOfTransporting: del["Type Of Transporting"] || "",
         biltyNo: del["Bilty No."],
         biltyCopy: del["Bilty Copy"],
         isBiltyDone: !!del.Actual3,
@@ -459,6 +460,7 @@ export default function UnifiedLogistics({ user }) {
                 <TableHead>Action</TableHead>
                 <TableHead>Invoice / Shipment</TableHead>
                 <TableHead>Party</TableHead>
+                <TableHead>Transporter Type</TableHead>
                 <TableHead>Bilty Stage</TableHead>
                 <TableHead>Receipt Stage</TableHead>
               </TableRow>
@@ -466,7 +468,7 @@ export default function UnifiedLogistics({ user }) {
             <TableBody>
               {groupedShipments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
+                  <TableCell colSpan={7} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
                 </TableRow>
               ) : (
                 groupedShipments.map((group, gi) => {
@@ -513,6 +515,9 @@ export default function UnifiedLogistics({ user }) {
                           </div>
                         </TableCell>
                         <TableCell className="text-sm font-medium">{group.partyName}</TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {[...new Set(group.rows.map(r => r.typeOfTransporting).filter(Boolean))].join(", ") || "—"}
+                        </TableCell>
                         <TableCell>
                           {biltyDone ? (
                             <div className="flex items-center gap-2">
@@ -546,6 +551,7 @@ export default function UnifiedLogistics({ user }) {
                           <TableCell />
                           <TableCell className="py-2 text-xs text-gray-500 font-mono">{s.orderNo}</TableCell>
                           <TableCell className="py-2 text-sm text-gray-700">{s.productName}</TableCell>
+                          <TableCell className="py-2 text-sm text-gray-600">{s.typeOfTransporting || "—"}</TableCell>
                           <TableCell className="py-2">
                             {s.isBiltyDone ? (
                               <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{s.biltyNo}</span>

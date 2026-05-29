@@ -38,7 +38,7 @@ const COLUMN_CONFIG = [
   { id: "poNumber", label: "PO / DO No." },
   { id: "partyName", label: "Party Name" },
   { id: "productName", label: "Product" },
-  { id: "transport", label: "Transport" },
+  { id: "transport", label: "Transporter Type" },
   { id: "quantity", label: "Qty" },
   { id: "pendingQty", label: "Pending Qty" },
   { id: "rate", label: "Rate" },
@@ -732,7 +732,7 @@ export default function OrderPage({ user }) {
                   {visibleColumns.poNumber && <TableHead className="font-semibold text-gray-900">Party PO / DO No.</TableHead>}
                   {visibleColumns.partyName && <TableHead className="font-semibold text-gray-900">Party Name</TableHead>}
                   {visibleColumns.productName && <TableHead className="font-semibold text-gray-900">Product</TableHead>}
-                  {visibleColumns.transport && <TableHead className="font-semibold text-gray-900">Transport</TableHead>}
+                  {visibleColumns.transport && <TableHead className="font-semibold text-gray-900">Transporter Type</TableHead>}
                   {visibleColumns.quantity && <TableHead className="font-semibold text-gray-900 text-right">Qty</TableHead>}
                   {visibleColumns.pendingQty && <TableHead className="font-semibold text-gray-900 text-right">Pending Qty</TableHead>}
                   {visibleColumns.rate && <TableHead className="font-semibold text-gray-900 text-right">Rate</TableHead>}
@@ -1000,7 +1000,7 @@ export default function OrderPage({ user }) {
               <section>
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4 pb-2 border-b">Logistics & Packaging</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <DetailField label="Type of Transporting" value={selectedOrder.typeOfTransporting} />
+                  <DetailField label="Transporter Type" value={selectedOrder.typeOfTransporting} />
                   <DetailField label="Type of Packaging" value={selectedOrder.packagingType || selectedOrder.rawData?.["Type of Packaging"]} />
                   <DetailField label="Lead Time (Reach Factory)" value={selectedOrder.leadTimeReachFactory ? `${selectedOrder.leadTimeReachFactory} days` : null} />
                   <DetailField label="TC Required" value={selectedOrder.tcRequired} />

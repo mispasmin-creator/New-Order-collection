@@ -509,7 +509,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
                   <TableHead>Product</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead>Rate</TableHead>
-                <TableHead>Transport</TableHead>
+                <TableHead>Transporter Type</TableHead>
                 <TableHead>PO Copy</TableHead>
                 <TableHead>Agent</TableHead>
                 <TableHead>Order From</TableHead>
@@ -635,7 +635,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
               <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
                 <div>Qty: {order.quantity}</div>
                 <div>Rate: {order.rate}</div>
-                <div>Transport: {order.transport}</div>
+                <div>Transporter Type: {order.transport}</div>
                 <div>Agent: {order.agent}</div>
               </div>
             </div>

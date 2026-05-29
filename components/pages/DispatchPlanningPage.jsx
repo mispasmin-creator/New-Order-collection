@@ -594,7 +594,7 @@ export default function DispatchPlanningPage({ user }) {
     }
     // Validate common form
     if (!commonForm.typeOfTransporting) {
-      toast({ variant: "destructive", title: "Validation", description: "Transport Type is required." }); return
+      toast({ variant: "destructive", title: "Validation", description: "Transporter Type is required." }); return
     }
     if (!commonForm.dateOfDispatch) {
       toast({ variant: "destructive", title: "Validation", description: "Dispatch Date is required." }); return
@@ -781,7 +781,7 @@ export default function DispatchPlanningPage({ user }) {
                 <span className="text-gray-600">Rate:</span><span className="font-medium text-right">₹{Number(order["Rate Of Material"] || 0).toLocaleString()}</span>
               </div>
               <div className="flex justify-between border-b pb-1">
-                <span className="text-gray-600">Transport:</span><span className="font-medium text-right">{order["Type Of Transporting"]}</span>
+                <span className="text-gray-600">Transporter Type:</span><span className="font-medium text-right">{order["Type Of Transporting"]}</span>
               </div>
               {order["Freight"]?.toString().trim().toLowerCase() === "yes" && Number(order["Freight Amount"]) > 0 && (
                 <div className="flex justify-between border-b pb-1">
@@ -1062,7 +1062,7 @@ export default function DispatchPlanningPage({ user }) {
                   <TableHead>DO Number</TableHead>
                   <TableHead>Dispatch</TableHead>
                   <TableHead>Product</TableHead>
-                  <TableHead>Transporter</TableHead>
+                  <TableHead>Transporter Type</TableHead>
                   <TableHead>Qty</TableHead>
                   {activeTab === "pending" ? <TableHead>Checked On</TableHead> : <><TableHead>D-Sr</TableHead><TableHead>Date</TableHead><TableHead>Status</TableHead></>}
                   <TableHead className="text-right">Actions</TableHead>
@@ -1179,7 +1179,7 @@ export default function DispatchPlanningPage({ user }) {
                                       </div>
                                     )}
                                     <div>
-                                      <span className="text-gray-500">Transport Type</span>
+                                      <span className="text-gray-500">Transporter Type</span>
                                       <p className="font-medium text-gray-800">{row.typeOfTransporting || "—"}</p>
                                     </div>
                                     <div>
@@ -1361,7 +1361,7 @@ export default function DispatchPlanningPage({ user }) {
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label className="text-sm">Transport Type <span className="text-red-500">*</span></Label>
+                    <Label className="text-sm">Transporter Type <span className="text-red-500">*</span></Label>
                     <Select value={commonForm.typeOfTransporting} onValueChange={(v) => setCommonForm((p) => ({ ...p, typeOfTransporting: v }))} disabled={submitting}>
                       <SelectTrigger className="h-10"><SelectValue placeholder="Select Type" /></SelectTrigger>
                       <SelectContent>

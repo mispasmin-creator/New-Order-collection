@@ -107,6 +107,9 @@ export default function TCPage({ user }) {
       const completedOrders = []
 
       dispatchData?.forEach(row => {
+        const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
+        if (!row["Fullkitting Actual"] && typeOfTransporting !== "Ex Factory") return
+
         const dispatchNumber = row["D-Sr Number"]
         const deliveryRow = deliveryMap.get(dispatchNumber)
         const order = {
@@ -117,12 +120,15 @@ export default function TCPage({ user }) {
           partyName: row["Party Name"] || "",
           productName: row["Product Name"] || "",
           qtyToBeDispatched: row["Qty To Be Dispatched"] || "",
-          typeOfTransporting: row["Type Of Transporting"] || row["Type Of Transporting  "] || "",
+          actualTruckQty: row["Actual Truck Qty"] || "",
+          typeOfTransporting,
           transporterName: row["Transporter Name"] || "",
           truckNo: row["Truck No."] || "",
           biltyNo: row["Bilty No."] || "",
           planned4: row["Planned4"] || "",
           actual4: row["Actual4"] || "",
+          fullkittingAt: row["Fullkitting Actual"] || "",
+          fullkittingAmount: row["Fullkitting Amount"] || "",
           tcFileUrl: row["Trust Certificate Made"] || "",
           tcRequired: (row.po_id ? tcRequiredMap.get(row.po_id) : row["TC Required"]) || "No",
           billNumber: row["Bill Number"] || "",
@@ -215,6 +221,11 @@ export default function TCPage({ user }) {
     })
     return Object.values(map)
   }, [displayOrders])
+
+  const getGroupTransportTypes = (group) => {
+    const types = [...new Set(group.rows.map(row => row.typeOfTransporting).filter(Boolean))]
+    return types.length > 0 ? types.join(", ") : "—"
+  }
 
   const toggleGroup = (key) => setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }))
 
@@ -337,7 +348,7 @@ export default function TCPage({ user }) {
           "Delivery Order No.": row.deliveryOrderNo,
           "Party Name": row.partyName,
           "Product Name": row.productName,
-          "Quantity Delivered.": row.qtyToBeDispatched ? parseFloat(row.qtyToBeDispatched) : null,
+          "Quantity Delivered.": row.actualTruckQty ? parseFloat(row.actualTruckQty) : (row.qtyToBeDispatched ? parseFloat(row.qtyToBeDispatched) : null),
           "Bill No.": selectedGroup.invoiceNo || "",
           "Losgistic no.": row.dSrNumber || "",
           "Rate Of Material": row.rateOfMaterial,
@@ -500,6 +511,7 @@ export default function TCPage({ user }) {
                 {activeTab === "pending" && <TableHead className="font-semibold text-gray-900 py-3 px-4">Action</TableHead>}
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Invoice No.</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Party Name</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4">Transporter Type</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Products</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">TC Required</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">TC Status</TableHead>
@@ -508,7 +520,7 @@ export default function TCPage({ user }) {
             <TableBody>
               {groupedByInvoice.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={activeTab === "pending" ? 8 : 7} className="text-center py-8 text-gray-500">
                     No {activeTab} Test Certificate entries found
                   </TableCell>
                 </TableRow>
@@ -538,6 +550,7 @@ export default function TCPage({ user }) {
                           )}
                         </TableCell>
                         <TableCell className="py-2 px-4 text-slate-700">{group.partyName}</TableCell>
+                        <TableCell className="py-2 px-4 text-sm text-slate-700">{getGroupTransportTypes(group)}</TableCell>
                         <TableCell className="py-2 px-4 text-xs text-slate-500">
                           {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
                         </TableCell>
@@ -577,6 +590,7 @@ export default function TCPage({ user }) {
                             <Badge className="bg-blue-500 text-white rounded-sm text-xs">{order.dSrNumber || "N/A"}</Badge>
                           </TableCell>
                           <TableCell className="py-2 px-4 text-sm text-gray-600">{order.productName || "N/A"}</TableCell>
+                          <TableCell className="py-2 px-4 text-sm text-gray-600">{order.typeOfTransporting || "N/A"}</TableCell>
                           <TableCell className="py-2 px-4 text-sm text-gray-600">Qty: {order.qtyToBeDispatched || "N/A"} · DO: {order.deliveryOrderNo || "N/A"}</TableCell>
                           <TableCell className="py-2 px-4 text-xs font-medium text-gray-700">{order.tcRequired || "No"}</TableCell>
                           <TableCell className="py-2 px-4">

@@ -53,6 +53,8 @@ const EMPTY_FORM = {
   vehicleNo: "",
   receivedDate: "",
   returnFreightPaidBy: "",
+  returnTransporterType: "",
+  returnTransportRate: "",
   returnBiltyNo: "",
   returnBiltyCopy: null,
   remarks: "",
@@ -204,6 +206,8 @@ export default function ReturnOfMaterialPage({ user }) {
       vehicleNo: entry["Return Vehicle No"] || "",
       receivedDate: entry["Return Received At"] ? new Date(entry["Return Received At"]).toISOString().split("T")[0] : "",
       returnFreightPaidBy: entry["Return Freight Paid By"] || "",
+      returnTransporterType: entry["Return Transporter Type"] || "",
+      returnTransportRate: entry["Return Transport Rate"] || "",
       returnBiltyNo: entry["Return Bilty No"] || "",
       returnBiltyCopy: null,
       remarks: "",
@@ -243,6 +247,14 @@ export default function ReturnOfMaterialPage({ user }) {
       toast({ title: "Required", description: "Select who paid the return freight.", variant: "destructive" })
       return
     }
+    if (form.hasTransporterInfo === "Yes" && form.returnFreightPaidBy === "Paid by Us" && !form.returnTransporterType) {
+      toast({ title: "Required", description: "Select the return transporter type.", variant: "destructive" })
+      return
+    }
+    if (form.hasTransporterInfo === "Yes" && form.returnFreightPaidBy === "Paid by Us" && !form.returnTransportRate) {
+      toast({ title: "Required", description: "Enter the return transport rate.", variant: "destructive" })
+      return
+    }
     try {
       setSubmitting(true)
       let returnBiltyCopyUrl = ""
@@ -265,6 +277,8 @@ export default function ReturnOfMaterialPage({ user }) {
         payload["Return Transporter Mobile"] = form.transporterMobile.trim()
         payload["Return Vehicle No"] = form.vehicleNo.trim()
         payload["Return Freight Paid By"] = form.returnFreightPaidBy
+        payload["Return Transporter Type"] = form.returnFreightPaidBy === "Paid by Us" ? form.returnTransporterType : null
+        payload["Return Transport Rate"] = form.returnFreightPaidBy === "Paid by Us" ? Number(form.returnTransportRate) || 0 : null
         payload["Return Bilty No"] = form.returnFreightPaidBy === "Paid by Us" ? form.returnBiltyNo.trim() || null : null
         payload["Return Bilty Copy"] = form.returnFreightPaidBy === "Paid by Us" ? returnBiltyCopyUrl || null : null
         if (form.receivedDate) payload["Return Received At"] = form.receivedDate
@@ -428,7 +442,7 @@ export default function ReturnOfMaterialPage({ user }) {
                 <TableHead>Credit Note No.</TableHead>
                 {activeTab === "history" && (
                   <>
-                    <TableHead>Transporter</TableHead>
+                    <TableHead>Transporter Name</TableHead>
                     <TableHead>Vehicle No.</TableHead>
                     <TableHead>Dispatched On</TableHead>
                   </>
@@ -519,7 +533,7 @@ export default function ReturnOfMaterialPage({ user }) {
                             )}
                             {/* Return dispatch details (history) */}
                             {entry["Return Transporter Name"] && (
-                              <div><p className="text-gray-500 text-xs mb-0.5">Transporter</p><p className="font-semibold">{entry["Return Transporter Name"]}</p></div>
+                              <div><p className="text-gray-500 text-xs mb-0.5">Transporter Name</p><p className="font-semibold">{entry["Return Transporter Name"]}</p></div>
                             )}
                             {entry["Return Transporter Mobile"] && (
                               <div><p className="text-gray-500 text-xs mb-0.5">Transporter Mobile</p><p className="font-medium">{entry["Return Transporter Mobile"]}</p></div>
@@ -541,6 +555,12 @@ export default function ReturnOfMaterialPage({ user }) {
                             )}
                             {entry["Return Freight Paid By"] && (
                               <div><p className="text-gray-500 text-xs mb-0.5">Freight Paid By</p><p className="font-medium">{entry["Return Freight Paid By"]}</p></div>
+                            )}
+                            {entry["Return Transporter Type"] && (
+                              <div><p className="text-gray-500 text-xs mb-0.5">Transporter Type</p><p className="font-medium">{entry["Return Transporter Type"]}</p></div>
+                            )}
+                            {entry["Return Transport Rate"] !== null && entry["Return Transport Rate"] !== undefined && entry["Return Transport Rate"] !== "" && (
+                              <div><p className="text-gray-500 text-xs mb-0.5">Transport Rate</p><p className="font-semibold text-green-700">{fmt(entry["Return Transport Rate"])}</p></div>
                             )}
                             {entry["Return Bilty No"] && (
                               <div><p className="text-gray-500 text-xs mb-0.5">Return Bilty No.</p><p className="font-mono font-medium">{entry["Return Bilty No"]}</p></div>
@@ -677,6 +697,8 @@ export default function ReturnOfMaterialPage({ user }) {
                         vehicleNo: v === "Yes" ? prev.vehicleNo : "",
                         receivedDate: v === "Yes" ? prev.receivedDate : "",
                         returnFreightPaidBy: v === "Yes" ? prev.returnFreightPaidBy : "",
+                        returnTransporterType: v === "Yes" ? prev.returnTransporterType : "",
+                        returnTransportRate: v === "Yes" ? prev.returnTransportRate : "",
                         returnBiltyNo: v === "Yes" ? prev.returnBiltyNo : "",
                         returnBiltyCopy: v === "Yes" ? prev.returnBiltyCopy : null,
                       }))
@@ -766,6 +788,8 @@ export default function ReturnOfMaterialPage({ user }) {
                       setForm((prev) => ({
                         ...prev,
                         returnFreightPaidBy: v,
+                        returnTransporterType: v === "Paid by Us" ? prev.returnTransporterType : "",
+                        returnTransportRate: v === "Paid by Us" ? prev.returnTransportRate : "",
                         returnBiltyNo: v === "Paid by Us" ? prev.returnBiltyNo : "",
                         returnBiltyCopy: v === "Paid by Us" ? prev.returnBiltyCopy : null,
                       }))
@@ -783,6 +807,40 @@ export default function ReturnOfMaterialPage({ user }) {
                 </div>
                 {form.returnFreightPaidBy === "Paid by Us" && (
                   <>
+                    <div className="space-y-2 col-span-2 md:col-span-1">
+                      <Label className="text-sm font-medium">
+                        Transporter Type <span className="text-red-500">*</span>
+                      </Label>
+                      <Select
+                        value={form.returnTransporterType}
+                        onValueChange={(v) => setForm((prev) => ({ ...prev, returnTransporterType: v }))}
+                        disabled={submitting}
+                      >
+                        <SelectTrigger className="h-10">
+                          <SelectValue placeholder="Select rate type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Per MT">Per MT</SelectItem>
+                          <SelectItem value="Fixed">Fixed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2 col-span-2 md:col-span-1">
+                      <Label className="text-sm font-medium">
+                        Rate <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        name="returnTransportRate"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder={form.returnTransporterType === "Per MT" ? "Rate per MT" : "Fixed amount"}
+                        value={form.returnTransportRate}
+                        onChange={handleChange}
+                        disabled={submitting}
+                        className="h-10"
+                      />
+                    </div>
                     <div className="space-y-2 col-span-2 md:col-span-1">
                       <Label className="text-sm font-medium">Bilty Number</Label>
                       <Input
@@ -839,7 +897,11 @@ export default function ReturnOfMaterialPage({ user }) {
                 (form.hasTransporterInfo === "Yes" && (
                   !form.transporterName.trim() ||
                   !form.transporterMobile.trim() ||
-                  !form.returnFreightPaidBy
+                  !form.returnFreightPaidBy ||
+                  (form.returnFreightPaidBy === "Paid by Us" && (
+                    !form.returnTransporterType ||
+                    !form.returnTransportRate
+                  ))
                 ))
               }
               className="bg-teal-600 hover:bg-teal-700"

@@ -430,7 +430,7 @@ export default function CheckPOPage({ user, onNavigate }) {
                 <span className="font-medium text-right">₹{order.rate.toLocaleString()}</span>
               </div>
               <div className="flex justify-between border-b pb-1">
-                <span className="text-gray-600">Transport:</span>
+                <span className="text-gray-600">Transporter Type:</span>
                 <span className="font-medium text-right">{order.transportType}</span>
               </div>
             </div>

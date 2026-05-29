@@ -251,6 +251,17 @@ export default function LogisticPage({ user }) {
   }, [activeTab, historyOrders, orders, searchTerm, filterFirm, filterParty])
   const groupedDisplayOrders = useMemo(() => groupRowsByPo(displayOrders), [displayOrders])
 
+  const getGroupTransportTypes = (group) => {
+    const types = [
+      ...new Set(
+        group.rows
+          .map((row) => row.logisticTransportType || row.typeOfTransporting)
+          .filter(Boolean)
+      ),
+    ]
+    return types.length > 0 ? types.join(", ") : "—"
+  }
+
   const generateLGSTNumbers = useCallback((count) => {
     let maxNumber = 0
     historyOrders.forEach((order) => {
@@ -538,6 +549,7 @@ export default function LogisticPage({ user }) {
                 {activeTab === "history" && <TableHead>LGST-Sr</TableHead>}
                 <TableHead>PO Number</TableHead>
                 <TableHead>Party</TableHead>
+                <TableHead>Transporter Type</TableHead>
                 <TableHead>Products</TableHead>
                 <TableHead>{activeTab === "pending" ? "Planned" : "Actual"}</TableHead>
               </TableRow>
@@ -545,7 +557,7 @@ export default function LogisticPage({ user }) {
             <TableBody>
               {displayOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-gray-500">No rows found</TableCell>
+                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">No rows found</TableCell>
                 </TableRow>
               ) : (
                 groupedDisplayOrders.map((group) => {
@@ -577,6 +589,7 @@ export default function LogisticPage({ user }) {
                         )}
                         <TableCell className="font-semibold text-slate-900">{group.poNumber}</TableCell>
                         <TableCell className="text-slate-700">{group.partyName}</TableCell>
+                        <TableCell className="text-sm text-slate-700">{getGroupTransportTypes(group)}</TableCell>
                         <TableCell>
                           <span className="text-xs text-slate-500">
                             {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
@@ -590,7 +603,7 @@ export default function LogisticPage({ user }) {
                       {/* Expanded: detail cards per product */}
                       {isExpanded && (
                         <TableRow>
-                          <TableCell colSpan={6} className="p-0 border-b border-slate-200">
+                          <TableCell colSpan={7} className="p-0 border-b border-slate-200">
                             <div className="bg-slate-50/80 px-6 py-4 space-y-3">
                               {group.rows.map((row) => (
                                 <div key={row.id} className="bg-white border border-gray-200 rounded-lg p-4">
@@ -617,11 +630,11 @@ export default function LogisticPage({ user }) {
                                       <p className="font-mono font-medium text-gray-800">{row.deliveryOrderNo || "—"}</p>
                                     </div>
                                     <div>
-                                      <span className="text-gray-500">Transport Type</span>
+                                      <span className="text-gray-500">Transporter Type</span>
                                       <p className="font-medium text-gray-800">{row.typeOfTransporting || "—"}</p>
                                     </div>
                                     <div>
-                                      <span className="text-gray-500">Transporter</span>
+                                      <span className="text-gray-500">Transporter Name</span>
                                       <p className="font-medium text-gray-800">{row.transporterName || "—"}</p>
                                     </div>
                                     {row.freight?.toString().trim().toLowerCase() === "yes" && row.freightAmount > 0 && (
@@ -730,7 +743,7 @@ export default function LogisticPage({ user }) {
                               <th className="text-left px-2 py-1 font-medium text-gray-600">D-Sr</th>
                               <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
                               <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
-                              <th className="text-left px-2 py-1 font-medium text-gray-600">Transport</th>
+                              <th className="text-left px-2 py-1 font-medium text-gray-600">Transporter Type</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y">
@@ -762,14 +775,14 @@ export default function LogisticPage({ user }) {
 
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <Label className="text-sm">Type of Transporting *</Label>
+                  <Label className="text-sm">Transporter Type *</Label>
                   <Select
                     value={formData.typeOfTransporting}
                     onValueChange={(value) => setFormData((prev) => ({ ...prev, typeOfTransporting: value }))}
                     disabled={submitting}
                   >
                     <SelectTrigger className="h-10">
-                      <SelectValue placeholder="Select Transport Type" />
+                      <SelectValue placeholder="Select Transporter Type" />
                     </SelectTrigger>
                     <SelectContent>
                       {TRANSPORT_TYPES.map((type) => (

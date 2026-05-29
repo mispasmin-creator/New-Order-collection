@@ -401,6 +401,7 @@ export default function CRMDonePage({ user }) {
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Delivery Order No.</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Party Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Product Name</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[130px]">Transporter Type</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Quantity</TableHead>
                 {activeTab === "pending" && (
                   <>
@@ -423,7 +424,7 @@ export default function CRMDonePage({ user }) {
               {displayOrders.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeTab === "pending" ? 11 : 8}
+                    colSpan={activeTab === "pending" ? 12 : 9}
                     className="text-center py-8 text-gray-500"
                   >
                     <div className="flex flex-col items-center gap-2">
@@ -461,6 +462,7 @@ export default function CRMDonePage({ user }) {
                     <TableCell className="py-2 px-4 min-w-[150px] text-sm">
                       {order.productName}
                     </TableCell>
+                    <TableCell className="py-2 px-4 min-w-[130px] text-sm">{order.typeOfTransporting || "N/A"}</TableCell>
                     <TableCell className="py-2 px-4 min-w-[100px] font-medium text-sm">{order.quantityDelivered}</TableCell>
                     {activeTab === "pending" && (
                       <>

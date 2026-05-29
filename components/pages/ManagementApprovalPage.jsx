@@ -429,7 +429,7 @@ export default function ManagementApprovalPage({ user }) {
                                 <p className="font-medium">{entry["Remarks"]}</p>
                               </div>
                             )}
-                            {entry["Transporter Name"] && <div><p className="text-gray-500 text-xs mb-0.5">Transporter</p><p className="font-medium">{entry["Transporter Name"]}</p></div>}
+                            {entry["Transporter Name"] && <div><p className="text-gray-500 text-xs mb-0.5">Transporter Name</p><p className="font-medium">{entry["Transporter Name"]}</p></div>}
                             {entry["Vehicle No."] && <div><p className="text-gray-500 text-xs mb-0.5">Vehicle No.</p><p className="font-medium">{entry["Vehicle No."]}</p></div>}
                             {entry["Qty Of Return Material"] && <div><p className="text-gray-500 text-xs mb-0.5">Return Qty</p><p className="font-medium">{entry["Qty Of Return Material"]}</p></div>}
                             {entry["Condition of Material"] && (

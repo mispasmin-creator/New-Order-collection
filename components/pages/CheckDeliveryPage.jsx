@@ -465,7 +465,7 @@ export default function CheckDeliveryPage({ user }) {
                                       </div>
                                     )}
                                     <div>
-                                      <span className="text-gray-500">Transport Type</span>
+                                      <span className="text-gray-500">Transporter Type</span>
                                       <p className="font-medium text-gray-800">{row.transportType || "—"}</p>
                                     </div>
                                     <div>

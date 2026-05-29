@@ -83,7 +83,7 @@ export default function TestReportPage({ user }) {
           productName: row["Product Name"],
           qtyToBeDispatched: row["Qty To Be Dispatched"],
           actualTruckQty: row["Actual Truck Qty"],
-          typeOfTransporting: row["Type Of Transporting"],
+          typeOfTransporting: row["Type Of Transporting  "] || row["Type Of Transporting"],
           transporterName: row["Transporter Name"],
           truckNo: row["Truck No."],
           driverMobileNo: row["Driver Mobile No."],
@@ -436,7 +436,7 @@ export default function TestReportPage({ user }) {
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Dispatch No.</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Product Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Truck Qty</TableHead>
-                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transporter</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transporter Type</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Truck No</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Planned2</TableHead>
                 {activeTab === "history" && (
@@ -508,7 +508,7 @@ export default function TestReportPage({ user }) {
                           {order.actualTruckQty || "N/A"}
                         </TableCell>
                         <TableCell className="py-2 px-4 min-w-[150px] text-sm">
-                          {order.transporterName || "N/A"}
+                          {order.typeOfTransporting || "N/A"}
                         </TableCell>
                         <TableCell className="py-2 px-4 min-w-[120px]">
                           <Badge variant="outline" className="rounded-sm font-normal text-xs">

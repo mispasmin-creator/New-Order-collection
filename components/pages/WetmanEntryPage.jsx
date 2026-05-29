@@ -92,7 +92,7 @@ export default function WeighmentEntryPage({ user }) {
             partyName: row["Party Name"] || or["Party Names"] || "",
             productName: row["Product Name"],
             qtyToBeDispatched: row["Qty To Be Dispatched"] || "",
-            typeOfTransporting: row["Type Of Transporting"],
+            typeOfTransporting: row["Type Of Transporting  "] || row["Type Of Transporting"],
             transporterName: row["Transporter Name"],
             vehicleNumber: row["Truck No."] || "",
             actualTruckQty: row["Actual Truck Qty"],
@@ -605,8 +605,8 @@ export default function WeighmentEntryPage({ user }) {
                     {activeTab === "pending" && (
                       <div className="grid grid-cols-2 gap-3 text-sm pb-2">
                         <div>
-                          <p className="text-xs text-gray-500">Transporter</p>
-                          <p className="font-medium text-gray-900 truncate">{order.transporterName || "N/A"}</p>
+                          <p className="text-xs text-gray-500">Transporter Type</p>
+                          <p className="font-medium text-gray-900 truncate">{order.typeOfTransporting || "N/A"}</p>
                         </div>
                         <div>
                           <p className="text-xs text-gray-500">Vehicle</p>
@@ -640,7 +640,7 @@ export default function WeighmentEntryPage({ user }) {
                 {activeTab === "pending" && (
                   <>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Logistic No.</TableHead>
-                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transporter</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transporter Type</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Vehicle No.</TableHead>
                   </>
                 )}
@@ -741,7 +741,7 @@ export default function WeighmentEntryPage({ user }) {
                         {activeTab === "pending" && (
                           <>
                             <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.logisticNo || "N/A"}</TableCell>
-                            <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.transporterName || "N/A"}</TableCell>
+                            <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.typeOfTransporting || "N/A"}</TableCell>
                             <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.vehicleNumber || "N/A"}</TableCell>
                           </>
                         )}

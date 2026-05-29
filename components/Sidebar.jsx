@@ -47,6 +47,7 @@ const pageIcons = {
   "TC": FileCheck,
   "Wetman Entry": Scale,
   "Material Return": RotateCcw,
+  "Fullkitting": PackageCheck,
   "Return of Material": RotateCcw,
   "Retention": Receipt,
   "Management Approval": ShieldCheck,
@@ -72,6 +73,7 @@ const pageRoutes = {
   "Logistic": "/logistic",
   "Load Material": "/load-material",
   "Invoice": "/invoice",
+  "Fullkitting": "/fullkitting",
   "TC": "/tc",
   "Wetman Entry": "/wetman-entry",
   "Bilty Entry": "/bilty-entry",
@@ -99,6 +101,7 @@ const defaultPageOrder = [
   "Load Material",
   "Wetman Entry",
   "Invoice",
+  "Fullkitting",
   "TC",
   "Bilty Update",
   "Material Return",
@@ -332,10 +335,25 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         counts["Invoice"] = count
       }
 
+      // Fetch real-time count for "Fullkitting" from invoice history
+      const { data: fullkittingData, error: fullkittingError } = await supabase
+        .from('DISPATCH')
+        .select('Actual4, "Fullkitting Actual", "Type Of Transporting", "Type Of Transporting  "')
+        .not('Actual4', 'is', null)
+
+      if (!fullkittingError && fullkittingData) {
+        counts["Fullkitting"] = fullkittingData.filter(row =>
+          row["Actual4"] &&
+          row["Type Of Transporting"] !== "Ex Factory" &&
+          row["Type Of Transporting  "] !== "Ex Factory" &&
+          (!row["Fullkitting Actual"] || String(row["Fullkitting Actual"]).trim() === "")
+        ).length
+      }
+
       // Fetch real-time count for "TC"
       const { data: tcDispatchData, error: tcDispatchError } = await supabase
         .from('DISPATCH')
-        .select('"D-Sr Number", Actual4')
+        .select('"D-Sr Number", Actual4, "Fullkitting Actual", "Type Of Transporting", "Type Of Transporting  "')
         .not('Actual4', 'is', null)
 
       const { data: tcDeliveryData, error: tcDeliveryError } = await supabase
@@ -351,7 +369,9 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
 
         const count = tcDispatchData.filter(row => {
           const dispatchNumber = row["D-Sr Number"]
-          return dispatchNumber && !completedDispatchNumbers.has(dispatchNumber)
+          const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
+          const readyForTC = row["Fullkitting Actual"] || typeOfTransporting === "Ex Factory"
+          return readyForTC && dispatchNumber && !completedDispatchNumbers.has(dispatchNumber)
         }).length
 
         counts["TC"] = count

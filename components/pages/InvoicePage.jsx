@@ -114,7 +114,7 @@ export default function MakeInvoicePage({ user }) {
           imageOfSlip: row["Image Of Slip"] || "",
           imageOfSlip2: row["Image Of Slip2"] || "",
           imageOfSlip3: row["Image Of Slip3"] || "",
-          typeOfTransporting: row["Type Of Transporting  "] || "",
+          typeOfTransporting: row["Type Of Transporting  "] || row["Type Of Transporting"] || "",
           transporterName: row["Transporter Name"] || "",
           truckNo: row["Truck No."] || "",
           driverMobileNo: row["Driver Mobile No."] || "",
@@ -449,6 +449,9 @@ export default function MakeInvoicePage({ user }) {
               Actual4: actualDateTime,
               "Bill Number": invoiceNo.trim(),
               "Bill Copy": billCopyUrl,
+              ...(row.typeOfTransporting === "Ex Factory"
+                ? { "Fullkitting Actual": actualDateTime }
+                : {}),
             })
             .eq("id", row.id),
         ),
@@ -611,7 +614,7 @@ export default function MakeInvoicePage({ user }) {
                   Truck Qty
                 </TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">
-                  Transporter
+                  Transporter Type
                 </TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[110px]">
                   Truck No
@@ -694,7 +697,7 @@ export default function MakeInvoicePage({ user }) {
                           {getInvoiceLineQty(order) || "N/A"}
                         </TableCell>
                         <TableCell className="py-2 px-4 text-sm">
-                          {order.transporterName || "N/A"}
+                          {order.typeOfTransporting || "N/A"}
                         </TableCell>
                         <TableCell className="py-2 px-4">
                           <Badge

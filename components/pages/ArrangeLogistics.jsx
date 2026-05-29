@@ -646,7 +646,7 @@ export default function ArrangeLogistics({ user }) {
                                     )}
                                     <div>
                                       <span className="text-gray-500">
-                                        Transport Type
+                                        Transporter Type
                                       </span>
                                       <p className="font-medium text-gray-800">
                                         {order["Type Of Transporting"] || "—"}
@@ -783,7 +783,7 @@ export default function ArrangeLogistics({ user }) {
             <div className="border-t bg-gray-50 py-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-gray-700">
-                  Type of Transporting
+                  Transporter Type
                 </span>
                 <span className="font-medium text-gray-800">
                   {selectedGroup?.rows[0]?.["Type Of Transporting"] || "—"}

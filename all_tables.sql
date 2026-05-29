@@ -79,6 +79,9 @@ CREATE TABLE public.DISPATCH (
   Planned4 timestamp without time zone,
   Actual4 timestamp without time zone,
   Delay4 numeric,
+  Fullkitting Actual timestamp without time zone,
+  Fullkitting Amount numeric,
+  Fullkitting Remarks text,
   Trust Certificate Made text,
   TC Required text,
   CONSTRAINT DISPATCH_pkey PRIMARY KEY (id)

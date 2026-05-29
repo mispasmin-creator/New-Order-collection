@@ -193,6 +193,11 @@ export default function AccountsApprovalPage({ user }) {
 
   const groupedRows = useMemo(() => groupRowsByPo(displayRows), [displayRows])
 
+  const getGroupTransportTypes = (group) => {
+    const types = [...new Set(group.rows.map((row) => row.typeOfTransporting).filter(Boolean))]
+    return types.length > 0 ? types.join(", ") : "—"
+  }
+
   const handleOpen = async (group) => {
     setSelectedGroup(group)
     setSelectedSplitIds(new Set(group.rows.map((r) => r.id)))
@@ -413,6 +418,7 @@ export default function AccountsApprovalPage({ user }) {
                 <TableHead>PO Number</TableHead>
                 <TableHead>Party</TableHead>
                 <TableHead>Firm</TableHead>
+                <TableHead>Transporter Type</TableHead>
                 <TableHead>Splits</TableHead>
                 {activeTab === "history" && <TableHead>Payment Term</TableHead>}
               </TableRow>
@@ -420,7 +426,7 @@ export default function AccountsApprovalPage({ user }) {
             <TableBody>
               {groupedRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-gray-500">No records found</TableCell>
+                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">No records found</TableCell>
                 </TableRow>
               ) : (
                 groupedRows.map((group) => {
@@ -453,6 +459,7 @@ export default function AccountsApprovalPage({ user }) {
                         <TableCell className="font-semibold text-slate-900">{group.poNumber}</TableCell>
                         <TableCell className="text-slate-700">{group.partyName}</TableCell>
                         <TableCell className="text-slate-600">{group.rows[0]?.firmName}</TableCell>
+                        <TableCell className="text-sm text-slate-700">{getGroupTransportTypes(group)}</TableCell>
                         <TableCell>
                           <span className="text-xs text-slate-500">
                             {group.rows.length} split{group.rows.length > 1 ? "s" : ""}
@@ -474,7 +481,7 @@ export default function AccountsApprovalPage({ user }) {
                       {/* Expanded: ORDER RECEIPT detail cards */}
                       {isExpanded && (
                         <TableRow>
-                          <TableCell colSpan={6} className="p-0 border-b border-slate-200">
+                          <TableCell colSpan={7} className="p-0 border-b border-slate-200">
                             <div className="bg-slate-50/80 px-6 py-4 space-y-3">
                               {group.rows.map((row) => (
                                 <div key={row.id} className="bg-white border border-gray-200 rounded-lg p-4">
@@ -513,11 +520,11 @@ export default function AccountsApprovalPage({ user }) {
                                       </div>
                                     )}
                                     <div>
-                                      <span className="text-gray-500">Transporter</span>
+                                      <span className="text-gray-500">Transporter Name</span>
                                       <p className="font-medium text-gray-800">{row.transporterName || "—"}</p>
                                     </div>
                                     <div>
-                                      <span className="text-gray-500">Transport Type</span>
+                                      <span className="text-gray-500">Transporter Type</span>
                                       <p className="font-medium text-gray-800">{row.typeOfTransporting || "—"}</p>
                                     </div>
                                     <div>
@@ -627,7 +634,7 @@ export default function AccountsApprovalPage({ user }) {
                   <p className="font-medium">{selectedGroup?.rows[0]?.leadTimeFinalPayment || "—"}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-500">Transport Type</p>
+                  <p className="text-xs text-gray-500">Transporter Type</p>
                   <p className="font-medium">{selectedGroup?.rows[0]?.typeOfTransporting || "—"}</p>
                 </div>
                 <div>
