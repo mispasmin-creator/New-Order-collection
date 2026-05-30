@@ -96,6 +96,114 @@ const MASTER_ADD_OPTIONS = [
   { label: "Return Transporter Name", column: "Material Return Transporter Name" },
 ];
 
+const PARTY_LEDGER_HEADERS = [
+  "Invoice No",
+  "PO No",
+  "Customer",
+  "Invoice Date",
+  "Payment term",
+  "Bill Amount",
+  "Advance Adj",
+  "PBG",
+  "PBG Tenure",
+  "Net Bill",
+  "Due Date",
+  "Amt Received",
+  "Date",
+  "Pending",
+  "Days Delay",
+  "Interest",
+  "Remark",
+  "Payment Receive Date",
+  "Amount",
+];
+
+const PARTY_LEDGER_TABLES = [
+  "PARTY LEDGER",
+  "Party Ledger",
+  "PAYMENT COLLECTION",
+  "Payment Collection",
+  "RECEIVED ACCOUNTS",
+  "Received Accounts",
+  "ACCOUNT RECEIVABLE",
+  "Account Receivable",
+  "ACCOUNTS RECEIVABLE",
+  "Accounts Receivable",
+  "INVOICE PAYMENT",
+  "Invoice Payment",
+  "PAYMENTS",
+  "Payments",
+  "payments",
+  "payment_collection",
+  "received_accounts",
+  "account_receivable",
+  "party_payment",
+];
+
+const HEADER_ALIASES = {
+  "Invoice No": ["Invoice No", "Invoice No.", "Bill No", "Bill No.", "Bill Number", "Invoice Number"],
+  "PO No": ["PO No", "PO No.", "P.O. No", "PARTY PO NO (As Per Po Exact)", "Party PO Number", "po_number"],
+  Customer: ["Customer", "Party Name", "Party Names", "Customer Name"],
+  "Invoice Date": ["Invoice Date", "Bill Date", "Date of Invoice"],
+  "Payment term": ["Payment term", "Payment Term", "Payment Terms", "Payment to Be Taken"],
+  "Bill Amount": ["Bill Amount", "Total Bill Amount", "Invoice Amount", "Total Amount"],
+  "Advance Adj": ["Advance Adj", "Advance Adjustment", "Advance Adjusted"],
+  PBG: ["PBG", "PBG Amount", "Pbg"],
+  "PBG Tenure": ["PBG Tenure", "Pbg Tenure"],
+  "Net Bill": ["Net Bill", "Net Bill Amount", "Net Amount"],
+  "Due Date": ["Due Date", "PI Due Date", "Payment Due Date"],
+  "Amt Received": ["Amt Received", "Amount Received", "Received Amount"],
+  Date: ["Date", "Payment Date", "Received Date"],
+  Pending: ["Pending", "Pending Amount", "Outstanding", "Balance"],
+  "Days Delay": ["Days Delay", "Delay Days", "Delay"],
+  Interest: ["Interest", "Interest Amount"],
+  Remark: ["Remark", "Remarks"],
+  "Payment Receive Date": ["Payment Receive Date", "Payment Received Date", "Receive Date"],
+  Amount: ["Amount", "Payment Amount"],
+};
+
+const getFirstValue = (row, aliases) => {
+  for (const key of aliases) {
+    const value = row?.[key];
+    if (value !== null && value !== undefined && String(value).trim() !== "") return value;
+  }
+  return "";
+};
+
+const toAmount = (value) => {
+  if (value === null || value === undefined || value === "") return 0;
+  const cleaned = String(value).replace(/[₹,\s]/g, "");
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number : 0;
+};
+
+const formatCurrency = (value) =>
+  `₹${Number(value || 0).toLocaleString("en-IN", {
+    maximumFractionDigits: 0,
+  })}`;
+
+const formatLedgerValue = (header, value) => {
+  if (value === null || value === undefined || value === "") return "—";
+  if (["Bill Amount", "Advance Adj", "PBG", "Net Bill", "Amt Received", "Pending", "Interest", "Amount"].includes(header)) {
+    const amount = toAmount(value);
+    return amount ? formatCurrency(amount) : String(value);
+  }
+  if (["Invoice Date", "Due Date", "Date", "Payment Receive Date"].includes(header)) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString("en-IN");
+  }
+  return String(value);
+};
+
+const normalizeLedgerRow = (row) => {
+  const normalized = {};
+  PARTY_LEDGER_HEADERS.forEach((header) => {
+    normalized[header] = getFirstValue(row, HEADER_ALIASES[header] || [header]);
+  });
+  normalized.__raw = row;
+  return normalized;
+};
+
 export default function AnalyticsDashboard({ user }) {
   const [timeRange, setTimeRange] = useState("30");
   const [selectedMetric, setSelectedMetric] = useState("orders");
@@ -117,8 +225,13 @@ export default function AnalyticsDashboard({ user }) {
     dispatch: [],
     delivery: [],
     postDelivery: [],
+    partyLedger: [],
+    piPayments: [],
+    retentionPayments: [],
     lastUpdated: null,
   });
+  const [selectedParty, setSelectedParty] = useState("all");
+  const [partySearchTerm, setPartySearchTerm] = useState("");
 
   // Quick Actions Handlers
   const handleExportData = async () => {
@@ -474,18 +587,25 @@ export default function AnalyticsDashboard({ user }) {
       setError(null);
 
       // Fetch all tables in parallel
-      const [orderReceiptRes, dispatchRes, deliveryRes, postDeliveryRes] = await Promise.all([
+      const [orderReceiptRes, dispatchRes, deliveryRes, postDeliveryRes, piPaymentsRes, retentionPaymentsRes] = await Promise.all([
         supabase.from('ORDER RECEIPT').select('*'),
         supabase.from('DISPATCH').select('*'),
         supabase.from('DELIVERY').select('*'),
-        supabase.from('POST DELIVERY').select('*')
+        supabase.from('POST DELIVERY').select('*'),
+        supabase.from('po_pi_records').select('*'),
+        supabase.from('po_retention_records').select('*')
       ]);
+      const partyLedgerResults = await Promise.all(
+        PARTY_LEDGER_TABLES.map((table) => supabase.from(table).select("*"))
+      );
 
       // Check for errors
       if (orderReceiptRes.error) throw orderReceiptRes.error;
       if (dispatchRes.error) throw dispatchRes.error;
       if (deliveryRes.error) throw deliveryRes.error;
       if (postDeliveryRes.error) throw postDeliveryRes.error;
+      if (piPaymentsRes.error && piPaymentsRes.error.code !== "42P01") throw piPaymentsRes.error;
+      if (retentionPaymentsRes.error && retentionPaymentsRes.error.code !== "42P01") throw retentionPaymentsRes.error;
 
       // Debug: Log the data to see what we're getting
       console.log("📊 Dashboard Data Fetched:");
@@ -509,6 +629,9 @@ export default function AnalyticsDashboard({ user }) {
         dispatch: dispatchRes.data || [],
         delivery: deliveryRes.data || [],
         postDelivery: postDeliveryRes.data || [],
+        partyLedger: partyLedgerResults.flatMap((result) => (result.error ? [] : result.data || [])),
+        piPayments: piPaymentsRes.data || [],
+        retentionPayments: retentionPaymentsRes.data || [],
         lastUpdated: new Date().toISOString(),
       };
 
@@ -698,6 +821,258 @@ export default function AnalyticsDashboard({ user }) {
     const firms = [...new Set(sheetData.orderReceipt.map(order => order["Firm Name"]).filter(Boolean))];
     return ["all", ...firms];
   }, [sheetData.orderReceipt]);
+
+  const partyLedgerRows = useMemo(() => {
+    const directRows = sheetData.partyLedger.map(normalizeLedgerRow);
+    if (directRows.length > 0) return directRows;
+
+    const ordersByDo = new Map(
+      sheetData.orderReceipt
+        .filter((order) => order["DO-Delivery Order No."])
+        .map((order) => [String(order["DO-Delivery Order No."]).trim(), order])
+    );
+    const ordersByPo = new Map();
+    sheetData.orderReceipt.forEach((order) => {
+      const poNumber = String(order["PARTY PO NO (As Per Po Exact)"] || "").trim();
+      if (poNumber && !ordersByPo.has(poNumber)) ordersByPo.set(poNumber, order);
+    });
+
+    const piByPo = new Map();
+    sheetData.piPayments.forEach((payment) => {
+      const poNumber = String(payment.po_number || "").trim();
+      if (!poNumber) return;
+      if (!piByPo.has(poNumber)) piByPo.set(poNumber, []);
+      piByPo.get(poNumber).push(payment);
+    });
+
+    const retentionByPo = new Map(
+      sheetData.retentionPayments.map((record) => [String(record.po_number || "").trim(), record])
+    );
+
+    const getOrderAmount = (order = {}) => {
+      const adjusted = toAmount(order["Adjusted Amount"]);
+      const basic = toAmount(order["Total PO Basic Value"]);
+      return adjusted > 0 && (!basic || adjusted <= basic * 10) ? adjusted : basic;
+    };
+
+    const getLatestDate = (values) => {
+      const validDates = values
+        .filter(Boolean)
+        .map((value) => new Date(value))
+        .filter((date) => !Number.isNaN(date.getTime()))
+        .sort((a, b) => b - a);
+      return validDates[0] ? validDates[0].toISOString().slice(0, 10) : "";
+    };
+
+    const getEarliestDate = (values) => {
+      const validDates = values
+        .filter(Boolean)
+        .map((value) => new Date(value))
+        .filter((date) => !Number.isNaN(date.getTime()))
+        .sort((a, b) => a - b);
+      return validDates[0] ? validDates[0].toISOString().slice(0, 10) : "";
+    };
+
+    const rows = [];
+
+    sheetData.postDelivery.forEach((bill) => {
+      const order = ordersByDo.get(String(bill["Order No."] || "").trim()) || {};
+      const poNumber = String(order["PARTY PO NO (As Per Po Exact)"] || "").trim();
+      const piRows = poNumber ? piByPo.get(poNumber) || [] : [];
+      const billAmount = toAmount(bill["Total Bill Amount"]) || getOrderAmount(order);
+      const expected = piRows.reduce((sum, payment) => sum + toAmount(payment.expected_amount), 0);
+      const received = piRows.reduce((sum, payment) => sum + toAmount(payment.actual_amount), 0);
+      const pendingBase = expected || billAmount;
+      const pending = Math.max(0, pendingBase - received);
+      const dueDate = getEarliestDate(piRows.map((payment) => payment.due_date)) || order["PI Due Date"] || "";
+
+      rows.push(normalizeLedgerRow({
+        "Invoice No": bill["Bill No."],
+        "PO No": poNumber,
+        Customer: bill["Party Name"] || order["Party Names"],
+        "Invoice Date": bill["Bill Date"] || bill.Timestamp,
+        "Payment term": order["Type Of PI"] || order["Payment to Be Taken"],
+        "Bill Amount": billAmount,
+        "Net Bill": pendingBase,
+        "Due Date": dueDate,
+        "Amt Received": received,
+        Date: getLatestDate(piRows.map((payment) => payment.received_date || payment.received_at)),
+        Pending: pending,
+        "Days Delay": bill["Delay"],
+        Remark: bill["Type of Bill"] || "Invoice",
+        "Payment Receive Date": getLatestDate(piRows.map((payment) => payment.received_date || payment.received_at)),
+        Amount: received,
+        "Firm Name": order["Firm Name"],
+        __ledgerType: "invoice",
+        __hasPiPayments: piRows.length > 0,
+      }));
+    });
+
+    sheetData.piPayments.forEach((payment) => {
+      const poNumber = String(payment.po_number || "").trim();
+      const order = ordersByPo.get(poNumber) || {};
+      const expected = toAmount(payment.expected_amount);
+      const received = toAmount(payment.actual_amount);
+      const pending = Math.max(0, expected - received);
+      const paymentLog = Array.isArray(payment.payment_log) ? payment.payment_log : [];
+      const latestPayment = getLatestDate([
+        payment.received_date,
+        payment.received_at,
+        ...paymentLog.map((entry) => entry?.date || entry?.recorded_at),
+      ]);
+
+      rows.push(normalizeLedgerRow({
+        "Invoice No": payment.pi_number,
+        "PO No": poNumber,
+        Customer: payment.party_name || order["Party Names"],
+        "Invoice Date": payment.created_at,
+        "Payment term": payment.pi_type || order["Type Of PI"],
+        "Bill Amount": expected || getOrderAmount(order),
+        "Net Bill": expected || getOrderAmount(order),
+        "Due Date": payment.due_date,
+        "Amt Received": received,
+        Date: latestPayment,
+        Pending: pending,
+        "Days Delay": payment.due_date && pending > 0
+          ? Math.max(0, Math.ceil((new Date() - new Date(payment.due_date)) / (1000 * 60 * 60 * 24)))
+          : "",
+        Remark: payment.status || payment.slab_label || "PI Payment",
+        "Payment Receive Date": latestPayment,
+        Amount: received,
+        "Firm Name": payment.firm_name || order["Firm Name"],
+        __ledgerType: "pi",
+      }));
+    });
+
+    retentionByPo.forEach((retention, poNumber) => {
+      const order = ordersByPo.get(poNumber) || {};
+      if (!order["Retention Payment"]) return;
+      const baseAmount = getOrderAmount(order);
+      const retentionAmount = (baseAmount * toAmount(order["Retention Percentage"])) / 100;
+      const received = toAmount(retention.amount_received);
+
+      rows.push(normalizeLedgerRow({
+        "Invoice No": "Retention",
+        "PO No": poNumber,
+        Customer: order["Party Names"],
+        "Invoice Date": order.Timestamp,
+        "Payment term": "Retention",
+        "Bill Amount": retentionAmount,
+        "Net Bill": retentionAmount,
+        "Due Date": order["PI Due Date"],
+        "Amt Received": received,
+        Date: retention.updated_at,
+        Pending: Math.max(0, retentionAmount - received),
+        Remark: retention.status || "Retention",
+        "Payment Receive Date": retention.updated_at,
+        Amount: received,
+        "Firm Name": order["Firm Name"],
+        __ledgerType: "retention",
+      }));
+    });
+
+    if (rows.length > 0) return rows;
+
+    return sheetData.orderReceipt.map((order) => {
+      const amount = getOrderAmount(order);
+      return normalizeLedgerRow({
+        "Invoice No": order["DO-Delivery Order No."],
+        "PO No": order["PARTY PO NO (As Per Po Exact)"],
+        Customer: order["Party Names"],
+        "Invoice Date": order.Timestamp,
+        "Payment term": order["Type Of PI"] || order["Payment to Be Taken"],
+        "Bill Amount": amount,
+        "Net Bill": amount,
+        "Due Date": order["PI Due Date"],
+        Pending: amount,
+        Remark: order.Status || order.logistics_status || "Order",
+        "Firm Name": order["Firm Name"],
+        __ledgerType: "order",
+      });
+    });
+  }, [
+    sheetData.partyLedger,
+    sheetData.postDelivery,
+    sheetData.orderReceipt,
+    sheetData.piPayments,
+    sheetData.retentionPayments,
+  ]);
+
+  const filteredPartyLedgerRows = useMemo(() => {
+    const search = partySearchTerm.trim().toLowerCase();
+    return partyLedgerRows.filter((row) => {
+      const partyName = String(row.Customer || "").trim();
+      if (selectedParty !== "all" && partyName !== selectedParty) return false;
+
+      const firmName = String(row.__raw?.["Firm Name"] || "").trim().toLowerCase();
+      if (firmName) {
+        if (user.role === "ADMIN" && selectedFirm !== "all" && firmName !== selectedFirm.toLowerCase()) return false;
+        if (user.role !== "ADMIN") {
+          const userFirms = user.firm ? user.firm.split(",").map((f) => f.trim().toLowerCase()) : [];
+          if (!userFirms.includes("all") && !userFirms.includes(firmName)) return false;
+        }
+      }
+
+      if (!search) return true;
+      return PARTY_LEDGER_HEADERS.some((header) =>
+        String(row[header] || "").toLowerCase().includes(search)
+      );
+    });
+  }, [partyLedgerRows, selectedParty, partySearchTerm, selectedFirm, user]);
+
+  const partyOptions = useMemo(() => {
+    const parties = [...new Set(partyLedgerRows.map((row) => row.Customer).filter(Boolean))].sort((a, b) =>
+      String(a).localeCompare(String(b))
+    );
+    return ["all", ...parties];
+  }, [partyLedgerRows]);
+
+  const visiblePartyLedgerHeaders = useMemo(() => {
+    const headers = PARTY_LEDGER_HEADERS.filter((header) =>
+      filteredPartyLedgerRows.some((row) => row[header] !== null && row[header] !== undefined && String(row[header]).trim() !== "")
+    );
+    return headers.length ? headers : PARTY_LEDGER_HEADERS;
+  }, [filteredPartyLedgerRows]);
+
+  const partyLedgerStats = useMemo(() => {
+    const today = new Date();
+    return filteredPartyLedgerRows.reduce(
+      (acc, row) => {
+        const isInvoiceCoveredByPi = row.__raw?.__ledgerType === "invoice" && row.__raw?.__hasPiPayments;
+        const billAmount = toAmount(row["Bill Amount"]);
+        const received = toAmount(row["Amt Received"]) || toAmount(row.Amount);
+        const pending = row.Pending !== "" ? toAmount(row.Pending) : Math.max(0, billAmount - received);
+        const interest = toAmount(row.Interest);
+        const pbgValue = toAmount(row.PBG);
+        const dueDate = row["Due Date"] ? new Date(row["Due Date"]) : null;
+        const isOverdue = pending > 0 && dueDate && !Number.isNaN(dueDate.getTime()) && dueDate < today;
+
+        if (!isInvoiceCoveredByPi) {
+          acc.totalBilled += billAmount;
+          acc.totalReceived += received;
+          acc.totalOutstanding += pending;
+        }
+        acc.totalInterest += interest;
+        acc.pbgValue += pbgValue;
+        if (String(row.PBG || "").trim()) acc.pbgCount += 1;
+        if (isOverdue && !isInvoiceCoveredByPi) {
+          acc.overdueInvoices += 1;
+          acc.overdueTotal += pending;
+        }
+        return acc;
+      },
+      {
+        totalBilled: 0,
+        totalReceived: 0,
+        totalOutstanding: 0,
+        totalInterest: 0,
+        overdueInvoices: 0,
+        overdueTotal: 0,
+        pbgCount: 0,
+        pbgValue: 0,
+      }
+    );
+  }, [filteredPartyLedgerRows]);
 
   if (loading && !refreshing) {
     return (
@@ -901,11 +1276,12 @@ export default function AnalyticsDashboard({ user }) {
 
       {/* Charts Section */}
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList className="grid grid-cols-4 w-full lg:w-auto">
+        <TabsList className="grid grid-cols-5 w-full lg:w-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="revenue">Revenue</TabsTrigger>
           <TabsTrigger value="process">Process Flow</TabsTrigger>
           <TabsTrigger value="performance">Performance</TabsTrigger>
+          <TabsTrigger value="party-name">Party Name</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -1157,6 +1533,105 @@ export default function AnalyticsDashboard({ user }) {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="party-name" className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            {[
+              { label: "TOTAL BILLED", value: formatCurrency(partyLedgerStats.totalBilled), tone: "blue" },
+              { label: "Total Received", value: formatCurrency(partyLedgerStats.totalReceived), tone: "green" },
+              { label: "Total Outstanding", value: formatCurrency(partyLedgerStats.totalOutstanding), tone: "amber" },
+              { label: "Total Interest", value: formatCurrency(partyLedgerStats.totalInterest), tone: "purple" },
+              { label: "Overdue Invoices", value: partyLedgerStats.overdueInvoices, tone: "red" },
+              { label: "Overdue Total", value: formatCurrency(partyLedgerStats.overdueTotal), tone: "rose" },
+              { label: "PBG", value: partyLedgerStats.pbgCount, tone: "indigo" },
+              { label: "PBG Value", value: formatCurrency(partyLedgerStats.pbgValue), tone: "slate" },
+            ].map((card) => {
+              const colors = {
+                blue: "bg-blue-50 text-blue-700 border-blue-100",
+                green: "bg-green-50 text-green-700 border-green-100",
+                amber: "bg-amber-50 text-amber-700 border-amber-100",
+                purple: "bg-purple-50 text-purple-700 border-purple-100",
+                red: "bg-red-50 text-red-700 border-red-100",
+                rose: "bg-rose-50 text-rose-700 border-rose-100",
+                indigo: "bg-indigo-50 text-indigo-700 border-indigo-100",
+                slate: "bg-slate-50 text-slate-700 border-slate-100",
+              };
+              return (
+                <Card key={card.label} className={`border shadow-sm ${colors[card.tone]}`}>
+                  <CardContent className="p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide opacity-80">{card.label}</p>
+                    <p className="mt-2 text-2xl font-bold tabular-nums">{card.value}</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <Card className="border-0 shadow-lg">
+            <CardHeader>
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div>
+                  <CardTitle className="text-lg font-semibold">Party Name</CardTitle>
+                  <CardDescription>Invoice and payment summary by party name</CardDescription>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Select value={selectedParty} onValueChange={setSelectedParty}>
+                    <SelectTrigger className="h-10 w-full sm:w-[240px]">
+                      <SelectValue placeholder="Select Party" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {partyOptions.map((party) => (
+                        <SelectItem key={party} value={party}>
+                          {party === "all" ? "All Parties" : party}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    value={partySearchTerm}
+                    onChange={(event) => setPartySearchTerm(event.target.value)}
+                    placeholder="Search invoice, PO, customer..."
+                    className="h-10 w-full sm:w-[280px]"
+                  />
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-auto rounded-md border max-h-[520px]">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0 z-10">
+                    <tr>
+                      {visiblePartyLedgerHeaders.map((header) => (
+                        <th key={header} className="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">
+                          {header}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPartyLedgerRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={visiblePartyLedgerHeaders.length} className="px-4 py-10 text-center text-gray-500">
+                          No party payment records found.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredPartyLedgerRows.map((row, index) => (
+                        <tr key={`${row["Invoice No"] || "invoice"}-${index}`} className="border-t hover:bg-gray-50">
+                          {visiblePartyLedgerHeaders.map((header) => (
+                            <td key={header} className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                              {formatLedgerValue(header, row[header])}
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 
