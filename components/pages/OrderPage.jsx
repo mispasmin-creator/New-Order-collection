@@ -320,7 +320,7 @@ export default function OrderPage({ user }) {
       
       // If order has a PO number, update all items associated with that PO
       if (selectedOrder.partyPONumber && selectedOrder.partyPONumber !== "No PO") {
-        query = query.eq('PARTY PO NO (As Per Po Exact)', selectedOrder.partyPONumber)
+        query = query.eq('"PARTY PO NO (As Per Po Exact)"', selectedOrder.partyPONumber)
       } else {
         query = query.eq('id', selectedOrder.id)
       }
