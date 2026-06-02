@@ -167,10 +167,30 @@ export default function ArrangeLogistics({ user }) {
       const { data, error } = await query;
       if (error) throw error;
 
+      const orderIds = (data || []).map((row) => row.id);
+      let splits = [];
+      if (orderIds.length > 0) {
+        const { data: splitsData, error: splitsError } = await supabase
+          .from("po_logistics_splits")
+          .select("po_id, transporter_name, vehicle_details, rate")
+          .in("po_id", orderIds);
+        if (!splitsError && splitsData) {
+          splits = splitsData;
+        }
+      }
+
+      const mappedOrders = (data || []).map((row) => {
+        const rowSplits = splits.filter((s) => s.po_id === row.id);
+        return {
+          ...row,
+          splits: rowSplits,
+        };
+      });
+
       const pending = [];
       const history = [];
 
-      (data || []).forEach((row) => {
+      mappedOrders.forEach((row) => {
         const status = row.logistics_status;
         if (!status || status === "Pending Arrangement") {
           pending.push(row);
@@ -697,6 +717,39 @@ export default function ArrangeLogistics({ user }) {
                                       </div>
                                     )}
                                   </div>
+
+                                  {activeTab === "history" && order.splits && order.splits.length > 0 && (
+                                    <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                        Submitted Transporter Options
+                                      </p>
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        {order.splits.map((split, sIdx) => (
+                                          <div key={sIdx} className="bg-slate-50 border border-slate-100 rounded-lg p-3 space-y-1.5 text-xs">
+                                            <div className="flex justify-between border-b border-slate-200/60 pb-1 mb-1">
+                                              <span className="text-xs font-semibold text-blue-700">Transporter {sIdx + 1}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-400 font-medium text-[9px] uppercase tracking-wider block">Name / Agency</span>
+                                              <span className="font-semibold text-gray-800">{split.transporter_name}</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 pt-1">
+                                              <div>
+                                                <span className="text-gray-400 font-medium text-[9px] uppercase tracking-wider block">Rate Type</span>
+                                                <span className="font-medium text-gray-700">{split.vehicle_details || "—"}</span>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-400 font-medium text-[9px] uppercase tracking-wider block">Entered Rate</span>
+                                                <span className="font-bold text-green-700">
+                                                  {split.rate ? `₹${Number(split.rate).toLocaleString("en-IN")}` : "—"}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                             </div>

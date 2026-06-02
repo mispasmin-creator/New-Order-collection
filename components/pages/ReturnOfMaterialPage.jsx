@@ -200,7 +200,7 @@ export default function ReturnOfMaterialPage({ user }) {
   const handleOpen = (entry) => {
     setSelectedEntry(entry)
     setForm({
-      hasTransporterInfo: entry["Return Transporter Info"] || "",
+      hasTransporterInfo: entry["Return Transporter Name"] ? "Yes" : "",
       transporterName: entry["Return Transporter Name"] || "",
       transporterMobile: entry["Return Transporter Mobile"] || "",
       vehicleNo: entry["Return Vehicle No"] || "",
@@ -269,7 +269,6 @@ export default function ReturnOfMaterialPage({ user }) {
       }
 
       const payload = {
-        "Return Transporter Info": form.hasTransporterInfo,
         "Return Dispatched At": getISTTimestamp(),
       }
       if (form.hasTransporterInfo === "Yes") {
