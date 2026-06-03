@@ -20,6 +20,14 @@ import { groupRowsByPo } from "@/lib/workflowGrouping"
 const STORAGE_BUCKET = "images"
 const STORAGE_FOLDER = "load-material"
 
+const getTransporterRateDisplay = (row) => {
+  const perMt = Number(row.transportRatePerTon) || 0
+  const fixed = Number(row.fixedAmount) || 0
+  if (perMt > 0) return `₹${perMt.toLocaleString("en-IN")} / MT`
+  if (fixed > 0) return `₹${fixed.toLocaleString("en-IN")} fixed`
+  return "—"
+}
+
 export default function TestReportPage({ user }) {
   const [orders, setOrders] = useState([])
   const [completedOrders, setCompletedOrders] = useState([])
@@ -89,6 +97,8 @@ export default function TestReportPage({ user }) {
           driverMobileNo: row["Driver Mobile No."],
           vehicleNoPlateImage: row["Vehicle No. Plate Image"],
           biltyNo: row["Bilty No."],
+          typeOfRate: row["Type Of Rate"],
+          transportRatePerTon: row["Transport Rate @Per Matric Ton"],
           fixedAmount: row["Fixed Amount"],
           planned2: row["Planned2"],
           actual2: row["Actual2"],
@@ -437,6 +447,7 @@ export default function TestReportPage({ user }) {
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Product Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Truck Qty</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transporter Type</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[140px]">Transporter Rate</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Truck No</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Planned2</TableHead>
                 {activeTab === "history" && (
@@ -462,7 +473,7 @@ export default function TestReportPage({ user }) {
                   <Fragment key={group.key}>
                     {/* ── PO group header row ── */}
                     <TableRow className="bg-slate-50">
-                      <TableCell colSpan={activeTab === "pending" ? 10 : 9} className="px-4 py-3">
+                      <TableCell colSpan={10} className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           {activeTab === "pending" && (
                             <Button
@@ -509,6 +520,9 @@ export default function TestReportPage({ user }) {
                         </TableCell>
                         <TableCell className="py-2 px-4 min-w-[150px] text-sm">
                           {order.typeOfTransporting || "N/A"}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[140px] text-sm">
+                          {getTransporterRateDisplay(order)}
                         </TableCell>
                         <TableCell className="py-2 px-4 min-w-[120px]">
                           <Badge variant="outline" className="rounded-sm font-normal text-xs">
@@ -605,6 +619,7 @@ export default function TestReportPage({ user }) {
                         <th className="text-left px-2 py-1 font-medium text-gray-600">Logistic Details</th>
                         <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
                         <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
+                        <th className="text-left px-2 py-1 font-medium text-gray-600">Transporter Rate</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -636,6 +651,7 @@ export default function TestReportPage({ user }) {
                             </div>
                           </td>
                           <td className="px-2 py-1 text-gray-700 text-right font-bold">{row.actualTruckQty || row.qtyToBeDispatched || "N/A"}</td>
+                          <td className="px-2 py-1 text-gray-700">{getTransporterRateDisplay(row)}</td>
                         </tr>
                       ))}
                     </tbody>

@@ -61,6 +61,16 @@ const formatDate = (value) => {
   }
 }
 
+const getTransporterRateDisplay = (row) => {
+  const perMt = Number(row.transportRatePerTon) || 0
+  const fixed = Number(row.fixedAmount) || 0
+  const splitRate = Number(row.plannedTransporterRate) || 0
+  if (perMt > 0) return `₹${perMt.toLocaleString("en-IN")} / MT`
+  if (fixed > 0) return `₹${fixed.toLocaleString("en-IN")} fixed`
+  if (splitRate > 0) return `₹${splitRate.toLocaleString("en-IN")}`
+  return "—"
+}
+
 export default function LogisticPage({ user }) {
   const [orders, setOrders] = useState([])
   const [historyOrders, setHistoryOrders] = useState([])
@@ -161,6 +171,7 @@ export default function LogisticPage({ user }) {
           typeOfRate: row[DB_COLUMNS.TYPE_OF_RATE] || "",
           transportRatePerTon: row[DB_COLUMNS.TRANSPORT_RATE] || "",
           fixedAmount: row[DB_COLUMNS.FIXED_AMOUNT] || "",
+          plannedTransporterRate: splitInfo?.rate || "",
           logisticsSplitId: splitId,
           logisticsPlanId: row.logistics_plan_id || null,
           paymentTermStatus: splitInfo?.payment_term_status || "",
@@ -637,6 +648,10 @@ export default function LogisticPage({ user }) {
                                       <span className="text-gray-500">Transporter Name</span>
                                       <p className="font-medium text-gray-800">{row.transporterName || "—"}</p>
                                     </div>
+                                    <div>
+                                      <span className="text-gray-500">Transporter Rate</span>
+                                      <p className="font-medium text-gray-800">{getTransporterRateDisplay(row)}</p>
+                                    </div>
                                     {row.freight?.toString().trim().toLowerCase() === "yes" && row.freightAmount > 0 && (
                                       <div>
                                         <span className="text-gray-500">Freight Amount</span>
@@ -743,6 +758,7 @@ export default function LogisticPage({ user }) {
                               <th className="text-left px-2 py-1 font-medium text-gray-600">D-Sr</th>
                               <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
                               <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
+                              <th className="text-left px-2 py-1 font-medium text-gray-600">Transporter Rate</th>
                               <th className="text-left px-2 py-1 font-medium text-gray-600">Transporter Type</th>
                             </tr>
                           </thead>
@@ -758,6 +774,7 @@ export default function LogisticPage({ user }) {
                                 <td className="px-2 py-1 text-gray-700 font-mono">{row.dSrNumber}</td>
                                 <td className="px-2 py-1 text-gray-700 font-medium">{row.productName}</td>
                                 <td className="px-2 py-1 text-gray-700 text-right">{row.qtyToBeDispatched}</td>
+                                <td className="px-2 py-1 text-gray-700">{getTransporterRateDisplay(row)}</td>
                                 <td className="px-2 py-1">
                                   <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-medium ${row.typeOfTransporting === "FOR" ? "bg-blue-100 text-blue-700" : row.typeOfTransporting === "Direct Supply" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
                                     {row.typeOfTransporting || "—"}

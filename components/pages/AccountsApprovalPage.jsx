@@ -39,6 +39,11 @@ const formatDate = (value) => {
   }
 }
 
+const formatTransporterRate = (value) => {
+  const rate = Number(value) || 0
+  return rate > 0 ? `₹${rate.toLocaleString("en-IN")}` : "—"
+}
+
 export default function AccountsApprovalPage({ user }) {
   const { updateCount } = useNotification()
   const { toast } = useToast()
@@ -510,6 +515,10 @@ export default function AccountsApprovalPage({ user }) {
                                       <p className="font-medium text-gray-800">{row.poRate ? `₹${row.poRate}` : "—"}</p>
                                     </div>
                                     <div>
+                                      <span className="text-gray-500">Transporter Rate</span>
+                                      <p className="font-medium text-gray-800">{formatTransporterRate(row.rate)}</p>
+                                    </div>
+                                    <div>
                                       <span className="text-gray-500">Total PO Value</span>
                                       <p className="font-medium text-green-700">{row.totalValue ? `₹${Number(row.totalValue).toLocaleString()}` : "—"}</p>
                                     </div>
@@ -763,6 +772,7 @@ export default function AccountsApprovalPage({ user }) {
                         {row.poRate && (
                           <span>Rate: <span className="font-medium text-slate-800">₹{row.poRate}</span></span>
                         )}
+                        <span>Transporter Rate: <span className="font-medium text-slate-800">{formatTransporterRate(row.rate)}</span></span>
                         {row.totalValue > 0 && (
                           <span>Value: <span className="font-medium text-green-700">₹{Number(row.totalValue).toLocaleString("en-IN")}</span></span>
                         )}

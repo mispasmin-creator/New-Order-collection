@@ -33,6 +33,12 @@ const formatDetailLabel = (key) =>
     .replace(/\s+\./g, ".")
     .trim()
 
+const getTransporterRateValue = (row) =>
+  Number(row["Transporter Amount"]) ||
+  Number(row["Transport Rate @Per Matric Ton"]) ||
+  Number(row["Fixed Amount"]) ||
+  0
+
 export default function FullkittingPage({ user }) {
   const [pendingRows, setPendingRows] = useState([])
   const [historyRows, setHistoryRows] = useState([])
@@ -96,6 +102,12 @@ export default function FullkittingPage({ user }) {
         const rate = Number(po["Rate Of Material"]) || 0
         const amount = Number(row["Fullkitting Amount"] ?? row["Fixed Amount"]) || truckQty * rate || 0
         const rateType = row["Type Of Rate"] || ""
+        const transportRate = Number(row["Transport Rate @Per Matric Ton"]) || 0
+        const fixedAmount = Number(row["Fixed Amount"]) || 0
+        const transporterRate = getTransporterRateValue(row)
+        const transporterAmount =
+          Number(row["Transporter Amount"]) ||
+          (rateType === "Per Matric Ton rate" ? truckQty * transportRate : fixedAmount)
         const biltyCopy = row["Bilty Copy"] || ""
         const fullkittingStatus = row["Fullkitting Status"] || ""
 
@@ -137,6 +149,8 @@ export default function FullkittingPage({ user }) {
           rateType,
           rateOfMaterial: rate,
           amount,
+          transporterRate,
+          transporterAmount,
           invoiceAt: row["Actual4"] || "",
           fullkittingAt: row["Fullkitting Actual"] || "",
           fullkittingStatus,
@@ -207,7 +221,7 @@ export default function FullkittingPage({ user }) {
       truckQty: row.truckQty || "",
       transporter: row.transporter || "",
       truckNo: row.truckNo || "",
-      amount: row.amount || "",
+      amount: row.transporterRate || "",
       remarks: row.remarks || "",
     })
   }
@@ -509,8 +523,8 @@ export default function FullkittingPage({ user }) {
                       <p className="text-sm font-medium text-gray-900">{selectedRow.rateType || "N/A"}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">Amount</p>
-                      <p className="text-sm font-medium text-gray-900">{fmt(selectedRow.amount)}</p>
+                      <p className="text-xs text-gray-500">Transporter Rate</p>
+                      <p className="text-sm font-medium text-gray-900">{fmt(selectedRow.transporterRate)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500">Bilty Image</p>
@@ -580,7 +594,7 @@ export default function FullkittingPage({ user }) {
                       <Input value={form.truckNo} onChange={(event) => updateForm("truckNo", event.target.value)} disabled={submitting} />
                     </div>
                     <div className="space-y-2">
-                      <Label>Amount *</Label>
+                      <Label>Transporter Rate *</Label>
                       <Input type="number" step="0.01" min="0" value={form.amount} onChange={(event) => updateForm("amount", event.target.value)} disabled={submitting} />
                     </div>
                     <div className="space-y-2">

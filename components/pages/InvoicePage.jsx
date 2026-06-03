@@ -119,6 +119,8 @@ export default function MakeInvoicePage({ user }) {
           truckNo: row["Truck No."] || "",
           driverMobileNo: row["Driver Mobile No."] || "",
           typeOfRate: row["Type Of Rate"] || "",
+          transportRatePerTon: row["Transport Rate @Per Matric Ton"] || "",
+          fixedAmount: row["Fixed Amount"] || "",
           vehiclePlateImage: row["Vehicle No. Plate Image"] || "",
           biltyNo: row["Bilty No."] || "",
           gstNumber: or["Gst Number"] || "",
@@ -196,6 +198,14 @@ export default function MakeInvoicePage({ user }) {
     });
   };
 
+  const getTransporterRateDisplay = (row) => {
+    const perMt = Number(row.transportRatePerTon) || 0;
+    const fixed = Number(row.fixedAmount) || 0;
+    if (perMt > 0) return `₹${perMt.toLocaleString("en-IN")} / MT`;
+    if (fixed > 0) return `₹${fixed.toLocaleString("en-IN")} fixed`;
+    return "—";
+  };
+
   // ── Filtering & grouping ────────────────────────────────────────────────────
   const searchFilter = (list) => {
     if (!searchTerm) return list;
@@ -234,6 +244,8 @@ export default function MakeInvoicePage({ user }) {
         lgstSrNumber: row.lgstSrNumber,
         truckNo: row.truckNo,
         transporterName: row.transporterName,
+        transportRatePerTon: row.transportRatePerTon || "",
+        fixedAmount: row.fixedAmount || "",
         deliveryOrderNo: row.deliveryOrderNo,
         actualTruckQty: row.actualTruckQty || 0,
         invoiceActualQty: getInvoiceLineQty(row),
@@ -616,6 +628,9 @@ export default function MakeInvoicePage({ user }) {
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">
                   Transporter Type
                 </TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[140px]">
+                  Transporter Rate
+                </TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[110px]">
                   Truck No
                 </TableHead>
@@ -633,7 +648,7 @@ export default function MakeInvoicePage({ user }) {
               {displayOrders.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={activeTab === "history" ? 9 : 8}
                     className="text-center py-8 text-gray-500"
                   >
                     No {activeTab} invoices found.
@@ -645,7 +660,7 @@ export default function MakeInvoicePage({ user }) {
                     {/* PO group header */}
                     <TableRow className="bg-slate-50">
                       <TableCell
-                        colSpan={activeTab === "history" ? 8 : 7}
+                        colSpan={activeTab === "history" ? 9 : 8}
                         className="px-4 py-3"
                       >
                         <div className="flex items-center gap-3">
@@ -698,6 +713,9 @@ export default function MakeInvoicePage({ user }) {
                         </TableCell>
                         <TableCell className="py-2 px-4 text-sm">
                           {order.typeOfTransporting || "N/A"}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 text-sm">
+                          {getTransporterRateDisplay(order)}
                         </TableCell>
                         <TableCell className="py-2 px-4">
                           <Badge
@@ -984,6 +1002,9 @@ export default function MakeInvoicePage({ user }) {
                               </div>
                               <div className="text-[9px] text-gray-500 truncate max-w-[150px]">
                                 {line.transporterName || "N/A"}
+                              </div>
+                              <div className="text-[9px] text-gray-500 truncate max-w-[150px]">
+                                Rate: {getTransporterRateDisplay(line)}
                               </div>
                             </div>
                           </td>

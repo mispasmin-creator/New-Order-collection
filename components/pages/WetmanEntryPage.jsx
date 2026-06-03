@@ -21,6 +21,14 @@ import { Package, Truck, Scale } from "lucide-react"
 import { getSignedUrl } from "@/lib/storageUtils"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
+const getTransporterRateDisplay = (row) => {
+  const perMt = Number(row.transportRatePerTon) || 0
+  const fixed = Number(row.fixedAmount) || 0
+  if (perMt > 0) return `₹${perMt.toLocaleString("en-IN")} / MT`
+  if (fixed > 0) return `₹${fixed.toLocaleString("en-IN")} fixed`
+  return "—"
+}
+
 export default function WeighmentEntryPage({ user }) {
   const [orders, setOrders] = useState([])
   const [historyOrders, setHistoryOrders] = useState([])
@@ -96,6 +104,9 @@ export default function WeighmentEntryPage({ user }) {
             transporterName: row["Transporter Name"],
             vehicleNumber: row["Truck No."] || "",
             actualTruckQty: row["Actual Truck Qty"],
+            typeOfRate: row["Type Of Rate"] || "",
+            transportRatePerTon: row["Transport Rate @Per Matric Ton"] || "",
+            fixedAmount: row["Fixed Amount"] || "",
 
             // Stage 3 Specific columns
             planned3: formatDate(row["Planned3"]),
@@ -609,6 +620,10 @@ export default function WeighmentEntryPage({ user }) {
                           <p className="font-medium text-gray-900 truncate">{order.typeOfTransporting || "N/A"}</p>
                         </div>
                         <div>
+                          <p className="text-xs text-gray-500">Transporter Rate</p>
+                          <p className="font-medium text-gray-900 truncate">{getTransporterRateDisplay(order)}</p>
+                        </div>
+                        <div>
                           <p className="text-xs text-gray-500">Vehicle</p>
                           <p className="font-medium text-gray-900 truncate">{order.vehicleNumber || "N/A"}</p>
                         </div>
@@ -641,6 +656,7 @@ export default function WeighmentEntryPage({ user }) {
                   <>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Logistic No.</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Transporter Type</TableHead>
+                    <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[140px]">Transporter Rate</TableHead>
                     <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Vehicle No.</TableHead>
                   </>
                 )}
@@ -659,7 +675,7 @@ export default function WeighmentEntryPage({ user }) {
               {displayOrders.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeTab === "pending" ? 12 : 14}
+                    colSpan={activeTab === "pending" ? 13 : 14}
                     className="text-center py-8 text-gray-500"
                   >
                     <div className="flex flex-col items-center gap-2">
@@ -690,7 +706,7 @@ export default function WeighmentEntryPage({ user }) {
                           </Button>
                         )}
                       </TableCell>
-                      <TableCell colSpan={activeTab === "pending" ? 11 : 13} className="px-4 py-2">
+                      <TableCell colSpan={activeTab === "pending" ? 12 : 13} className="px-4 py-2">
                         <div className="flex items-center gap-2">
                           {collapsedGroups[group.key]
                             ? <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
@@ -742,6 +758,7 @@ export default function WeighmentEntryPage({ user }) {
                           <>
                             <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.logisticNo || "N/A"}</TableCell>
                             <TableCell className="py-2 px-4 min-w-[150px] text-sm">{order.typeOfTransporting || "N/A"}</TableCell>
+                            <TableCell className="py-2 px-4 min-w-[140px] text-sm">{getTransporterRateDisplay(order)}</TableCell>
                             <TableCell className="py-2 px-4 min-w-[120px] text-sm">{order.vehicleNumber || "N/A"}</TableCell>
                           </>
                         )}
@@ -835,6 +852,7 @@ export default function WeighmentEntryPage({ user }) {
                           <th className="text-left px-2 py-1 font-medium text-gray-600">Logistic Details</th>
                           <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
                           <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
+                          <th className="text-left px-2 py-1 font-medium text-gray-600">Transporter Rate</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
@@ -864,6 +882,7 @@ export default function WeighmentEntryPage({ user }) {
                               </div>
                             </td>
                             <td className="px-2 py-1 text-gray-700 text-right font-bold">{order.qtyToBeDispatched || "N/A"}</td>
+                            <td className="px-2 py-1 text-gray-700">{getTransporterRateDisplay(order)}</td>
                           </tr>
                         ))}
                       </tbody>
