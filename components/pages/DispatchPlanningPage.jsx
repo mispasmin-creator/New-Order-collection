@@ -239,6 +239,7 @@ export default function DispatchPlanningPage({ user }) {
           allocatedQty: parseFloat(split.allocated_qty) || 0,
           transporterName: split.transporter_name || "",
           transporterRate: split.rate || "",
+          rateType: split.vehicle_details || "",
           rate: order["Rate Of Material"] || "",
           totalPOValue: order["Total PO Basic Value"] || "",
           freight: order["Freight"] || "",
@@ -491,6 +492,8 @@ export default function DispatchPlanningPage({ user }) {
         partyName: row.partyName,
         productName: row.productName,
         transporterName: row.transporterName,
+        transporterRate: row.transporterRate,
+        rateType: row.rateType,
         allocatedQty: row.allocatedQty,
         quantityDelivered: row.quantityDelivered || 0,
         quantity: row.quantity,
@@ -722,6 +725,8 @@ export default function DispatchPlanningPage({ user }) {
                 transporter_name: line.transporterName,
                 allocated_qty: remainingQty,
                 status: STATUS_CHECKED,
+                rate: parseFloat(line.transporterRate) || null,
+                vehicle_details: line.rateType || null,
               }])
             if (remainErr) throw remainErr
           }

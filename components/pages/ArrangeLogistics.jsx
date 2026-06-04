@@ -48,6 +48,22 @@ import { exportToExcel } from "@/lib/exportUtils";
 import { groupRowsByPo } from "@/lib/workflowGrouping";
 import { Checkbox } from "@/components/ui/checkbox";
 
+const getSplitDisplayRate = (split, allSplits) => {
+  if (split.rate) return split.rate;
+  const matching = allSplits?.find(
+    (s) => s.transporter_name === split.transporter_name && s.rate
+  );
+  return matching?.rate || null;
+};
+
+const getSplitDisplayRateType = (split, allSplits) => {
+  if (split.vehicle_details) return split.vehicle_details;
+  const matching = allSplits?.find(
+    (s) => s.transporter_name === split.transporter_name && s.vehicle_details
+  );
+  return matching?.vehicle_details || null;
+};
+
 export default function ArrangeLogistics({ user }) {
   const [activeTab, setActiveTab] = useState("pending");
   const [pendingOrders, setPendingOrders] = useState([]);
@@ -724,29 +740,33 @@ export default function ArrangeLogistics({ user }) {
                                         Submitted Transporter Options
                                       </p>
                                       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                        {order.splits.map((split, sIdx) => (
-                                          <div key={sIdx} className="bg-slate-50 border border-slate-100 rounded-lg p-3 space-y-1.5 text-xs">
-                                            <div className="flex justify-between border-b border-slate-200/60 pb-1 mb-1">
-                                              <span className="text-xs font-semibold text-blue-700">Transporter {sIdx + 1}</span>
-                                            </div>
-                                            <div>
-                                              <span className="text-gray-400 font-medium text-[9px] uppercase tracking-wider block">Name / Agency</span>
-                                              <span className="font-semibold text-gray-800">{split.transporter_name}</span>
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2 pt-1">
-                                              <div>
-                                                <span className="text-gray-400 font-medium text-[9px] uppercase tracking-wider block">Rate Type</span>
-                                                <span className="font-medium text-gray-700">{split.vehicle_details || "—"}</span>
-                                              </div>
-                                              <div>
-                                                <span className="text-gray-400 font-medium text-[9px] uppercase tracking-wider block">Entered Rate</span>
-                                                <span className="font-bold text-green-700">
-                                                  {split.rate ? `₹${Number(split.rate).toLocaleString("en-IN")}` : "—"}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        ))}
+                                        {order.splits.map((split, sIdx) => {
+                                           const displayRate = getSplitDisplayRate(split, order.splits);
+                                           const displayRateType = getSplitDisplayRateType(split, order.splits);
+                                           return (
+                                             <div key={sIdx} className="bg-slate-50 border border-slate-100 rounded-lg p-3 space-y-1.5 text-xs">
+                                               <div className="flex justify-between border-b border-slate-200/60 pb-1 mb-1">
+                                                 <span className="text-xs font-semibold text-blue-700">Transporter {sIdx + 1}</span>
+                                               </div>
+                                               <div>
+                                                 <span className="text-gray-400 font-medium text-[9px] uppercase tracking-wider block">Name / Agency</span>
+                                                 <span className="font-semibold text-gray-800">{split.transporter_name}</span>
+                                               </div>
+                                               <div className="grid grid-cols-2 gap-2 pt-1">
+                                                 <div>
+                                                   <span className="text-gray-400 font-medium text-[9px] uppercase tracking-wider block">Rate Type</span>
+                                                   <span className="font-medium text-gray-700">{displayRateType || "—"}</span>
+                                                 </div>
+                                                 <div>
+                                                   <span className="text-gray-400 font-medium text-[9px] uppercase tracking-wider block">Entered Rate</span>
+                                                   <span className="font-bold text-green-700">
+                                                     {displayRate ? `₹${Number(displayRate).toLocaleString("en-IN")}` : "—"}
+                                                   </span>
+                                                 </div>
+                                               </div>
+                                             </div>
+                                           );
+                                         })}
                                       </div>
                                     </div>
                                   )}

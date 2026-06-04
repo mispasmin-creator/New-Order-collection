@@ -396,6 +396,7 @@ export default function FullkittingPage({ user }) {
                 <TableHead>Vehicle Number</TableHead>
                 <TableHead>Bilty Number</TableHead>
                 <TableHead>Rate Type</TableHead>
+                <TableHead>Transporter Rate</TableHead>
                 <TableHead>Bilty Image</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>{activeTab === "pending" ? "Invoice Date" : "Fullkitting Date"}</TableHead>
@@ -404,7 +405,7 @@ export default function FullkittingPage({ user }) {
             <TableBody>
               {groupedRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "pending" ? 16 : 15} className="py-8 text-center text-gray-500">
+                  <TableCell colSpan={activeTab === "pending" ? 17 : 16} className="py-8 text-center text-gray-500">
                     No {activeTab} Fullkitting entries found
                   </TableCell>
                 </TableRow>
@@ -412,7 +413,7 @@ export default function FullkittingPage({ user }) {
                 groupedRows.map((group) => (
                   <Fragment key={group.key}>
                     <TableRow className="bg-slate-50">
-                      <TableCell colSpan={activeTab === "pending" ? 16 : 15} className="py-2 px-4">
+                      <TableCell colSpan={activeTab === "pending" ? 17 : 16} className="py-2 px-4">
                         <div className="flex flex-wrap items-center gap-3 text-sm">
                           <span className="font-semibold text-slate-900">{group.poNumber}</span>
                           <span className="text-slate-500">{group.partyName}</span>
@@ -457,6 +458,7 @@ export default function FullkittingPage({ user }) {
                         <TableCell className="text-sm">{row.truckNo || "N/A"}</TableCell>
                         <TableCell className="text-sm">{row.biltyNo || "N/A"}</TableCell>
                         <TableCell className="text-sm">{row.rateType || "N/A"}</TableCell>
+                        <TableCell className="text-sm">{fmt(row.transporterRate)}</TableCell>
                         <TableCell className="text-sm">
                           {row.biltyCopy ? (
                             <a href={row.biltyCopy} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">

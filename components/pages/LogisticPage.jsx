@@ -122,7 +122,7 @@ export default function LogisticPage({ user }) {
         { data: approvedSplitsData, error: approvedSplitsError },
       ] = await Promise.all([
         dispatchQuery,
-        supabase.from("po_logistics_splits").select("id, payment_term_status, accounts_remarks").in("status", ["Accounts Approved", "Logistic Completed"]),
+        supabase.from("po_logistics_splits").select("id, rate, payment_term_status, accounts_remarks").in("status", ["Accounts Approved", "Logistic Completed"]),
       ])
 
       if (dispatchError) throw dispatchError
@@ -271,6 +271,17 @@ export default function LogisticPage({ user }) {
       ),
     ]
     return types.length > 0 ? types.join(", ") : "—"
+  }
+
+  const getGroupTransporterRates = (group) => {
+    const rates = [
+      ...new Set(
+        group.rows
+          .map((row) => getTransporterRateDisplay(row))
+          .filter((rate) => rate !== "—")
+      ),
+    ]
+    return rates.length > 0 ? rates.join(", ") : "—"
   }
 
   const generateLGSTNumbers = useCallback((count) => {
@@ -561,6 +572,7 @@ export default function LogisticPage({ user }) {
                 <TableHead>PO Number</TableHead>
                 <TableHead>Party</TableHead>
                 <TableHead>Transporter Type</TableHead>
+                {activeTab === "history" && <TableHead>Transporter Rate</TableHead>}
                 <TableHead>Products</TableHead>
                 <TableHead>{activeTab === "pending" ? "Planned" : "Actual"}</TableHead>
               </TableRow>
@@ -568,7 +580,7 @@ export default function LogisticPage({ user }) {
             <TableBody>
               {displayOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">No rows found</TableCell>
+                  <TableCell colSpan={activeTab === "history" ? 8 : 7} className="text-center py-8 text-gray-500">No rows found</TableCell>
                 </TableRow>
               ) : (
                 groupedDisplayOrders.map((group) => {
@@ -601,6 +613,9 @@ export default function LogisticPage({ user }) {
                         <TableCell className="font-semibold text-slate-900">{group.poNumber}</TableCell>
                         <TableCell className="text-slate-700">{group.partyName}</TableCell>
                         <TableCell className="text-sm text-slate-700">{getGroupTransportTypes(group)}</TableCell>
+                        {activeTab === "history" && (
+                          <TableCell className="text-sm text-slate-700">{getGroupTransporterRates(group)}</TableCell>
+                        )}
                         <TableCell>
                           <span className="text-xs text-slate-500">
                             {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
@@ -614,7 +629,7 @@ export default function LogisticPage({ user }) {
                       {/* Expanded: detail cards per product */}
                       {isExpanded && (
                         <TableRow>
-                          <TableCell colSpan={7} className="p-0 border-b border-slate-200">
+                          <TableCell colSpan={activeTab === "history" ? 8 : 7} className="p-0 border-b border-slate-200">
                             <div className="bg-slate-50/80 px-6 py-4 space-y-3">
                               {group.rows.map((row) => (
                                 <div key={row.id} className="bg-white border border-gray-200 rounded-lg p-4">

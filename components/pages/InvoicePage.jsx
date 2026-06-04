@@ -102,6 +102,17 @@ export default function MakeInvoicePage({ user }) {
 
       if (dispatchError) throw dispatchError;
 
+      let splits = [];
+      if (allowedPoIds.length > 0) {
+        const { data: splitsData, error: splitsError } = await supabase
+          .from("po_logistics_splits")
+          .select("id, po_id, transporter_name, rate, vehicle_details")
+          .in("po_id", allowedPoIds);
+        if (!splitsError && splitsData) {
+          splits = splitsData;
+        }
+      }
+
       const orMap = new Map();
       (orData || []).forEach((row) => orMap.set(row.id, row));
 
@@ -110,6 +121,22 @@ export default function MakeInvoicePage({ user }) {
 
       (dispatchData || []).forEach((row) => {
         const or = row.po_id ? orMap.get(row.po_id) || {} : {};
+
+        // Find split rate fallback
+        const splitRate = (() => {
+          // 1. Try to find the exact split row
+          const exactSplit = splits.find(s => s.id === row.logistics_split_id);
+          if (exactSplit?.rate) return { rate: exactSplit.rate, type: exactSplit.vehicle_details };
+          
+          // 2. Fallback: find any split for the same PO and transporter that has a rate
+          const fallbackSplit = splits.find(s => 
+            s.po_id === row.po_id && 
+            s.transporter_name === (row["Transporter Name"] || "") && 
+            s.rate
+          );
+          if (fallbackSplit) return { rate: fallbackSplit.rate, type: fallbackSplit.vehicle_details };
+          return null;
+        })();
 
         const order = {
           id: row.id,
@@ -130,9 +157,10 @@ export default function MakeInvoicePage({ user }) {
           transporterName: row["Transporter Name"] || "",
           truckNo: row["Truck No."] || "",
           driverMobileNo: row["Driver Mobile No."] || "",
-          typeOfRate: row["Type Of Rate"] || "",
-          transportRatePerTon: row["Transport Rate @Per Matric Ton"] || "",
-          fixedAmount: row["Fixed Amount"] || "",
+          typeOfRate: row["Type Of Rate"] || splitRate?.type || "",
+          transportRatePerTon: row["Transport Rate @Per Matric Ton"] || (splitRate?.type === "Per MT" ? splitRate?.rate : ""),
+          fixedAmount: row["Fixed Amount"] || (splitRate?.type === "Fixed" ? splitRate?.rate : ""),
+          plannedTransporterRate: splitRate?.rate || "",
           vehiclePlateImage: row["Vehicle No. Plate Image"] || "",
           biltyNo: row["Bilty No."] || "",
           firmName: or["Firm Name"] || "",
@@ -220,8 +248,10 @@ export default function MakeInvoicePage({ user }) {
   const getTransporterRateDisplay = (row) => {
     const perMt = Number(row.transportRatePerTon) || 0;
     const fixed = Number(row.fixedAmount) || 0;
+    const splitRate = Number(row.plannedTransporterRate) || 0;
     if (perMt > 0) return `₹${perMt.toLocaleString("en-IN")} / MT`;
     if (fixed > 0) return `₹${fixed.toLocaleString("en-IN")} fixed`;
+    if (splitRate > 0) return `₹${splitRate.toLocaleString("en-IN")}`;
     return "—";
   };
 
@@ -282,6 +312,7 @@ export default function MakeInvoicePage({ user }) {
         transporterName: row.transporterName,
         transportRatePerTon: row.transportRatePerTon || "",
         fixedAmount: row.fixedAmount || "",
+        plannedTransporterRate: row.plannedTransporterRate || "",
         deliveryOrderNo: row.deliveryOrderNo,
         actualTruckQty: row.actualTruckQty || 0,
         invoiceActualQty: getInvoiceLineQty(row),
