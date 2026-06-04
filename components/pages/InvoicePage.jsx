@@ -49,6 +49,8 @@ export default function MakeInvoicePage({ user }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [reportSourceFilter, setReportSourceFilter] = useState("all");
   const [filterFirm, setFilterFirm] = useState("all");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
 
   // Group-level modal state
   const [selectedGroup, setSelectedGroup] = useState(null);
@@ -227,6 +229,21 @@ export default function MakeInvoicePage({ user }) {
   const searchFilter = (list) => {
     let result = list;
     if (filterFirm !== "all") result = result.filter((o) => o.firmName === filterFirm);
+    if (filterDateFrom) {
+      const from = new Date(filterDateFrom);
+      result = result.filter((o) => {
+        const d = o.actual4 ? new Date(o.actual4) : o.planned4 ? new Date(o.planned4) : null;
+        return d && d >= from;
+      });
+    }
+    if (filterDateTo) {
+      const to = new Date(filterDateTo);
+      to.setHours(23, 59, 59, 999);
+      result = result.filter((o) => {
+        const d = o.actual4 ? new Date(o.actual4) : o.planned4 ? new Date(o.planned4) : null;
+        return d && d <= to;
+      });
+    }
     if (!searchTerm) return result;
     const term = searchTerm.toLowerCase();
     return result.filter((o) =>
@@ -611,6 +628,32 @@ export default function MakeInvoicePage({ user }) {
               ))}
             </SelectContent>
           </Select>
+          <div className="flex items-center gap-1">
+            <Input
+              type="date"
+              value={filterDateFrom}
+              onChange={(e) => setFilterDateFrom(e.target.value)}
+              className="h-10 w-[145px] text-sm"
+              title="From Date"
+            />
+            <span className="text-gray-400 text-sm shrink-0">–</span>
+            <Input
+              type="date"
+              value={filterDateTo}
+              onChange={(e) => setFilterDateTo(e.target.value)}
+              className="h-10 w-[145px] text-sm"
+              title="To Date"
+            />
+            {(filterDateFrom || filterDateTo) && (
+              <button
+                onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
+                className="ml-1 text-gray-400 hover:text-gray-700"
+                title="Clear dates"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           <Button
             onClick={fetchInvoiceData}
             variant="outline"
