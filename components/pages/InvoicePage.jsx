@@ -26,7 +26,15 @@ import {
   Truck,
   FileText,
   Download,
+  Building,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportToExcel } from "@/lib/exportUtils";
 import { groupRowsByPo } from "@/lib/workflowGrouping";
@@ -39,6 +47,8 @@ export default function MakeInvoicePage({ user }) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("pending");
   const [searchTerm, setSearchTerm] = useState("");
+  const [reportSourceFilter, setReportSourceFilter] = useState("all");
+  const [filterFirm, setFilterFirm] = useState("all");
 
   // Group-level modal state
   const [selectedGroup, setSelectedGroup] = useState(null);
@@ -71,7 +81,7 @@ export default function MakeInvoicePage({ user }) {
       let orQuery = supabase
         .from("ORDER RECEIPT")
         .select(
-          'id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Gst Number", "Address", "Rate Of Material", "Upload SO", "Freight", "Freight Amount"',
+          'id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Firm Name", "Gst Number", "Address", "Rate Of Material", "Upload SO", "Freight", "Freight Amount", check_delivery_in_stock_or_not, check_delivery_production_order_no, check_delivery_qty_transferred, check_delivery_batch_number_remarks, check_delivery_indent_self_batch_number, check_delivery_gp_percent',
         );
       if (shouldFilter) orQuery = orQuery.in("Firm Name", userFirms);
       const { data: orData, error: orError } = await orQuery;
@@ -123,6 +133,13 @@ export default function MakeInvoicePage({ user }) {
           fixedAmount: row["Fixed Amount"] || "",
           vehiclePlateImage: row["Vehicle No. Plate Image"] || "",
           biltyNo: row["Bilty No."] || "",
+          firmName: or["Firm Name"] || "",
+          inStockOrNot: or["check_delivery_in_stock_or_not"] || "",
+          productionOrderNo: or["check_delivery_production_order_no"] || "",
+          qtyTransferred: or["check_delivery_qty_transferred"] ?? "",
+          batchNumberRemarks: or["check_delivery_batch_number_remarks"] || "",
+          indentSelfBatchNumber: or["check_delivery_indent_self_batch_number"] || "",
+          gpPercent: or["check_delivery_gp_percent"] ?? "",
           gstNumber: or["Gst Number"] || "",
           address: or["Address"] || "",
           rateOfMaterial: Number(or["Rate Of Material"]) || 0,
@@ -208,9 +225,11 @@ export default function MakeInvoicePage({ user }) {
 
   // ── Filtering & grouping ────────────────────────────────────────────────────
   const searchFilter = (list) => {
-    if (!searchTerm) return list;
+    let result = list;
+    if (filterFirm !== "all") result = result.filter((o) => o.firmName === filterFirm);
+    if (!searchTerm) return result;
     const term = searchTerm.toLowerCase();
-    return list.filter((o) =>
+    return result.filter((o) =>
       Object.values(o).some((v) => v?.toString().toLowerCase().includes(term)),
     );
   };
@@ -493,6 +512,11 @@ export default function MakeInvoicePage({ user }) {
     [orders, completedOrders],
   );
 
+  const firmOptions = useMemo(() => {
+    const all = [...orders, ...completedOrders];
+    return ["all", ...new Set(all.map((o) => o.firmName).filter(Boolean))];
+  }, [orders, completedOrders]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
@@ -574,6 +598,19 @@ export default function MakeInvoicePage({ user }) {
               className="pl-10 h-10 w-full"
             />
           </div>
+          <Select value={filterFirm} onValueChange={setFilterFirm}>
+            <SelectTrigger className="h-10 w-[180px]">
+              <Building className="w-4 h-4 mr-2 shrink-0 text-gray-500" />
+              <SelectValue placeholder="All Firms" />
+            </SelectTrigger>
+            <SelectContent>
+              {firmOptions.map((f) => (
+                <SelectItem key={f} value={f}>
+                  {f === "all" ? "All Firms" : f}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             onClick={fetchInvoiceData}
             variant="outline"
@@ -604,10 +641,153 @@ export default function MakeInvoicePage({ user }) {
           >
             History ({completedOrders.length})
           </button>
+          <button
+            onClick={() => setActiveTab("report")}
+            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all ${activeTab === "report" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+          >
+            Invoice Report
+          </button>
         </div>
       </div>
 
+      {/* Invoice Report Tab */}
+      {activeTab === "report" && (() => {
+        const allReportOrders = searchFilter(completedOrders);
+        const inStock = allReportOrders.filter(o => o.inStockOrNot === "In Stock");
+        const fromPurchase = allReportOrders.filter(o => o.inStockOrNot === "From Purchase");
+        const forProduction = allReportOrders.filter(o => o.inStockOrNot === "For Production Planning");
+
+        const filteredOrders = reportSourceFilter === "all"
+          ? allReportOrders
+          : reportSourceFilter === "instock" ? inStock
+          : reportSourceFilter === "purchase" ? fromPurchase
+          : reportSourceFilter === "production" ? forProduction
+          : allReportOrders;
+
+        const uniqueBills = (list) => new Set(list.map(o => o.billNumber).filter(Boolean)).size;
+        const totalQty = (list) => list.reduce((s, o) => s + (getInvoiceLineQty(o) || 0), 0);
+
+        const stockBadge = (val) => {
+          if (val === "In Stock") return "bg-green-100 text-green-800";
+          if (val === "From Purchase") return "bg-blue-100 text-blue-800";
+          if (val === "For Production Planning") return "bg-purple-100 text-purple-800";
+          return "bg-gray-100 text-gray-500";
+        };
+
+        const showProductionCols = reportSourceFilter === "instock" || reportSourceFilter === "all";
+        const showPurchaseCols = reportSourceFilter === "purchase" || reportSourceFilter === "all";
+        const showProductionPlanCols = reportSourceFilter === "production" || reportSourceFilter === "all";
+
+        return (
+          <div className="space-y-4 mt-4">
+            {/* Summary Cards (clickable filters) */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div
+                onClick={() => setReportSourceFilter(reportSourceFilter === "instock" ? "all" : "instock")}
+                className={`cursor-pointer rounded-lg p-4 border transition-all ${reportSourceFilter === "instock" ? "bg-green-100 border-green-400 ring-2 ring-green-400" : "bg-green-50 border-green-100 hover:border-green-300"}`}
+              >
+                <p className="text-xs font-medium text-green-600 mb-1">In Stock</p>
+                <p className="text-2xl font-bold text-green-900">{inStock.length}</p>
+                <p className="text-xs text-green-600 mt-0.5">{uniqueBills(inStock)} bills · {fmtQty(totalQty(inStock))} MT</p>
+              </div>
+              <div
+                onClick={() => setReportSourceFilter(reportSourceFilter === "purchase" ? "all" : "purchase")}
+                className={`cursor-pointer rounded-lg p-4 border transition-all ${reportSourceFilter === "purchase" ? "bg-blue-100 border-blue-400 ring-2 ring-blue-400" : "bg-blue-50 border-blue-100 hover:border-blue-300"}`}
+              >
+                <p className="text-xs font-medium text-blue-600 mb-1">From Purchase</p>
+                <p className="text-2xl font-bold text-blue-900">{fromPurchase.length}</p>
+                <p className="text-xs text-blue-600 mt-0.5">{uniqueBills(fromPurchase)} bills · {fmtQty(totalQty(fromPurchase))} MT</p>
+              </div>
+              <div
+                onClick={() => setReportSourceFilter(reportSourceFilter === "production" ? "all" : "production")}
+                className={`cursor-pointer rounded-lg p-4 border transition-all ${reportSourceFilter === "production" ? "bg-purple-100 border-purple-400 ring-2 ring-purple-400" : "bg-purple-50 border-purple-100 hover:border-purple-300"}`}
+              >
+                <p className="text-xs font-medium text-purple-600 mb-1">For Production</p>
+                <p className="text-2xl font-bold text-purple-900">{forProduction.length}</p>
+                <p className="text-xs text-purple-600 mt-0.5">{uniqueBills(forProduction)} bills · {fmtQty(totalQty(forProduction))} MT</p>
+              </div>
+              <div
+                onClick={() => setReportSourceFilter("all")}
+                className={`cursor-pointer rounded-lg p-4 border transition-all ${reportSourceFilter === "all" ? "bg-gray-200 border-gray-400 ring-2 ring-gray-400" : "bg-gray-50 border-gray-200 hover:border-gray-400"}`}
+              >
+                <p className="text-xs font-medium text-gray-600 mb-1">Total Completed</p>
+                <p className="text-2xl font-bold text-gray-900">{allReportOrders.length}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{uniqueBills(allReportOrders)} bills · {fmtQty(totalQty(allReportOrders))} MT</p>
+              </div>
+            </div>
+
+            {/* Active filter label */}
+            {reportSourceFilter !== "all" && (
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <span>Showing:</span>
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${stockBadge(reportSourceFilter === "instock" ? "In Stock" : reportSourceFilter === "purchase" ? "From Purchase" : "For Production Planning")}`}>
+                  {reportSourceFilter === "instock" ? "In Stock" : reportSourceFilter === "purchase" ? "From Purchase" : "For Production Planning"}
+                </span>
+                <button onClick={() => setReportSourceFilter("all")} className="text-xs text-gray-400 hover:text-gray-700 underline">Clear filter</button>
+              </div>
+            )}
+
+            {/* Detailed Table */}
+            <div className="bg-white border rounded-md shadow-sm">
+              <div className="overflow-auto max-h-[calc(100vh-420px)]">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                    <tr>
+                      <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Bill No.</th>
+                      <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">PO Number</th>
+                      <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Party Name</th>
+                      <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Product</th>
+                      <th className="text-right font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Qty (MT)</th>
+                      <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Source</th>
+                      {showProductionCols && <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Production Order No.</th>}
+                      {showProductionCols && <th className="text-right font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Qty Transferred</th>}
+                      {showProductionCols && <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Batch / Remarks</th>}
+                      {showPurchaseCols && <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Indent / Batch No.</th>}
+                      {showProductionPlanCols && <th className="text-right font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">GP %</th>}
+                      <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Date</th>
+                      <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Bill Copy</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {filteredOrders.length === 0 ? (
+                      <tr><td colSpan={14} className="text-center py-8 text-gray-500">No invoices found for this filter.</td></tr>
+                    ) : (
+                      filteredOrders.map((order) => (
+                        <tr key={order.id} className="hover:bg-gray-50">
+                          <td className="py-2 px-4 font-semibold">{order.billNumber || "—"}</td>
+                          <td className="py-2 px-4 text-xs text-gray-500">{order.partyPONumber || "—"}</td>
+                          <td className="py-2 px-4 whitespace-nowrap">{order.partyName || "—"}</td>
+                          <td className="py-2 px-4 whitespace-nowrap">{order.productName || "—"}</td>
+                          <td className="py-2 px-4 text-right font-medium">{fmtQty(getInvoiceLineQty(order))}</td>
+                          <td className="py-2 px-4">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${stockBadge(order.inStockOrNot)}`}>
+                              {order.inStockOrNot || "N/A"}
+                            </span>
+                          </td>
+                          {showProductionCols && <td className="py-2 px-4 text-xs">{order.productionOrderNo || "—"}</td>}
+                          {showProductionCols && <td className="py-2 px-4 text-right text-xs">{order.qtyTransferred !== "" && order.qtyTransferred !== null ? fmtQty(order.qtyTransferred) : "—"}</td>}
+                          {showProductionCols && <td className="py-2 px-4 text-xs">{order.batchNumberRemarks || "—"}</td>}
+                          {showPurchaseCols && <td className="py-2 px-4 text-xs font-medium">{order.indentSelfBatchNumber || "—"}</td>}
+                          {showProductionPlanCols && <td className="py-2 px-4 text-right text-xs">{order.gpPercent !== "" && order.gpPercent !== null ? `${order.gpPercent}%` : "—"}</td>}
+                          <td className="py-2 px-4 text-xs text-gray-600 whitespace-nowrap">{formatDateOnly(order.actual4)}</td>
+                          <td className="py-2 px-4">
+                            {order.billCopy ? (
+                              <a href={order.billCopy} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">View</a>
+                            ) : "—"}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Table */}
+      {activeTab !== "report" && (
       <div className="bg-white border rounded-md shadow-sm mt-4">
         <div className="overflow-auto max-h-[calc(100vh-280px)]">
           <Table>
@@ -762,6 +942,7 @@ export default function MakeInvoicePage({ user }) {
           </Table>
         </div>
       </div>
+      )}
 
       {/* ── Invoice Modal ─────────────────────────────────────────────────────── */}
       {selectedGroup && (
