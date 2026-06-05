@@ -180,6 +180,7 @@ export default function MakeInvoicePage({ user }) {
           actual4: row["Actual4"],
           billNumber: row["Bill Number"] || "",
           billCopy: row["Bill Copy"] || "",
+          tcRequired: row["TC Required"] || "No",
         };
 
         const a4 = order.actual4;
@@ -521,8 +522,8 @@ export default function MakeInvoicePage({ user }) {
 
       // Update every selected DISPATCH row in the group
       await Promise.all(
-        selectedRows.map((row) =>
-          supabase
+        selectedRows.map(async (row) => {
+          const { error: updateErr } = await supabase
             .from("DISPATCH")
             .update({
               Actual4: actualDateTime,
@@ -532,8 +533,33 @@ export default function MakeInvoicePage({ user }) {
                 ? { "Fullkitting Actual": actualDateTime }
                 : {}),
             })
-            .eq("id", row.id),
-        ),
+            .eq("id", row.id);
+          if (updateErr) throw updateErr;
+
+          // If TC is not required, automatically move to DELIVERY
+          if (row.tcRequired === "No") {
+            const { error: deliveryInsertError } = await supabase.from("DELIVERY").insert([
+              {
+                "Timestamp": actualDateTime,
+                "Bill Date": null,
+                "Delivery Order No.": row.deliveryOrderNo,
+                "Party Name": row.partyName,
+                "Product Name": row.productName,
+                "Quantity Delivered.": row.actualTruckQty || row.qtyToBeDispatched || null,
+                "Bill No.": invoiceNo.trim(),
+                "Losgistic no.": row.dSrNumber || "",
+                "Rate Of Material": row.rateOfMaterial,
+                "Type Of Transporting": row.typeOfTransporting || "",
+                "Transporter Name": row.transporterName || "",
+                "Vehicle Number.": row.truckNo || "",
+                "Bilty Number.": row.biltyNo || "",
+                "Giving From Where": "",
+                "D-Sr Number": row.dSrNumber || "",
+              }
+            ]);
+            if (deliveryInsertError) throw deliveryInsertError;
+          }
+        }),
       );
 
       toast({

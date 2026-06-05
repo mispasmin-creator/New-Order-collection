@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle2, Download, Eye, Loader2, PackageCheck, Search, X } from "lucide-react"
+import { CheckCircle2, Download, Eye, Loader2, PackageCheck, Search, X, Building } from "lucide-react"
 
 const HIDDEN_DETAIL_FIELDS = new Set([
   "id",
@@ -46,6 +46,12 @@ export default function FullkittingPage({ user }) {
   const [submitting, setSubmitting] = useState(false)
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
+  const [filterFirm, setFilterFirm] = useState("all")
+
+  useEffect(() => {
+    setFilterFirm("all")
+    setSearchTerm("")
+  }, [activeTab])
   const [selectedRow, setSelectedRow] = useState(null)
   const [form, setForm] = useState({
     status: "No",
@@ -90,6 +96,19 @@ export default function FullkittingPage({ user }) {
       const { data: dispatchData, error: dispatchError } = await dispatchQuery
       if (dispatchError) throw dispatchError
 
+      // Fetch DELIVERY records to determine Bilty Update status
+      const { data: deliveryData, error: deliveryError } = await supabase
+        .from("DELIVERY")
+        .select('"D-Sr Number", "Bilty No.", "Bilty Number.", "Bilty Copy", Actual3')
+      if (deliveryError) throw deliveryError
+
+      const deliveryMap = new Map()
+      ;(deliveryData || []).forEach((d) => {
+        if (d["D-Sr Number"]) {
+          deliveryMap.set(d["D-Sr Number"], d)
+        }
+      })
+
       const pending = []
       const history = []
 
@@ -97,6 +116,9 @@ export default function FullkittingPage({ user }) {
         const po = row.po_id ? orderMap.get(row.po_id) || {} : {}
         const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
         if (typeOfTransporting === "Ex Factory") return
+
+        const deliveryRow = row["D-Sr Number"] ? deliveryMap.get(row["D-Sr Number"]) : null
+        const isBiltyCompleted = deliveryRow && deliveryRow.Actual3
 
         const truckQty = Number(row["Actual Truck Qty"]) || Number(row["Qty To Be Dispatched"]) || 0
         const rate = Number(po["Rate Of Material"]) || 0
@@ -108,7 +130,8 @@ export default function FullkittingPage({ user }) {
         const transporterAmount =
           Number(row["Transporter Amount"]) ||
           (rateType === "Per Matric Ton rate" ? truckQty * transportRate : fixedAmount)
-        const biltyCopy = row["Bilty Copy"] || ""
+        const biltyNo = deliveryRow?.["Bilty No."] || deliveryRow?.["Bilty Number."] || row["Bilty No."] || ""
+        const biltyCopy = deliveryRow?.["Bilty Copy"] || row["Bilty Copy"] || ""
         const fullkittingStatus = row["Fullkitting Status"] || ""
 
         const additionalDetails = [
@@ -143,7 +166,7 @@ export default function FullkittingPage({ user }) {
           truckQty,
           transporter: row["Transporter Name"] || "",
           truckNo: row["Truck No."] || "",
-          biltyNo: row["Bilty No."] || "",
+          biltyNo,
           biltyCopy,
           typeOfTransporting,
           rateType,
@@ -158,8 +181,13 @@ export default function FullkittingPage({ user }) {
           additionalDetails,
         }
 
-        if (item.fullkittingAt && String(item.fullkittingAt).trim() !== "") history.push(item)
-        else pending.push(item)
+        if (item.fullkittingAt && String(item.fullkittingAt).trim() !== "") {
+          history.push(item)
+        } else {
+          if (isBiltyCompleted) {
+            pending.push(item)
+          }
+        }
       })
 
       pending.sort((a, b) => new Date(b.invoiceAt || 0) - new Date(a.invoiceAt || 0))
@@ -203,13 +231,23 @@ export default function FullkittingPage({ user }) {
   const isFileUrl = (value) => /^https?:\/\//i.test(String(value || ""))
 
   const sourceRows = activeTab === "pending" ? pendingRows : historyRows
+
+  const firmOptions = useMemo(() => {
+    const firms = [...new Set(sourceRows.map((row) => row.firmName).filter(Boolean))]
+    return ["all", ...firms]
+  }, [sourceRows])
+
   const displayRows = useMemo(() => {
-    if (!searchTerm.trim()) return sourceRows
+    let source = sourceRows
+    if (filterFirm !== "all") {
+      source = source.filter((row) => row.firmName === filterFirm)
+    }
+    if (!searchTerm.trim()) return source
     const term = searchTerm.toLowerCase()
-    return sourceRows.filter((row) =>
+    return source.filter((row) =>
       Object.values(row).some((value) => value?.toString().toLowerCase().includes(term)),
     )
-  }, [sourceRows, searchTerm])
+  }, [sourceRows, filterFirm, searchTerm])
 
   const groupedRows = useMemo(() => groupRowsByPo(displayRows), [displayRows])
 
@@ -353,6 +391,21 @@ export default function FullkittingPage({ user }) {
               className="pl-10 h-10 w-full"
             />
           </div>
+
+          <Select value={filterFirm} onValueChange={setFilterFirm}>
+            <SelectTrigger className="h-10 w-[180px]">
+              <Building className="w-4 h-4 mr-2" />
+              <SelectValue placeholder="Firm" />
+            </SelectTrigger>
+            <SelectContent>
+              {firmOptions.map((firm) => (
+                <SelectItem key={firm} value={firm}>
+                  {firm === "all" ? "All Firms" : firm}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <Button onClick={fetchData} variant="outline" className="h-10 px-3" disabled={loading || submitting}>
             <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </Button>

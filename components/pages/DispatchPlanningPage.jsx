@@ -90,8 +90,8 @@ const formatQty = (value) =>
 const getLineDispatchableQty = (line) => {
   const allocatedQty = Math.max(0, toNumber(line?.allocatedQty))
   const pendingQty = Math.max(0, toNumber(line?.pendingQty, allocatedQty))
-  if (allocatedQty > 0 && pendingQty > 0) return Math.min(allocatedQty, pendingQty)
-  return Math.max(allocatedQty, pendingQty)
+  const val = (allocatedQty > 0 && pendingQty > 0) ? Math.min(allocatedQty, pendingQty) : Math.max(allocatedQty, pendingQty)
+  return parseFloat(val.toFixed(4))
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -699,6 +699,7 @@ export default function DispatchPlanningPage({ user }) {
               "Type Of Transporting": commonForm.typeOfTransporting,
               "Date Of Dispatch": commonForm.dateOfDispatch,
               "Transporter Name": line.transporterName,
+              "TC Required": commonForm.testCertificateMade,
               po_id: line.poId,
               logistics_plan_id: finalPlanId,
               logistics_split_id: finalSplitId,
@@ -1140,13 +1141,13 @@ export default function DispatchPlanningPage({ user }) {
                                     <span className="text-sm font-semibold text-gray-800">{row.productName}</span>
                                     <div className="flex items-center gap-2">
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                                        Ordered: {row.quantity}
+                                        Ordered: {formatQty(row.quantity)}
                                       </span>
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                        Allocated: {row.allocatedQty ?? row.qtyToBeDispatched}
+                                        Allocated: {formatQty(row.allocatedQty ?? row.qtyToBeDispatched)}
                                       </span>
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                                        Pending: {row.pendingQty != null ? row.pendingQty : Math.max(0, (row.quantity || 0) - (row.quantityDelivered || 0))}
+                                        Pending: {formatQty(row.pendingQty != null ? row.pendingQty : Math.max(0, (row.quantity || 0) - (row.quantityDelivered || 0)))}
                                       </span>
                                       {activeTab === "history" && (parseFloat(row.qtyToBeDispatched) > parseFloat(row.allocatedQty) + 0.011) && (
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">

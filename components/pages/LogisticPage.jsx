@@ -344,7 +344,7 @@ export default function LogisticPage({ user }) {
     })
   }
 
-  const isFor = formData.typeOfTransporting === "FOR"
+  const showTransportDetails = formData.typeOfTransporting === "FOR" || formData.typeOfTransporting === "Ex Factory But paid by Us"
 
   const handleSubmit = async () => {
     if (!selectedGroup) return
@@ -375,17 +375,17 @@ export default function LogisticPage({ user }) {
       const baseUpdates = {
         [DB_COLUMNS.ACTUAL1]: actualDate,
         [DB_COLUMNS.TYPE_OF_TRANSPORTING_LOGISTIC]: formData.typeOfTransporting,
-        [DB_COLUMNS.TRANSPORTER_NAME]: formData.transporterName,
+        [DB_COLUMNS.TRANSPORTER_NAME]: showTransportDetails ? formData.transporterName : null,
         [DB_COLUMNS.TRUCK_NO]: formData.truckNo,
         [DB_COLUMNS.DRIVER_MOBILE]: formData.driverMobileNo,
         [DB_COLUMNS.VEHICLE_IMAGE]: vehicleImageUrl,
-        [DB_COLUMNS.BILTY_NO]: formData.biltyNo,
-        [DB_COLUMNS.TYPE_OF_RATE]: isFor ? null : formData.typeOfRate,
+        [DB_COLUMNS.BILTY_NO]: showTransportDetails ? formData.biltyNo : null,
+        [DB_COLUMNS.TYPE_OF_RATE]: showTransportDetails ? formData.typeOfRate : null,
         [DB_COLUMNS.TRANSPORT_RATE]: null,
         [DB_COLUMNS.FIXED_AMOUNT]: null,
       }
 
-      if (!isFor) {
+      if (showTransportDetails) {
         if (formData.typeOfRate === "Per Matric Ton rate") {
           baseUpdates[DB_COLUMNS.TRANSPORT_RATE] = parseFloat(formData.transportRatePerTon) || null
         } else if (formData.typeOfRate === "Fixed Amount") {
@@ -825,7 +825,7 @@ export default function LogisticPage({ user }) {
                 </div>
 
 
-                {!isFor && (
+                {showTransportDetails && (
                   <div className="space-y-2">
                     <Label className="text-sm">Transporter Name *</Label>
                     <Select
@@ -865,7 +865,7 @@ export default function LogisticPage({ user }) {
                   />
                 </div>
 
-                {!isFor && (
+                {showTransportDetails && (
                   <div className="space-y-2">
                     <Label className="text-sm">Type Of Rate *</Label>
                     <Select
@@ -892,7 +892,7 @@ export default function LogisticPage({ user }) {
                   </div>
                 )}
 
-                {!isFor && formData.typeOfRate === "Per Matric Ton rate" && (
+                {showTransportDetails && formData.typeOfRate === "Per Matric Ton rate" && (
                   <div className="space-y-2">
                     <Label className="text-sm">Transport Rate @Per Matric Ton *</Label>
                     <Input
@@ -906,7 +906,7 @@ export default function LogisticPage({ user }) {
                   </div>
                 )}
 
-                {!isFor && formData.typeOfRate === "Fixed Amount" && (
+                {showTransportDetails && formData.typeOfRate === "Fixed Amount" && (
                   <div className="space-y-2">
                     <Label className="text-sm">Fixed Amount *</Label>
                     <Input
@@ -936,15 +936,17 @@ export default function LogisticPage({ user }) {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-sm">Bilty No.</Label>
-                  <Input
-                    value={formData.biltyNo}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, biltyNo: e.target.value }))}
-                    className="h-10"
-                    disabled={submitting}
-                  />
-                </div>
+                {showTransportDetails && (
+                  <div className="space-y-2">
+                    <Label className="text-sm">Bilty No.</Label>
+                    <Input
+                      value={formData.biltyNo}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, biltyNo: e.target.value }))}
+                      className="h-10"
+                      disabled={submitting}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col gap-3 pt-4 border-t">
@@ -957,12 +959,14 @@ export default function LogisticPage({ user }) {
                   disabled={
                     submitting ||
                     !formData.typeOfTransporting ||
-                    !formData.transporterName ||
                     !formData.truckNo ||
                     !formData.driverMobileNo ||
-                    (!isFor && !formData.typeOfRate) ||
-                    (!isFor && formData.typeOfRate === "Per Matric Ton rate" && !formData.transportRatePerTon) ||
-                    (!isFor && formData.typeOfRate === "Fixed Amount" && !formData.fixedAmount)
+                    (showTransportDetails && (
+                      !formData.transporterName ||
+                      !formData.typeOfRate ||
+                      (formData.typeOfRate === "Per Matric Ton rate" && !formData.transportRatePerTon) ||
+                      (formData.typeOfRate === "Fixed Amount" && !formData.fixedAmount)
+                    ))
                   }
                 >
                   {submitting ? (

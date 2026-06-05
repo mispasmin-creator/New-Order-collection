@@ -108,7 +108,8 @@ export default function TCPage({ user }) {
 
       dispatchData?.forEach(row => {
         const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
-        if (!row["Fullkitting Actual"] && typeOfTransporting !== "Ex Factory") return
+        const isTCRequired = (row.po_id ? tcRequiredMap.get(row.po_id) : row["TC Required"]) === "Yes"
+        if (!isTCRequired) return
 
         const dispatchNumber = row["D-Sr Number"]
         const deliveryRow = deliveryMap.get(dispatchNumber)

@@ -44,6 +44,12 @@ const formatTransporterRate = (value) => {
   return rate > 0 ? `₹${rate.toLocaleString("en-IN")}` : "—"
 }
 
+const formatQty = (val) => {
+  if (val === undefined || val === null || isNaN(val)) return ""
+  const num = Number(val)
+  return num % 1 === 0 ? num.toString() : parseFloat(num.toFixed(4)).toString()
+}
+
 export default function AccountsApprovalPage({ user }) {
   const { updateCount } = useNotification()
   const { toast } = useToast()
@@ -494,10 +500,10 @@ export default function AccountsApprovalPage({ user }) {
                                     <span className="text-sm font-semibold text-gray-800">{row.productName}</span>
                                     <div className="flex items-center gap-2">
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                                        Ordered: {row.quantity}
+                                        Ordered: {formatQty(row.quantity)}
                                       </span>
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                        Allocated: {row.allocatedQty}
+                                        Allocated: {formatQty(row.allocatedQty)}
                                       </span>
                                     </div>
                                   </div>
@@ -603,7 +609,7 @@ export default function AccountsApprovalPage({ user }) {
               <span className="text-slate-600">PO: {selectedGroup?.poNumber} · {selectedGroup?.rows[0]?.partyName}</span>
               {selectedGroup && (
                 <span className="font-bold text-blue-700 bg-blue-100/80 px-2.5 py-1 rounded-lg border border-blue-200 w-fit text-sm shadow-sm">
-                  Selected Total: {selectedGroup.rows.filter(r => selectedSplitIds.has(r.id)).reduce((sum, r) => sum + (parseFloat(r.allocatedQty) || 0), 0)} {selectedGroup?.rows[0]?.typeOfMeasurement || "Tons"}
+                  Selected Total: {formatQty(selectedGroup.rows.filter(r => selectedSplitIds.has(r.id)).reduce((sum, r) => sum + (parseFloat(r.allocatedQty) || 0), 0))} {selectedGroup?.rows[0]?.typeOfMeasurement || "Tons"}
                 </span>
               )}
             </DialogDescription>
@@ -768,7 +774,7 @@ export default function AccountsApprovalPage({ user }) {
                         <span className="text-xs text-slate-500">{row.transporterName}</span>
                       </div>
                       <div className="flex items-center gap-4 text-xs text-slate-600">
-                        <span>Qty: <span className="font-bold text-blue-600">{row.allocatedQty} {row.typeOfMeasurement || "Tons"}</span></span>
+                        <span>Qty: <span className="font-bold text-blue-600">{formatQty(row.allocatedQty)} {row.typeOfMeasurement || "Tons"}</span></span>
                         {row.poRate && (
                           <span>Rate: <span className="font-medium text-slate-800">₹{row.poRate}</span></span>
                         )}
