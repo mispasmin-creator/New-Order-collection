@@ -336,24 +336,47 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
       }
 
       // Fetch real-time count for "Fullkitting" from invoice history
-      const { data: fullkittingData, error: fullkittingError } = await supabase
+      const { data: fullkittingDispatchData, error: fullkittingDispatchError } = await supabase
         .from('DISPATCH')
-        .select('Actual4, "Fullkitting Actual", "Type Of Transporting", "Type Of Transporting  "')
+        .select('"D-Sr Number", Actual4, "Fullkitting Actual", "Type Of Transporting", "Type Of Transporting  "')
         .not('Actual4', 'is', null)
 
-      if (!fullkittingError && fullkittingData) {
-        counts["Fullkitting"] = fullkittingData.filter(row =>
-          row["Actual4"] &&
-          row["Type Of Transporting"] !== "Ex Factory" &&
-          row["Type Of Transporting  "] !== "Ex Factory" &&
-          (!row["Fullkitting Actual"] || String(row["Fullkitting Actual"]).trim() === "")
-        ).length
+      const { data: fullkittingDeliveryData, error: fullkittingDeliveryError } = await supabase
+        .from('DELIVERY')
+        .select('"D-Sr Number", Actual3')
+
+      if (!fullkittingDispatchError && !fullkittingDeliveryError && fullkittingDispatchData && fullkittingDeliveryData) {
+        const deliveryMap = new Map()
+        fullkittingDeliveryData.forEach(row => {
+          if (row["D-Sr Number"]) {
+            deliveryMap.set(row["D-Sr Number"], row)
+          }
+        })
+
+        const count = fullkittingDispatchData.filter(row => {
+          if (row["Fullkitting Actual"] && String(row["Fullkitting Actual"]).trim() !== "") {
+            return false
+          }
+          
+          const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
+          const typeOfTransportingLower = typeOfTransporting.toLowerCase().trim()
+          const dSrNumber = row["D-Sr Number"]
+          const deliveryRow = dSrNumber ? deliveryMap.get(dSrNumber) : null
+          
+          const isReady = typeOfTransportingLower === "ex-factory" || typeOfTransportingLower === "ex factory"
+            ? !!deliveryRow 
+            : !!(deliveryRow && deliveryRow.Actual3)
+             
+          return isReady
+        }).length
+
+        counts["Fullkitting"] = count
       }
 
       // Fetch real-time count for "TC"
       const { data: tcDispatchData, error: tcDispatchError } = await supabase
         .from('DISPATCH')
-        .select('"D-Sr Number", Actual4, "Fullkitting Actual", "Type Of Transporting", "Type Of Transporting  "')
+        .select('"D-Sr Number", Actual4, "Type Of Transporting", "Type Of Transporting  ", "TC Required"')
         .not('Actual4', 'is', null)
 
       const { data: tcDeliveryData, error: tcDeliveryError } = await supabase
@@ -369,43 +392,90 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
 
         const count = tcDispatchData.filter(row => {
           const dispatchNumber = row["D-Sr Number"]
-          const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
-          const readyForTC = row["Fullkitting Actual"] || typeOfTransporting === "Ex Factory"
+          const isTCRequired = row["TC Required"] === "Yes"
+          const readyForTC = isTCRequired && row["Actual4"]
           return readyForTC && dispatchNumber && !completedDispatchNumbers.has(dispatchNumber)
         }).length
 
         counts["TC"] = count
       }
 
-      // Fetch real-time count for "Bilty Entry" from Supabase
-      const { data: biltyEntryData, error: biltyEntryError } = await supabase
-        .from('DELIVERY')
-        .select('"Planned 3", "Actual3"')
-        .not('Planned 3', 'is', null)
+      // Fetch Bilty Update counts (grouped pending shipments)
+      let biltyUpdateCount = 0
+      try {
+        const userFirms = user?.role !== "ADMIN"
+          ? (user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
+          : null
+        const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
 
-      if (!biltyEntryError && biltyEntryData) {
-        const count = biltyEntryData.filter(row =>
-          row["Planned 3"] &&
-          (!row["Actual3"] || String(row["Actual3"]).trim() === "")
-        ).length
-        counts["Bilty Entry"] = count
+        let allowedDoNumbers = []
+        if (shouldFilter) {
+          const { data: orRows } = await supabase
+            .from('ORDER RECEIPT')
+            .select('"DO-Delivery Order No."')
+            .in('Firm Name', userFirms)
+          allowedDoNumbers = (orRows || [])
+            .map(r => r['DO-Delivery Order No.'])
+            .filter(Boolean)
+        }
+
+        let deliveryQuery = supabase
+          .from('DELIVERY')
+          .select('"Planned 3", "Actual3", "Type Of Transporting", "Bill No.", "Delivery Order No."')
+          .not('Planned 3', 'is', null)
+        if (shouldFilter && allowedDoNumbers.length > 0) {
+          deliveryQuery = deliveryQuery.in('"Delivery Order No."', allowedDoNumbers)
+        }
+
+        let postDeliveryQuery = supabase
+          .from('POST DELIVERY')
+          .select('Planned, Actual, "Bill No.", "Order No."')
+          .not('Planned', 'is', null)
+        if (shouldFilter && allowedDoNumbers.length > 0) {
+          postDeliveryQuery = postDeliveryQuery.in('"Order No."', allowedDoNumbers)
+        }
+
+        const [deliveryRes, postDeliveryRes] = await Promise.all([
+          deliveryQuery,
+          postDeliveryQuery
+        ])
+
+        if (!deliveryRes.error && deliveryRes.data && !postDeliveryRes.error && postDeliveryRes.data) {
+          const shipments = deliveryRes.data
+            .filter(del => {
+              const type = del["Type Of Transporting"] || "";
+              return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
+            })
+            .map(del => {
+              const receipt = postDeliveryRes.data.find(pd =>
+                (pd["Bill No."] && pd["Bill No."] === del["Bill No."]) ||
+                (pd["Order No."] && pd["Order No."] === del["Delivery Order No."])
+              )
+              return {
+                billNo: del["Bill No."],
+                isReceiptDone: !!receipt?.["Actual"]
+              }
+            })
+
+          const pendingShipments = shipments.filter(s => !s.isReceiptDone)
+          const invoiceSet = new Set()
+          let strayCount = 0
+          pendingShipments.forEach(s => {
+            if (s.billNo) {
+              invoiceSet.add(s.billNo)
+            } else {
+              strayCount++
+            }
+          })
+          biltyUpdateCount = invoiceSet.size + strayCount
+        }
+      } catch (err) {
+        console.error("Error calculating Bilty Update count:", err)
       }
 
-      // Fetch real-time count for "MATERIAL RECEIPT" from Supabase
-      const { data: materialReceiptData, error: materialReceiptError } = await supabase
-        .from('POST DELIVERY')
-        .select('Planned, Actual')
-        .not('Planned', 'is', null)
-
-      if (!materialReceiptError && materialReceiptData) {
-        const count = materialReceiptData.filter(row =>
-          row["Planned"] &&
-          (!row["Actual"] || String(row["Actual"]).trim() === "")
-        ).length
-        counts["MATERIAL RECEIPT"] = count
-      }
-
-      counts["Bilty Update"] = (counts["Bilty Entry"] || 0) + (counts["MATERIAL RECEIPT"] || 0)
+      counts["Bilty Update"] = biltyUpdateCount
+      counts["Bilty Entry"] = biltyUpdateCount
+      counts["MATERIAL RECEIPT"] = 0
 
       // Fetch real-time count for "Debit Note" — management-approved returns pending note issuance
       const { data: debitNoteData, error: debitNoteError } = await supabase

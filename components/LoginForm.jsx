@@ -36,8 +36,18 @@ export default function LoginForm({ onLogin }) {
       } else if (data) {
         // Parse Page Access (comma separated string to array)
         let pageAccess = []
+        let viewerPages = {}
         if (data["Page Acess"]) {
-          pageAccess = data["Page Acess"].split(',').map(p => p.trim())
+          const rawPages = data["Page Acess"].split(',').map(p => p.trim())
+          rawPages.forEach(p => {
+            if (p.endsWith(':view') || p.endsWith(':viewer')) {
+              const pageName = p.substring(0, p.lastIndexOf(':'))
+              pageAccess.push(pageName)
+              viewerPages[pageName] = true
+            } else {
+              pageAccess.push(p)
+            }
+          })
         }
 
         // Prepare user object
@@ -47,7 +57,8 @@ export default function LoginForm({ onLogin }) {
           name: data.Username, // Use Username as name if no Name column
           role: data.Role,
           firm: data["Firm_Name"], // Keep as string, components will split if needed
-          pageAccess: pageAccess
+          pageAccess: pageAccess,
+          viewerPages: viewerPages
         }
         onLogin(loginUser)
       } else {

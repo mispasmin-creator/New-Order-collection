@@ -129,17 +129,42 @@ export default function ManageUsersPage() {
     setIsDialogOpen(true)
   }
 
-  const togglePage = (page) => {
+  const togglePage = (page, isViewer = false) => {
     setFormData((prev) => {
       if (page === "all") {
         return { ...prev, pages: prev.pages.includes("all") ? [] : ["all"] }
       }
-      const without = prev.pages.filter((p) => p !== "all")
+      const without = prev.pages.filter((p) => p !== "all" && p !== page && p !== `${page}:view`)
+      const hasPage = prev.pages.includes(page) || prev.pages.includes(`${page}:view`)
       return {
         ...prev,
-        pages: without.includes(page) ? without.filter((p) => p !== page) : [...without, page],
+        pages: hasPage ? without : [...without, isViewer ? `${page}:view` : page],
       }
     })
+  }
+
+  const setPageAccessType = (page, isViewer) => {
+    setFormData((prev) => {
+      const without = prev.pages.filter((p) => p !== page && p !== `${page}:view`)
+      return {
+        ...prev,
+        pages: [...without, isViewer ? `${page}:view` : page]
+      }
+    })
+  }
+
+  const selectAllPages = (isViewer = false) => {
+    setFormData((prev) => ({
+      ...prev,
+      pages: ALL_PAGES.map((page) => (isViewer ? `${page}:view` : page)),
+    }))
+  }
+
+  const deselectAllPages = () => {
+    setFormData((prev) => ({
+      ...prev,
+      pages: [],
+    }))
   }
 
   const toggleFirm = (firm) => {
@@ -304,9 +329,16 @@ export default function ManageUsersPage() {
                             </Badge>
                           ) : pages.length > 0 ? (
                             <>
-                              {pages.slice(0, 4).map((p, i) => (
-                                <Badge key={i} variant="outline" className="text-[10px] bg-indigo-50 text-indigo-700 border-indigo-100">{p}</Badge>
-                              ))}
+                              {pages.slice(0, 4).map((p, i) => {
+                                const isView = p.endsWith(":view") || p.endsWith(":viewer");
+                                const cleanName = isView ? p.substring(0, p.lastIndexOf(":")) : p;
+                                const displayName = cleanName === "Wetman Entry" ? "Weighment Entry" : cleanName === "Debit Note" ? "Credit Note" : cleanName;
+                                return (
+                                  <Badge key={i} variant="outline" className={`text-[10px] ${isView ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-indigo-50 text-indigo-700 border-indigo-100"}`}>
+                                    {displayName} {isView && "(Viewer)"}
+                                  </Badge>
+                                )
+                              })}
                               {pages.length > 4 && (
                                 <Badge variant="outline" className="text-[10px] text-gray-500">+{pages.length - 4} more</Badge>
                               )}
@@ -478,25 +510,80 @@ export default function ManageUsersPage() {
                     </div>
                   </div>
 
+                  <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[10px] px-2 py-0 border-gray-200"
+                      onClick={() => selectAllPages(false)}
+                      disabled={formData.pages.includes("all")}
+                    >
+                      Select All (Full)
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[10px] px-2 py-0 border-gray-200"
+                      onClick={() => selectAllPages(true)}
+                      disabled={formData.pages.includes("all")}
+                    >
+                      Select All (Viewer)
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[10px] px-2 py-0 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                      onClick={deselectAllPages}
+                      disabled={formData.pages.includes("all")}
+                    >
+                      Clear All
+                    </Button>
+                  </div>
+
                   <ScrollArea className="h-[300px] pr-2">
                     <div className="space-y-1">
-                      {ALL_PAGES.map((page) => (
-                        <div key={page} className="flex items-center gap-2 p-1.5 hover:bg-white rounded transition-colors">
-                          <Checkbox
-                            id={`page-${page}`}
-                            checked={formData.pages.includes(page) || formData.pages.includes("all")}
-                            onCheckedChange={() => togglePage(page)}
-                            disabled={formData.pages.includes("all")}
-                            className="data-[state=checked]:bg-indigo-600 data-[state=checked]:border-indigo-600"
-                          />
-                          <Label
-                            htmlFor={`page-${page}`}
-                            className={`text-xs cursor-pointer ${formData.pages.includes("all") ? "text-gray-400" : "text-gray-700"}`}
-                          >
-                            {page === "Wetman Entry" ? "Weighment Entry" : page === "Debit Note" ? "Credit Note" : page}
-                          </Label>
-                        </div>
-                      ))}
+                      {ALL_PAGES.map((page) => {
+                        const hasPage = formData.pages.includes(page) || formData.pages.includes(`${page}:view`);
+                        const isViewer = formData.pages.includes(`${page}:view`);
+                        const isAll = formData.pages.includes("all");
+
+                        return (
+                          <div key={page} className="flex items-center justify-between p-1.5 hover:bg-white rounded transition-colors">
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                id={`page-${page}`}
+                                checked={hasPage || isAll}
+                                onCheckedChange={() => togglePage(page, false)}
+                                disabled={isAll}
+                                className="data-[state=checked]:bg-indigo-600 data-[state=checked]:border-indigo-600"
+                              />
+                              <Label
+                                htmlFor={`page-${page}`}
+                                className={`text-xs cursor-pointer ${isAll ? "text-gray-400" : "text-gray-700"}`}
+                              >
+                                {page === "Wetman Entry" ? "Weighment Entry" : page === "Debit Note" ? "Credit Note" : page}
+                              </Label>
+                            </div>
+                            {hasPage && !isAll && (
+                              <Select
+                                value={isViewer ? "view" : "full"}
+                                onValueChange={(val) => setPageAccessType(page, val === "view")}
+                              >
+                                <SelectTrigger className="h-7 w-28 text-[11px] py-0 px-2 bg-white border-gray-200">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="full" className="text-[11px]">Full Access</SelectItem>
+                                  <SelectItem value="view" className="text-[11px]">Viewer Only</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   </ScrollArea>
                 </div>

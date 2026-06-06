@@ -115,10 +115,12 @@ export default function FullkittingPage({ user }) {
       ;(dispatchData || []).forEach((row) => {
         const po = row.po_id ? orderMap.get(row.po_id) || {} : {}
         const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
-        if (typeOfTransporting === "Ex Factory") return
-
+        const typeOfTransportingLower = typeOfTransporting.toLowerCase().trim()
         const deliveryRow = row["D-Sr Number"] ? deliveryMap.get(row["D-Sr Number"]) : null
-        const isBiltyCompleted = deliveryRow && deliveryRow.Actual3
+        
+        const isReadyForFullkitting = typeOfTransportingLower === "ex-factory" || typeOfTransportingLower === "ex factory"
+          ? !!deliveryRow
+          : !!(deliveryRow && deliveryRow.Actual3)
 
         const truckQty = Number(row["Actual Truck Qty"]) || Number(row["Qty To Be Dispatched"]) || 0
         const rate = Number(po["Rate Of Material"]) || 0
@@ -184,7 +186,7 @@ export default function FullkittingPage({ user }) {
         if (item.fullkittingAt && String(item.fullkittingAt).trim() !== "") {
           history.push(item)
         } else {
-          if (isBiltyCompleted) {
+          if (isReadyForFullkitting) {
             pending.push(item)
           }
         }

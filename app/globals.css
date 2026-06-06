@@ -99,3 +99,23 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Viewer mode styling */
+.is-read-only button.bg-blue-600,
+.is-read-only button.bg-indigo-600,
+.is-read-only button.bg-green-600,
+.is-read-only button.bg-red-600,
+.is-read-only button[type="submit"] {
+  pointer-events: none !important;
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+.is-read-only form input:not([placeholder*="search" i]):not([type="search"]),
+.is-read-only form textarea,
+.is-read-only form select,
+.is-read-only form [role="combobox"] {
+  pointer-events: none !important;
+  opacity: 0.8 !important;
+  background-color: #f9fafb !important;
+}

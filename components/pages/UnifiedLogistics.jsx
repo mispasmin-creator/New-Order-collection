@@ -114,8 +114,36 @@ export default function UnifiedLogistics({ user }) {
       setDispatchTCMap(tcMap)
 
       // Update notifications
-      const pending = (deliveryRes.data || []).filter(d => !d.Actual3).length
-      updateCount?.("Bilty Entry", pending)
+      const activePendingShipments = (deliveryRes.data || [])
+        .filter(del => {
+          const type = del["Type Of Transporting"] || "";
+          return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
+        })
+        .map(del => {
+          const receipt = (postDeliveryRes.data || []).find(pd =>
+            (pd["Bill No."] && pd["Bill No."] === del["Bill No."]) ||
+            (pd["Order No."] && pd["Order No."] === del["Delivery Order No."])
+          )
+          return {
+            billNo: del["Bill No."],
+            isReceiptDone: !!receipt?.["Actual"]
+          }
+        })
+        .filter(s => !s.isReceiptDone)
+
+      const invoiceSet = new Set()
+      let strayCount = 0
+      activePendingShipments.forEach(s => {
+        if (s.billNo) {
+          invoiceSet.add(s.billNo)
+        } else {
+          strayCount++
+        }
+      })
+      const pendingGroupedCount = invoiceSet.size + strayCount
+
+      updateCount?.("Bilty Update", pendingGroupedCount)
+      updateCount?.("Bilty Entry", pendingGroupedCount)
 
     } catch (error) {
       console.error("Error fetching logistics data:", error)
@@ -138,7 +166,12 @@ export default function UnifiedLogistics({ user }) {
 
   // Unified data joining logic
   const shipments = useMemo(() => {
-    return deliveryData.map(del => {
+    return deliveryData
+      .filter(del => {
+        const type = del["Type Of Transporting"] || "";
+        return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
+      })
+      .map(del => {
       // Find matching receipt by Bill No or DO No if Bill No is missing
       const receipt = postDeliveryData.find(pd =>
         (pd["Bill No."] && pd["Bill No."] === del["Bill No."]) ||
@@ -171,6 +204,35 @@ export default function UnifiedLogistics({ user }) {
       }
     })
   }, [deliveryData, postDeliveryData, dispatchTCMap])
+
+  // Grouped counts for cards
+  const pendingGroupedCount = useMemo(() => {
+    const pendingList = shipments.filter(s => !s.isReceiptDone)
+    const invoiceSet = new Set()
+    let strayCount = 0
+    pendingList.forEach(s => {
+      if (s.billNo) {
+        invoiceSet.add(s.billNo)
+      } else {
+        strayCount++
+      }
+    })
+    return invoiceSet.size + strayCount
+  }, [shipments])
+
+  const completedGroupedCount = useMemo(() => {
+    const completedList = shipments.filter(s => s.isReceiptDone)
+    const invoiceSet = new Set()
+    let strayCount = 0
+    completedList.forEach(s => {
+      if (s.billNo) {
+        invoiceSet.add(s.billNo)
+      } else {
+        strayCount++
+      }
+    })
+    return invoiceSet.size + strayCount
+  }, [shipments])
 
   // Formatting helpers
   const formatDate = (dateStr) => {
@@ -374,7 +436,7 @@ export default function UnifiedLogistics({ user }) {
           <CardContent className="p-6 flex justify-between items-center">
             <div>
               <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Pending</p>
-              <div className="text-2xl font-bold text-amber-900">{shipments.filter(s => !s.isReceiptDone).length}</div>
+              <div className="text-2xl font-bold text-amber-900">{pendingGroupedCount}</div>
             </div>
             <Truck className="h-8 w-8 text-amber-500" />
           </CardContent>
@@ -383,7 +445,7 @@ export default function UnifiedLogistics({ user }) {
           <CardContent className="p-6 flex justify-between items-center">
             <div>
               <p className="text-xs font-semibold text-green-600 uppercase tracking-wider">Completed</p>
-              <div className="text-2xl font-bold text-green-900">{shipments.filter(s => s.isReceiptDone).length}</div>
+              <div className="text-2xl font-bold text-green-900">{completedGroupedCount}</div>
             </div>
             <PackageCheck className="h-8 w-8 text-green-500" />
           </CardContent>

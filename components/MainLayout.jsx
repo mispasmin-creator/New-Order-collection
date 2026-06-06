@@ -34,7 +34,8 @@ export default function MainLayout({ user, onLogout, orders, updateOrders }) {
   }
 
   const renderPage = () => {
-    const pageProps = { user, orders, updateOrders }
+    const isReadOnly = user.role !== "ADMIN" && !!user.viewerPages?.[currentPage]
+    const pageProps = { user, orders, updateOrders, isReadOnly }
 
     // Check if user has access to this page
     if (!userPages.includes(currentPage) && currentPage !== "Dashboard") {

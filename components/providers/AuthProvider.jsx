@@ -33,8 +33,18 @@ export function AuthProvider({ children }) {
                     if (data) {
                         // Parse Page Access (comma separated string to array)
                         let pageAccess = []
+                        let viewerPages = {}
                         if (data["Page Acess"]) {
-                            pageAccess = data["Page Acess"].split(',').map(p => p.trim())
+                            const rawPages = data["Page Acess"].split(',').map(p => p.trim())
+                            rawPages.forEach(p => {
+                                if (p.endsWith(':view') || p.endsWith(':viewer')) {
+                                    const pageName = p.substring(0, p.lastIndexOf(':'))
+                                    pageAccess.push(pageName)
+                                    viewerPages[pageName] = true
+                                } else {
+                                    pageAccess.push(p)
+                                }
+                            })
                         }
 
                         const updatedUser = {
@@ -43,7 +53,8 @@ export function AuthProvider({ children }) {
                             name: data.Username,
                             role: data.Role,
                             firm: data["Firm_Name"],
-                            pageAccess: pageAccess
+                            pageAccess: pageAccess,
+                            viewerPages: viewerPages
                         }
 
                         setUser(updatedUser)

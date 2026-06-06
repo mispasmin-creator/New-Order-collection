@@ -529,9 +529,6 @@ export default function MakeInvoicePage({ user }) {
               Actual4: actualDateTime,
               "Bill Number": invoiceNo.trim(),
               "Bill Copy": billCopyUrl,
-              ...(row.typeOfTransporting === "Ex Factory"
-                ? { "Fullkitting Actual": actualDateTime }
-                : {}),
             })
             .eq("id", row.id);
           if (updateErr) throw updateErr;
