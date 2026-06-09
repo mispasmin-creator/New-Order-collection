@@ -61,6 +61,7 @@ export default function FullkittingPage({ user }) {
     truckNo: "",
     amount: "",
     remarks: "",
+    biltyNo: "",
   })
   const { toast } = useToast()
   const { updateCount } = useNotification()
@@ -263,12 +264,13 @@ export default function FullkittingPage({ user }) {
       truckNo: row.truckNo || "",
       amount: row.transporterRate || "",
       remarks: row.remarks || "",
+      biltyNo: row.biltyNo || "",
     })
   }
 
   const handleClose = () => {
     setSelectedRow(null)
-    setForm({ status: "No", productName: "", truckQty: "", transporter: "", truckNo: "", amount: "", remarks: "" })
+    setForm({ status: "No", productName: "", truckQty: "", transporter: "", truckNo: "", amount: "", remarks: "", biltyNo: "" })
   }
 
   const updateForm = (field, value) => {
@@ -300,6 +302,7 @@ export default function FullkittingPage({ user }) {
               "Fullkitting Amount": Number(form.amount) || 0,
               "Fullkitting Remarks": form.remarks.trim() || null,
               "Fullkitting Actual": getISTTimestamp(),
+              "Bilty No.": form.biltyNo.trim() || null,
             }
           : {
               "Fullkitting Status": "No",
@@ -312,6 +315,19 @@ export default function FullkittingPage({ user }) {
         .eq("id", selectedRow.id)
 
       if (error) throw error
+
+      if (status === "Yes" && selectedRow.dSrNumber) {
+        const { error: delError } = await supabase
+          .from("DELIVERY")
+          .update({
+            "Bilty No.": form.biltyNo.trim() || null,
+            "Bilty Number.": form.biltyNo.trim() || null,
+          })
+          .eq("D-Sr Number", selectedRow.dSrNumber)
+        if (delError) {
+          console.error("Error updating DELIVERY Bilty No:", delError)
+        }
+      }
 
       toast({
         title: "Success",
@@ -655,9 +671,39 @@ export default function FullkittingPage({ user }) {
                       <Input type="number" step="0.01" min="0" value={form.amount} onChange={(event) => updateForm("amount", event.target.value)} disabled={submitting} />
                     </div>
                     <div className="space-y-2">
+                      <Label>Bilty No.</Label>
+                      <Input value={form.biltyNo} onChange={(event) => updateForm("biltyNo", event.target.value)} disabled={submitting} />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
                       <Label>Remarks</Label>
                       <Input value={form.remarks} onChange={(event) => updateForm("remarks", event.target.value)} disabled={submitting} />
                     </div>
+                    {selectedRow.biltyCopy && (
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Bilty Image / Copy</Label>
+                        <div className="border rounded-md p-3 bg-gray-50 flex flex-col items-center gap-3">
+                          <div className="max-w-full overflow-hidden rounded border bg-white p-1">
+                            <img 
+                              src={selectedRow.biltyCopy} 
+                              alt="Bilty Copy" 
+                              className="max-h-64 max-w-full object-contain mx-auto"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          </div>
+                          <a 
+                            href={selectedRow.biltyCopy} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-md text-xs font-medium text-blue-600 hover:text-blue-700 bg-white border-gray-200 shadow-sm"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Open Bilty Copy in New Tab
+                          </a>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
