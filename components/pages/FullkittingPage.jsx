@@ -34,7 +34,7 @@ const formatDetailLabel = (key) =>
     .trim()
 
 const getTransporterRateValue = (row) =>
-  Number(row["Transporter Amount"]) ||
+  Number(row["Fullkitting Amount"]) ||
   Number(row["Transport Rate @Per Matric Ton"]) ||
   Number(row["Fixed Amount"]) ||
   0
@@ -97,6 +97,17 @@ export default function FullkittingPage({ user }) {
       const { data: dispatchData, error: dispatchError } = await dispatchQuery
       if (dispatchError) throw dispatchError
 
+      // Fetch logistics splits to get entered rates
+      const { data: splitsData, error: splitsError } = await supabase
+        .from("po_logistics_splits")
+        .select("id, rate")
+      if (splitsError) throw splitsError
+ 
+      const splitsMap = new Map()
+      ;(splitsData || []).forEach((s) => {
+        splitsMap.set(s.id, s)
+      })
+ 
       // Fetch DELIVERY records to determine Bilty Update status
       const { data: deliveryData, error: deliveryError } = await supabase
         .from("DELIVERY")
@@ -125,11 +136,14 @@ export default function FullkittingPage({ user }) {
 
         const truckQty = Number(row["Actual Truck Qty"]) || Number(row["Qty To Be Dispatched"]) || 0
         const rate = Number(po["Rate Of Material"]) || 0
-        const amount = Number(row["Fullkitting Amount"] ?? row["Fixed Amount"]) || truckQty * rate || 0
+        const amount = truckQty * rate
         const rateType = row["Type Of Rate"] || ""
         const transportRate = Number(row["Transport Rate @Per Matric Ton"]) || 0
         const fixedAmount = Number(row["Fixed Amount"]) || 0
-        const transporterRate = getTransporterRateValue(row)
+        const splitId = row.logistics_split_id || null
+        const split = splitId ? splitsMap.get(splitId) : null
+        const splitRate = split ? parseFloat(split.rate) || 0 : 0
+        const transporterRate = getTransporterRateValue(row) || splitRate
         const transporterAmount =
           Number(row["Transporter Amount"]) ||
           (rateType === "Per Matric Ton rate" ? truckQty * transportRate : fixedAmount)
