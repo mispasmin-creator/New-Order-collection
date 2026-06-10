@@ -140,18 +140,16 @@ export default function CheckDeliveryPage({ user }) {
     [rows]
   )
 
-  // Get unique options based on active tab
+  // Get unique options from all loaded rows to show all firms/parties
   const firmOptions = useMemo(() => {
-    const currentList = activeTab === "pending" ? pendingRows : historyRows
-    const firms = [...new Set(currentList.map(row => row.firmName).filter(Boolean))]
+    const firms = [...new Set(rows.map(row => row.firmName).filter(Boolean))]
     return ["all", ...firms]
-  }, [activeTab, pendingRows, historyRows])
+  }, [rows])
 
   const partyOptions = useMemo(() => {
-    const currentList = activeTab === "pending" ? pendingRows : historyRows
-    const parties = [...new Set(currentList.map(row => row.partyName).filter(Boolean))]
+    const parties = [...new Set(rows.map(row => row.partyName).filter(Boolean))]
     return ["all", ...parties]
-  }, [activeTab, pendingRows, historyRows])
+  }, [rows])
 
   useEffect(() => {
     updateCount("Check for Delivery", pendingRows.length)

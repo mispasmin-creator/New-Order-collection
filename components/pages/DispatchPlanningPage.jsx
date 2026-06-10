@@ -1287,6 +1287,7 @@ export default function DispatchPlanningPage({ user }) {
                         <th className="text-left px-4 py-2.5 font-semibold">Product</th>
                         <th className="text-right px-4 py-2.5 font-semibold">Product Order Qty</th>
                         <th className="text-right px-4 py-2.5 font-semibold">Dispatched Quantity</th>
+                        <th className="text-right px-4 py-2.5 font-semibold">Allocated Qty</th>
                         <th className="text-right px-4 py-2.5 font-semibold">Pending</th>
                         <th className="text-right px-4 py-2.5 font-semibold min-w-[120px]">Dispatch *</th>
                         <th className="px-4 py-2.5" />
@@ -1302,11 +1303,12 @@ export default function DispatchPlanningPage({ user }) {
                           </td>
                           <td className="px-4 py-3 text-right text-gray-700">{formatQty(line.quantity)}</td>
                           <td className="px-4 py-3 text-right text-gray-700">{formatQty(line.quantityDelivered)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700 font-medium">{formatQty(line.allocatedQty)}</td>
                           <td className="px-4 py-3 text-right font-medium">
                             {(() => {
                               const dispatchQty = parseFloat(line.dispatchQty) || 0
+                              const pending = Math.max(0, toNumber(line.pendingQty) - dispatchQty)
                               const dispatchable = getLineDispatchableQty(line)
-                              const pending = Math.max(0, dispatchable - dispatchQty)
                               const extra = Math.max(0, dispatchQty - dispatchable)
                               return (
                                 <div className="flex flex-col items-end">
