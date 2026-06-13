@@ -14,7 +14,10 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle2, Download, Eye, Loader2, PackageCheck, Search, X, Building } from "lucide-react"
+import { CheckCircle2, Download, Eye, Loader2, PackageCheck, Search, X, Building, Upload } from "lucide-react"
+
+const MAX_TRANSPORTER_BILL_IMAGE_SIZE = 5 * 1024 * 1024
+const ACCEPTED_TRANSPORTER_BILL_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
 
 const HIDDEN_DETAIL_FIELDS = new Set([
   "id",
@@ -39,6 +42,56 @@ const getTransporterRateValue = (row) =>
   Number(row["Fixed Amount"]) ||
   0
 
+const ORDER_RECEIPT_COLUMNS = `
+  id,
+  "PARTY PO NO (As Per Po Exact)",
+  "Party Names",
+  "Firm Name",
+  "Rate Of Material",
+  "DO-Delivery Order No.",
+  "Total PO Basic Value",
+  "Customer Category",
+  "Marketing Manager Name",
+  "Product Name",
+  "Qty",
+  "UOM"
+`
+
+const DISPATCH_COLUMNS = `
+  id,
+  po_id,
+  logistics_split_id,
+  "D-Sr Number",
+  "Party Name",
+  "Delivery Order No.",
+  "LGST-Sr Number",
+  "Bill Number",
+  "Bill Copy",
+  "Product Name",
+  "Qty To Be Dispatched",
+  "Actual Truck Qty",
+  "Transporter Name",
+  "Truck No.",
+  "Bilty No.",
+  "Bilty Copy",
+  "Type Of Transporting",
+  "Type Of Transporting  ",
+  "Type Of Rate",
+  "Transport Rate @Per Matric Ton",
+  "Fixed Amount",
+  "Transporter Amount",
+  "Vehicle No. Plate Image",
+  "Loading Image 1",
+  "Loading Image 2",
+  "Loading Image 3",
+  "Actual4",
+  "Fullkitting Actual",
+  "Fullkitting Status",
+  "Fullkitting Remarks",
+  "Fullkitting Amount",
+  "Transporter Bill Image"
+`
+
 export default function FullkittingPage({ user }) {
   const [pendingRows, setPendingRows] = useState([])
   const [historyRows, setHistoryRows] = useState([])
@@ -62,6 +115,7 @@ export default function FullkittingPage({ user }) {
     amount: "",
     remarks: "",
     biltyNo: "",
+    transporterBillImage: null,
   })
   const { toast } = useToast()
   const { updateCount } = useNotification()
@@ -82,7 +136,7 @@ export default function FullkittingPage({ user }) {
           : null
       const shouldFilter = userFirms && !userFirms.includes("all") && userFirms.length > 0
 
-      let orderQuery = supabase.from("ORDER RECEIPT").select("*")
+      let orderQuery = supabase.from("ORDER RECEIPT").select(ORDER_RECEIPT_COLUMNS)
       if (shouldFilter) orderQuery = orderQuery.in("Firm Name", userFirms)
 
       const { data: orderData, error: orderError } = await orderQuery
@@ -91,16 +145,23 @@ export default function FullkittingPage({ user }) {
       const allowedPoIds = (orderData || []).map((row) => row.id)
       const orderMap = new Map((orderData || []).map((row) => [row.id, row]))
 
-      let dispatchQuery = supabase.from("DISPATCH").select("*").not("Actual4", "is", null)
+      let dispatchQuery = supabase.from("DISPATCH").select(DISPATCH_COLUMNS).not("Actual4", "is", null)
       if (shouldFilter) dispatchQuery = dispatchQuery.in("po_id", allowedPoIds)
 
       const { data: dispatchData, error: dispatchError } = await dispatchQuery
       if (dispatchError) throw dispatchError
 
+      const splitIds = [...new Set((dispatchData || []).map((row) => row.logistics_split_id).filter(Boolean))]
+      const dispatchNumbers = [...new Set((dispatchData || []).map((row) => row["D-Sr Number"]).filter(Boolean))]
+
       // Fetch logistics splits to get entered rates
-      const { data: splitsData, error: splitsError } = await supabase
-        .from("po_logistics_splits")
-        .select("id, rate")
+      const splitsResult = splitIds.length
+        ? await supabase
+            .from("po_logistics_splits")
+            .select("id, rate")
+            .in("id", splitIds)
+        : { data: [], error: null }
+      const { data: splitsData, error: splitsError } = splitsResult
       if (splitsError) throw splitsError
  
       const splitsMap = new Map()
@@ -109,9 +170,13 @@ export default function FullkittingPage({ user }) {
       })
  
       // Fetch DELIVERY records to determine Bilty Update status
-      const { data: deliveryData, error: deliveryError } = await supabase
-        .from("DELIVERY")
-        .select('"D-Sr Number", "Bilty No.", "Bilty Number.", "Bilty Copy", Actual3')
+      const deliveryResult = dispatchNumbers.length
+        ? await supabase
+            .from("DELIVERY")
+            .select('"D-Sr Number", "Bilty No.", "Bilty Number.", "Bilty Copy", Actual3')
+            .in("D-Sr Number", dispatchNumbers)
+        : { data: [], error: null }
+      const { data: deliveryData, error: deliveryError } = deliveryResult
       if (deliveryError) throw deliveryError
 
       const deliveryMap = new Map()
@@ -191,6 +256,7 @@ export default function FullkittingPage({ user }) {
           amount,
           transporterRate,
           transporterAmount,
+          transporterBillImage: row["Transporter Bill Image"] || "",
           invoiceAt: row["Actual4"] || "",
           fullkittingAt: row["Fullkitting Actual"] || "",
           fullkittingStatus,
@@ -279,16 +345,62 @@ export default function FullkittingPage({ user }) {
       amount: row.transporterRate || "",
       remarks: row.remarks || "",
       biltyNo: row.biltyNo || "",
+      transporterBillImage: null,
     })
   }
 
   const handleClose = () => {
     setSelectedRow(null)
-    setForm({ status: "No", productName: "", truckQty: "", transporter: "", truckNo: "", amount: "", remarks: "", biltyNo: "" })
+    setForm({ status: "No", productName: "", truckQty: "", transporter: "", truckNo: "", amount: "", remarks: "", biltyNo: "", transporterBillImage: null })
   }
 
   const updateForm = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleTransporterBillImageChange = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (file.size > MAX_TRANSPORTER_BILL_IMAGE_SIZE) {
+      toast({
+        variant: "destructive",
+        title: "Invalid image",
+        description: "Transporter bill image size should be less than 5MB.",
+      })
+      event.target.value = ""
+      return
+    }
+
+    if (!ACCEPTED_TRANSPORTER_BILL_IMAGE_TYPES.includes(file.type)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid image",
+        description: "Only JPG, PNG, and WEBP images are allowed.",
+      })
+      event.target.value = ""
+      return
+    }
+
+    updateForm("transporterBillImage", file)
+  }
+
+  const uploadTransporterBillImage = async (file) => {
+    const safeDsr = (selectedRow.dSrNumber || selectedRow.id || "dispatch").toString().replace(/[^a-zA-Z0-9]/g, "_")
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9.]/g, "_")
+    const filePath = `fullkitting/transporter_bill_${safeDsr}_${Date.now()}_${safeFileName}`
+
+    const { error: uploadError } = await supabase.storage.from("images").upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+    })
+    if (uploadError) throw uploadError
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("images").getPublicUrl(filePath)
+
+    return publicUrl
   }
 
   const handleSubmit = async () => {
@@ -305,6 +417,11 @@ export default function FullkittingPage({ user }) {
 
     try {
       setSubmitting(true)
+      let transporterBillImageUrl = selectedRow.transporterBillImage || null
+      if (status === "Yes" && form.transporterBillImage) {
+        transporterBillImageUrl = await uploadTransporterBillImage(form.transporterBillImage)
+      }
+
       const payload =
         status === "Yes"
           ? {
@@ -317,6 +434,7 @@ export default function FullkittingPage({ user }) {
               "Fullkitting Remarks": form.remarks.trim() || null,
               "Fullkitting Actual": getISTTimestamp(),
               "Bilty No.": form.biltyNo.trim() || null,
+              "Transporter Bill Image": transporterBillImageUrl,
             }
           : {
               "Fullkitting Status": "No",
@@ -691,6 +809,30 @@ export default function FullkittingPage({ user }) {
                     <div className="space-y-2 md:col-span-2">
                       <Label>Remarks</Label>
                       <Input value={form.remarks} onChange={(event) => updateForm("remarks", event.target.value)} disabled={submitting} />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Transporter Bill Image</Label>
+                      <div className="border rounded-md p-3 bg-gray-50 space-y-3">
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleTransporterBillImageChange}
+                          disabled={submitting}
+                          className="bg-white"
+                        />
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
+                          <span className="inline-flex items-center gap-1">
+                            <Upload className="h-3.5 w-3.5" />
+                            {form.transporterBillImage ? form.transporterBillImage.name : "JPG, PNG, or WEBP up to 20MB"}
+                          </span>
+                          {selectedRow.transporterBillImage && (
+                            <a href={selectedRow.transporterBillImage} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+                              <Eye className="h-3.5 w-3.5" />
+                              View Existing
+                            </a>
+                          )}
+                        </div>
+                      </div>
                     </div>
                     {selectedRow.biltyCopy && (
                       <div className="space-y-2 md:col-span-2">

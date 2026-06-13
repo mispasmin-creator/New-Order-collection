@@ -127,31 +127,28 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
     const handleRefresh = () => fetchNotificationCounts()
     window.addEventListener('refresh-sidebar-counts', handleRefresh)
 
-    // Refresh counts every 30 seconds
-    const interval = setInterval(fetchNotificationCounts, 30000)
-
     return () => {
-      clearInterval(interval)
       window.removeEventListener('refresh-sidebar-counts', handleRefresh)
     }
-  }, [])
+  }, [user?.Username, user?.role, user?.firm])
 
   const fetchNotificationCounts = async () => {
     try {
       setIsLoading(true)
       const counts = {}
       let accessibleOrderIds = []
+      const userFirms = user.role !== "ADMIN"
+        ? (user.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
+        : []
+      const shouldFilterByFirm = user.role !== "ADMIN" && !userFirms.includes('all') && userFirms.length > 0
 
       // Fetch real-time count for "Order" from Supabase
       let orderCountQuery = supabase
         .from('ORDER RECEIPT')
-        .select('id, "Firm Name"', { count: 'exact' })
+        .select('id', { count: 'exact', head: !shouldFilterByFirm })
 
-      if (user.role !== "ADMIN") {
-        const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
-        if (!userFirms.includes('all')) {
-          orderCountQuery = orderCountQuery.in('Firm Name', userFirms)
-        }
+      if (shouldFilterByFirm) {
+        orderCountQuery = orderCountQuery.in('Firm Name', userFirms)
       }
 
       const { data: orderRows, count: orderCount, error: orderError } = await orderCountQuery
@@ -160,7 +157,7 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         counts["Order"] = orderCount
       }
 
-      accessibleOrderIds = (orderRows || []).map((row) => row.id)
+      accessibleOrderIds = shouldFilterByFirm ? (orderRows || []).map((row) => row.id) : []
 
       // Fetch real-time count for "Check PO" from Supabase
       let checkPOQuery = supabase
@@ -242,41 +239,47 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
         counts["Received PI Payment"] = new Set(pendingPIs.map(r => r.po_number)).size
       }
 
-      if (accessibleOrderIds.length > 0) {
-        const { data: checkDeliveryData, error: checkDeliveryError } = await supabase
+      if (!shouldFilterByFirm || accessibleOrderIds.length > 0) {
+        let checkDeliveryQuery = supabase
           .from('ORDER RECEIPT')
-          .select('id')
+          .select('id', { count: 'exact', head: true })
           .not('Actual 2', 'is', null)
           .is('check_delivery_actual', null)
-          .in('id', accessibleOrderIds)
+        if (shouldFilterByFirm) checkDeliveryQuery = checkDeliveryQuery.in('id', accessibleOrderIds)
 
-        if (!checkDeliveryError && checkDeliveryData) {
-          counts["Check for Delivery"] = checkDeliveryData.length
+        const { count: checkDeliveryCount, error: checkDeliveryError } = await checkDeliveryQuery
+
+        if (!checkDeliveryError && checkDeliveryCount !== null) {
+          counts["Check for Delivery"] = checkDeliveryCount
         }
       } else {
         counts["Check for Delivery"] = 0
       }
 
-      if (accessibleOrderIds.length > 0) {
-        const { data: dispatchStartData, error: dispatchStartError } = await supabase
+      if (!shouldFilterByFirm || accessibleOrderIds.length > 0) {
+        let dispatchStartQuery = supabase
           .from('po_logistics_splits')
-          .select('po_id, status, dispatch_record_id')
+          .select('id', { count: 'exact', head: true })
           .eq('status', 'Checked')
           .is('dispatch_record_id', null)
-          .in('po_id', accessibleOrderIds)
+        if (shouldFilterByFirm) dispatchStartQuery = dispatchStartQuery.in('po_id', accessibleOrderIds)
 
-        if (!dispatchStartError && dispatchStartData) {
-          counts["Dispatch Planning"] = dispatchStartData.length
+        const { count: dispatchStartCount, error: dispatchStartError } = await dispatchStartQuery
+
+        if (!dispatchStartError && dispatchStartCount !== null) {
+          counts["Dispatch Planning"] = dispatchStartCount
         }
 
-        const { data: accountsData, error: accountsError } = await supabase
+        let accountsQuery = supabase
           .from('po_logistics_splits')
-          .select('po_id, status')
+          .select('id', { count: 'exact', head: true })
           .eq('status', 'Dispatched')
-          .in('po_id', accessibleOrderIds)
+        if (shouldFilterByFirm) accountsQuery = accountsQuery.in('po_id', accessibleOrderIds)
 
-        if (!accountsError && accountsData) {
-          counts["Accounts Approval"] = accountsData.length
+        const { count: accountsCount, error: accountsError } = await accountsQuery
+
+        if (!accountsError && accountsCount !== null) {
+          counts["Accounts Approval"] = accountsCount
         }
       } else {
         counts["Dispatch Planning"] = 0
@@ -284,7 +287,7 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
       }
 
       // Fetch real-time count for "Logistic" from Supabase
-      if (user.role !== "ADMIN" && accessibleOrderIds.length === 0) {
+      if (shouldFilterByFirm && accessibleOrderIds.length === 0) {
         counts["Logistic"] = 0
       } else {
         let logisticQuery = supabase
@@ -292,7 +295,7 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
           .select('Planned1, Actual1, po_id')
           .not('Planned1', 'is', null)
 
-        if (accessibleOrderIds.length > 0) {
+        if (shouldFilterByFirm) {
           logisticQuery = logisticQuery.in('po_id', accessibleOrderIds)
         }
 

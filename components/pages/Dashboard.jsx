@@ -651,13 +651,6 @@ export default function AnalyticsDashboard({ user }) {
   // Initialize data fetch
   useEffect(() => {
     fetchAllData();
-
-    // Auto-refresh every 5 minutes
-    const interval = setInterval(() => {
-      fetchAllData(true);
-    }, 5 * 60 * 1000);
-
-    return () => clearInterval(interval);
   }, []);
 
   // Filter data based on user role and firm
