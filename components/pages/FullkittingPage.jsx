@@ -51,10 +51,9 @@ const ORDER_RECEIPT_COLUMNS = `
   "DO-Delivery Order No.",
   "Total PO Basic Value",
   "Customer Category",
-  "Marketing Manager Name",
+  "Marketing Mangager Name",
   "Product Name",
-  "Qty",
-  "UOM"
+  "Quantity"
 `
 
 const DISPATCH_COLUMNS = `
@@ -73,13 +72,11 @@ const DISPATCH_COLUMNS = `
   "Transporter Name",
   "Truck No.",
   "Bilty No.",
-  "Bilty Copy",
   "Type Of Transporting",
   "Type Of Transporting  ",
   "Type Of Rate",
   "Transport Rate @Per Matric Ton",
   "Fixed Amount",
-  "Transporter Amount",
   "Vehicle No. Plate Image",
   "Loading Image 1",
   "Loading Image 2",
