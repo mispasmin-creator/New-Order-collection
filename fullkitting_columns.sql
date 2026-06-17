@@ -5,4 +5,5 @@ ALTER TABLE "DISPATCH"
   ADD COLUMN IF NOT EXISTS "Fullkitting Actual" timestamp without time zone,
   ADD COLUMN IF NOT EXISTS "Fullkitting Amount" numeric,
   ADD COLUMN IF NOT EXISTS "Fullkitting Remarks" text,
-  ADD COLUMN IF NOT EXISTS "Fullkitting Status" text;
+  ADD COLUMN IF NOT EXISTS "Fullkitting Status" text,
+  ADD COLUMN IF NOT EXISTS "Transporter Bill Image" text;

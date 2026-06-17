@@ -83,6 +83,7 @@ CREATE TABLE public.DISPATCH (
   Fullkitting Amount numeric,
   Fullkitting Remarks text,
   Fullkitting Status text,
+  Transporter Bill Image text,
   Trust Certificate Made text,
   TC Required text,
   CONSTRAINT DISPATCH_pkey PRIMARY KEY (id)
