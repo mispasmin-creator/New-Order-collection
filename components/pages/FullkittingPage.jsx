@@ -480,7 +480,7 @@ export default function FullkittingPage({ user }) {
                 <TableHead>Transporter Name</TableHead>
                 <TableHead>Vehicle Number</TableHead>
                 <TableHead>Bilty Number</TableHead>
-                <TableHead>Rate Type</TableHead>
+                <TableHead>Type of Rate</TableHead>
                 <TableHead>Transporter Rate</TableHead>
                 <TableHead>Bilty Image</TableHead>
                 <TableHead className="text-right">Amount</TableHead>

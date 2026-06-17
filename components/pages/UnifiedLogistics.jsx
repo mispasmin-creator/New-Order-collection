@@ -120,10 +120,12 @@ export default function UnifiedLogistics({ user }) {
           return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
         })
         .map(del => {
-          const receipt = (postDeliveryRes.data || []).find(pd =>
-            (pd["Bill No."] && pd["Bill No."] === del["Bill No."]) ||
-            (pd["Order No."] && pd["Order No."] === del["Delivery Order No."])
-          )
+          const receipt = (postDeliveryRes.data || []).find(pd => {
+            if (del["Bill No."]) {
+              return pd["Bill No."] === del["Bill No."]
+            }
+            return pd["Order No."] && pd["Order No."] === del["Delivery Order No."]
+          })
           return {
             billNo: del["Bill No."],
             isReceiptDone: !!receipt?.["Actual"]
@@ -173,10 +175,12 @@ export default function UnifiedLogistics({ user }) {
       })
       .map(del => {
       // Find matching receipt by Bill No or DO No if Bill No is missing
-      const receipt = postDeliveryData.find(pd =>
-        (pd["Bill No."] && pd["Bill No."] === del["Bill No."]) ||
-        (pd["Order No."] && pd["Order No."] === del["Delivery Order No."])
-      )
+      const receipt = postDeliveryData.find(pd => {
+        if (del["Bill No."]) {
+          return pd["Bill No."] === del["Bill No."]
+        }
+        return pd["Order No."] && pd["Order No."] === del["Delivery Order No."]
+      })
 
       const dSrNumber = del["D-Sr Number"] || del["Losgistic no."] || ""
 

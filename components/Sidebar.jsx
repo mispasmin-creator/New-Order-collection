@@ -447,10 +447,12 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
               return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
             })
             .map(del => {
-              const receipt = postDeliveryRes.data.find(pd =>
-                (pd["Bill No."] && pd["Bill No."] === del["Bill No."]) ||
-                (pd["Order No."] && pd["Order No."] === del["Delivery Order No."])
-              )
+              const receipt = postDeliveryRes.data.find(pd => {
+                if (del["Bill No."]) {
+                  return pd["Bill No."] === del["Bill No."]
+                }
+                return pd["Order No."] && pd["Order No."] === del["Delivery Order No."]
+              })
               return {
                 billNo: del["Bill No."],
                 isReceiptDone: !!receipt?.["Actual"]
