@@ -16,8 +16,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { CheckCircle2, Download, Eye, Loader2, PackageCheck, Search, X, Building, Upload } from "lucide-react"
 
-const MAX_TRANSPORTER_BILL_IMAGE_SIZE = 5 * 1024 * 1024
-const ACCEPTED_TRANSPORTER_BILL_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+const MAX_TRANSPORTER_BILL_IMAGE_SIZE = 15 * 1024 * 1024
+const ACCEPTED_TRANSPORTER_BILL_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"]
 
 const HIDDEN_DETAIL_FIELDS = new Set([
   "id",
@@ -362,8 +362,8 @@ export default function FullkittingPage({ user }) {
     if (file.size > MAX_TRANSPORTER_BILL_IMAGE_SIZE) {
       toast({
         variant: "destructive",
-        title: "Invalid image",
-        description: "Transporter bill image size should be less than 5MB.",
+        title: "Invalid file",
+        description: "Transporter bill file size should be less than 15MB.",
       })
       event.target.value = ""
       return
@@ -372,8 +372,8 @@ export default function FullkittingPage({ user }) {
     if (!ACCEPTED_TRANSPORTER_BILL_IMAGE_TYPES.includes(file.type)) {
       toast({
         variant: "destructive",
-        title: "Invalid image",
-        description: "Only JPG, PNG, and WEBP images are allowed.",
+        title: "Invalid file",
+        description: "Only JPG, PNG, WEBP images, and PDF files are allowed.",
       })
       event.target.value = ""
       return
@@ -812,7 +812,7 @@ export default function FullkittingPage({ user }) {
                       <div className="border rounded-md p-3 bg-gray-50 space-y-3">
                         <Input
                           type="file"
-                          accept="image/*"
+                          accept="image/*,application/pdf"
                           onChange={handleTransporterBillImageChange}
                           disabled={submitting}
                           className="bg-white"
@@ -820,7 +820,7 @@ export default function FullkittingPage({ user }) {
                         <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
                           <span className="inline-flex items-center gap-1">
                             <Upload className="h-3.5 w-3.5" />
-                            {form.transporterBillImage ? form.transporterBillImage.name : "JPG, PNG, or WEBP up to 20MB"}
+                            {form.transporterBillImage ? form.transporterBillImage.name : "JPG, PNG, WEBP, or PDF up to 15MB"}
                           </span>
                           {selectedRow.transporterBillImage && (
                             <a href={selectedRow.transporterBillImage} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
