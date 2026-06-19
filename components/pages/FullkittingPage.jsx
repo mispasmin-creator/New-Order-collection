@@ -36,11 +36,20 @@ const formatDetailLabel = (key) =>
     .replace(/\s+\./g, ".")
     .trim()
 
-const getTransporterRateValue = (row) =>
-  Number(row["Fullkitting Amount"]) ||
-  Number(row["Transport Rate @Per Matric Ton"]) ||
-  Number(row["Fixed Amount"]) ||
-  0
+const getTransporterRateValue = (row) => {
+  if (row["Fullkitting Status"] === "Yes" || (row["Fullkitting Actual"] && String(row["Fullkitting Actual"]).trim() !== "")) {
+    return row["Fullkitting Amount"] !== null && row["Fullkitting Amount"] !== undefined
+      ? Number(row["Fullkitting Amount"])
+      : 0
+  }
+  if (row["Transport Rate @Per Matric Ton"] !== null && row["Transport Rate @Per Matric Ton"] !== undefined) {
+    return Number(row["Transport Rate @Per Matric Ton"])
+  }
+  if (row["Fixed Amount"] !== null && row["Fixed Amount"] !== undefined) {
+    return Number(row["Fixed Amount"])
+  }
+  return 0
+}
 
 const ORDER_RECEIPT_COLUMNS = `
   id,
@@ -86,7 +95,8 @@ const DISPATCH_COLUMNS = `
   "Fullkitting Status",
   "Fullkitting Remarks",
   "Fullkitting Amount",
-  "Transporter Bill Image"
+  "Transporter Bill Image",
+  "Total Transporter Amount"
 `
 
 export default function FullkittingPage({ user }) {
@@ -110,6 +120,7 @@ export default function FullkittingPage({ user }) {
     transporter: "",
     truckNo: "",
     amount: "",
+    transporterAmount: "",
     remarks: "",
     biltyNo: "",
     transporterBillImage: null,
@@ -205,10 +216,13 @@ export default function FullkittingPage({ user }) {
         const splitId = row.logistics_split_id || null
         const split = splitId ? splitsMap.get(splitId) : null
         const splitRate = split ? parseFloat(split.rate) || 0 : 0
-        const transporterRate = getTransporterRateValue(row) || splitRate
+        const transporterRate = (row["Fullkitting Status"] === "Yes" || (row["Fullkitting Actual"] && String(row["Fullkitting Actual"]).trim() !== ""))
+          ? (row["Fullkitting Amount"] !== null && row["Fullkitting Amount"] !== undefined ? Number(row["Fullkitting Amount"]) : 0)
+          : (getTransporterRateValue(row) || splitRate)
         const transporterAmount =
-          Number(row["Transporter Amount"]) ||
-          (rateType === "Per Matric Ton rate" ? truckQty * transportRate : fixedAmount)
+          (row["Total Transporter Amount"] !== null && row["Total Transporter Amount"] !== undefined)
+            ? Number(row["Total Transporter Amount"])
+            : (rateType === "Per Matric Ton rate" ? truckQty * transporterRate : null)
         const biltyNo = deliveryRow?.["Bilty No."] || deliveryRow?.["Bilty Number."] || row["Bilty No."] || ""
         const biltyCopy = deliveryRow?.["Bilty Copy"] || row["Bilty Copy"] || ""
         const fullkittingStatus = row["Fullkitting Status"] || ""
@@ -340,6 +354,7 @@ export default function FullkittingPage({ user }) {
       transporter: row.transporter || "",
       truckNo: row.truckNo || "",
       amount: row.transporterRate || "",
+      transporterAmount: row.transporterAmount || "",
       remarks: row.remarks || "",
       biltyNo: row.biltyNo || "",
       transporterBillImage: null,
@@ -348,11 +363,32 @@ export default function FullkittingPage({ user }) {
 
   const handleClose = () => {
     setSelectedRow(null)
-    setForm({ status: "No", productName: "", truckQty: "", transporter: "", truckNo: "", amount: "", remarks: "", biltyNo: "", transporterBillImage: null })
+    setForm({
+      status: "No",
+      productName: "",
+      truckQty: "",
+      transporter: "",
+      truckNo: "",
+      amount: "",
+      transporterAmount: "",
+      remarks: "",
+      biltyNo: "",
+      transporterBillImage: null,
+    })
   }
 
   const updateForm = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }))
+    setForm((prev) => {
+      const next = { ...prev, [field]: value }
+      if (selectedRow?.rateType === "Per Matric Ton rate") {
+        if (field === "truckQty" || field === "amount") {
+          const qty = Number(field === "truckQty" ? value : prev.truckQty) || 0
+          const rate = Number(field === "amount" ? value : prev.amount) || 0
+          next.transporterAmount = (qty * rate).toString()
+        }
+      }
+      return next
+    })
   }
 
   const handleTransporterBillImageChange = (event) => {
@@ -403,11 +439,22 @@ export default function FullkittingPage({ user }) {
   const handleSubmit = async () => {
     if (!selectedRow) return
     const status = form.status || "No"
-    if (status === "Yes" && (!form.productName.trim() || !form.truckQty || !form.transporter.trim() || !form.truckNo.trim() || !form.amount)) {
+    const isPerTon = selectedRow.rateType === "Per Matric Ton rate"
+    if (
+      status === "Yes" &&
+      (!form.productName.trim() ||
+        !form.truckQty ||
+        !form.transporter.trim() ||
+        !form.truckNo.trim() ||
+        !form.amount ||
+        (isPerTon && !form.transporterAmount))
+    ) {
       toast({
         variant: "destructive",
         title: "Validation",
-        description: "Product Name, Truck Qty, Transporter, Truck No, and Amount are required.",
+        description: isPerTon
+          ? "Product Name, Truck Qty, Transporter, Truck No, Amount, and Total Freight Amount are required."
+          : "Product Name, Truck Qty, Transporter, Truck No, and Amount are required.",
       })
       return
     }
@@ -428,6 +475,7 @@ export default function FullkittingPage({ user }) {
               "Transporter Name": form.transporter.trim(),
               "Truck No.": form.truckNo.trim(),
               "Fullkitting Amount": Number(form.amount) || 0,
+              "Total Transporter Amount": isPerTon ? Number(form.transporterAmount) || 0 : null,
               "Fullkitting Remarks": form.remarks.trim() || null,
               "Fullkitting Actual": getISTTimestamp(),
               "Bilty No.": form.biltyNo.trim() || null,
@@ -597,6 +645,7 @@ export default function FullkittingPage({ user }) {
                 <TableHead>Bilty Number</TableHead>
                 <TableHead>Type of Rate</TableHead>
                 <TableHead>Transporter Rate</TableHead>
+                {activeTab === "history" && <TableHead className="text-right">Total Transporter Amount</TableHead>}
                 <TableHead>Bilty Image</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>{activeTab === "pending" ? "Invoice Date" : "Fullkitting Date"}</TableHead>
@@ -605,7 +654,7 @@ export default function FullkittingPage({ user }) {
             <TableBody>
               {groupedRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "pending" ? 17 : 16} className="py-8 text-center text-gray-500">
+                  <TableCell colSpan={17} className="py-8 text-center text-gray-500">
                     No {activeTab} Fullkitting entries found
                   </TableCell>
                 </TableRow>
@@ -613,7 +662,7 @@ export default function FullkittingPage({ user }) {
                 groupedRows.map((group) => (
                   <Fragment key={group.key}>
                     <TableRow className="bg-slate-50">
-                      <TableCell colSpan={activeTab === "pending" ? 17 : 16} className="py-2 px-4">
+                      <TableCell colSpan={17} className="py-2 px-4">
                         <div className="flex flex-wrap items-center gap-3 text-sm">
                           <span className="font-semibold text-slate-900">{group.poNumber}</span>
                           <span className="text-slate-500">{group.partyName}</span>
@@ -659,6 +708,11 @@ export default function FullkittingPage({ user }) {
                         <TableCell className="text-sm">{row.biltyNo || "N/A"}</TableCell>
                         <TableCell className="text-sm">{row.rateType || "N/A"}</TableCell>
                         <TableCell className="text-sm">{fmt(row.transporterRate)}</TableCell>
+                        {activeTab === "history" && (
+                          <TableCell className="text-sm text-right font-medium">
+                            {fmt(row.transporterAmount)}
+                          </TableCell>
+                        )}
                         <TableCell className="text-sm">
                           {row.biltyCopy ? (
                             <a href={row.biltyCopy} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
@@ -721,7 +775,7 @@ export default function FullkittingPage({ user }) {
                       <p className="text-sm font-medium text-gray-900">{selectedRow.biltyNo || "N/A"}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">Rate Type</p>
+                      <p className="text-xs text-gray-500">Type of Rate</p>
                       <p className="text-sm font-medium text-gray-900">{selectedRow.rateType || "N/A"}</p>
                     </div>
                     <div>
@@ -799,6 +853,12 @@ export default function FullkittingPage({ user }) {
                       <Label>Transporter Rate *</Label>
                       <Input type="number" step="0.01" min="0" value={form.amount} onChange={(event) => updateForm("amount", event.target.value)} disabled={submitting} />
                     </div>
+                    {selectedRow.rateType === "Per Matric Ton rate" && (
+                      <div className="space-y-2">
+                        <Label>Total Transporter Amount *</Label>
+                        <Input type="number" step="0.01" min="0" value={form.transporterAmount} onChange={(event) => updateForm("transporterAmount", event.target.value)} disabled={submitting} />
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label>Bilty No.</Label>
                       <Input value={form.biltyNo} onChange={(event) => updateForm("biltyNo", event.target.value)} disabled={submitting} />
