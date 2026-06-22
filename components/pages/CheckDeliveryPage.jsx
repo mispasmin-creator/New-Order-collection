@@ -110,6 +110,11 @@ export default function CheckDeliveryPage({ user }) {
         specificConcern: order["Specific Concern"] || "",
         checkDeliveryActual: order["check_delivery_actual"] || "",
         inStockOrNot: order["check_delivery_in_stock_or_not"] || "",
+        orderNumberProduction: order["check_delivery_production_order_no"] || "",
+        qtyTransferred: order["check_delivery_qty_transferred"] ?? "",
+        batchNumberRemarks: order["check_delivery_batch_number_remarks"] || "",
+        indentSelfBatchNumber: order["check_delivery_indent_self_batch_number"] || "",
+        gpPercent: order["check_delivery_gp_percent"] ?? "",
       }))
 
       setRows(mapped)
@@ -491,6 +496,45 @@ export default function CheckDeliveryPage({ user }) {
                                       </div>
                                     )}
                                   </div>
+
+                                  {/* Check delivery submitted data */}
+                                  {row.checkDeliveryActual && (
+                                    <div className="mt-3 pt-3 border-t border-gray-100">
+                                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Check Details</p>
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-xs">
+                                        {row.orderNumberProduction && (
+                                          <div>
+                                            <span className="text-gray-500">Order Number Of Production</span>
+                                            <p className="font-medium text-gray-800">{row.orderNumberProduction}</p>
+                                          </div>
+                                        )}
+                                        {row.qtyTransferred !== "" && row.qtyTransferred !== null && (
+                                          <div>
+                                            <span className="text-gray-500">Qty Transferred</span>
+                                            <p className="font-medium text-gray-800">{row.qtyTransferred}</p>
+                                          </div>
+                                        )}
+                                        {row.batchNumberRemarks && (
+                                          <div>
+                                            <span className="text-gray-500">Batch Number Remarks</span>
+                                            <p className="font-medium text-gray-800">{row.batchNumberRemarks}</p>
+                                          </div>
+                                        )}
+                                        {row.indentSelfBatchNumber && (
+                                          <div>
+                                            <span className="text-gray-500">Indent / Self Batch Number</span>
+                                            <p className="font-medium text-gray-800">{row.indentSelfBatchNumber}</p>
+                                          </div>
+                                        )}
+                                        {row.gpPercent !== "" && row.gpPercent !== null && (
+                                          <div>
+                                            <span className="text-gray-500">GP %</span>
+                                            <p className="font-medium text-gray-800">{row.gpPercent}</p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                             </div>
