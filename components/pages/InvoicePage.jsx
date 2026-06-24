@@ -896,6 +896,9 @@ export default function MakeInvoicePage({ user }) {
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[130px]">
                   DO No.
                 </TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">
+                  Firm Name
+                </TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[160px]">
                   Product
                 </TableHead>
@@ -925,7 +928,7 @@ export default function MakeInvoicePage({ user }) {
               {displayOrders.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeTab === "history" ? 9 : 8}
+                    colSpan={activeTab === "history" ? 10 : 9}
                     className="text-center py-8 text-gray-500"
                   >
                     No {activeTab} invoices found.
@@ -937,7 +940,7 @@ export default function MakeInvoicePage({ user }) {
                     {/* PO group header */}
                     <TableRow className="bg-slate-50">
                       <TableCell
-                        colSpan={activeTab === "history" ? 9 : 8}
+                        colSpan={activeTab === "history" ? 10 : 9}
                         className="px-4 py-3"
                       >
                         <div className="flex items-center gap-3">
@@ -981,6 +984,9 @@ export default function MakeInvoicePage({ user }) {
                         </TableCell>
                         <TableCell className="py-2 px-4 text-sm font-medium">
                           {order.deliveryOrderNo || "N/A"}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 text-sm">
+                          {order.firmName || "N/A"}
                         </TableCell>
                         <TableCell className="py-2 px-4 text-sm">
                           {order.productName || "N/A"}
