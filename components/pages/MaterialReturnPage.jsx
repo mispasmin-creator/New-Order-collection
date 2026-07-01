@@ -195,17 +195,83 @@ export default function MaterialReturnPage({ user }) {
         return;
       }
 
-      // Fetch party name from ORDER RECEIPT if available
-      const firstRow = data[0];
-      let partyName = firstRow["Party Name"] || "";
-      if (!partyName && firstRow.po_id) {
-        const { data: orData } = await supabase
-          .from("ORDER RECEIPT")
-          .select('"Party Names"')
-          .eq("id", firstRow.po_id)
-          .single();
-        if (orData) partyName = orData["Party Names"] || "";
+      // Filter by user allowed firms
+      const userFirms =
+        user?.role !== "ADMIN"
+          ? user?.firm
+            ? user.firm
+                .split(",")
+                .map((f) => f.trim())
+                .filter(Boolean)
+            : []
+          : null;
+      const shouldFilter =
+        userFirms && !userFirms.includes("all") && userFirms.length > 0;
+
+      let allowedData = data;
+      
+      // Fetch all matching ORDER RECEIPT records for these specific po_ids or DO numbers to get Firm Name and Party Names
+      const poIds = allowedData.map((item) => item.po_id).filter(Boolean);
+      const doNumbers = allowedData.map((item) => item["Delivery Order No."]).filter(Boolean);
+      
+      let receipts = [];
+      if (poIds.length > 0 || doNumbers.length > 0) {
+        let orQuery = supabase.from("ORDER RECEIPT").select('id, "DO-Delivery Order No.", "Firm Name", "Party Names"');
+        
+        const orConditions = [];
+        if (poIds.length > 0) orConditions.push(`id.in.(${poIds.join(",")})`);
+        if (doNumbers.length > 0) {
+          const escapedDos = doNumbers.map((d) => `"${d}"`).join(",");
+          orConditions.push(`"DO-Delivery Order No.".in.(${escapedDos})`);
+        }
+        
+        orQuery = orQuery.or(orConditions.join(","));
+        const { data: matchedReceipts } = await orQuery;
+        if (matchedReceipts) {
+          receipts = matchedReceipts;
+        }
       }
+
+      // Filter by user allowed firms
+      if (shouldFilter) {
+        allowedData = allowedData.filter((item) => {
+          let matchedReceipt = null;
+          if (item.po_id) {
+            matchedReceipt = receipts.find((r) => r.id === item.po_id);
+          }
+          if (!matchedReceipt && item["Delivery Order No."]) {
+            matchedReceipt = receipts.find((r) => r["DO-Delivery Order No."] === item["Delivery Order No."]);
+          }
+          
+          if (matchedReceipt && matchedReceipt["Firm Name"]) {
+            return userFirms.includes(matchedReceipt["Firm Name"]);
+          }
+          return false;
+        });
+
+        if (allowedData.length === 0) {
+          toast({
+            variant: "destructive",
+            title: "Not Found",
+            description: `No invoice found with number "${invoiceLookupNo.trim()}" for your allowed firm(s).`,
+          });
+          return;
+        }
+      }
+
+      // Fetch party name(s) from ORDER RECEIPT or dispatch records
+      const uniqueParties = new Set();
+      for (const row of allowedData) {
+        let pName = row["Party Name"] || "";
+        if (!pName && row.po_id) {
+          const matchedRec = receipts.find((r) => r.id === row.po_id);
+          if (matchedRec && matchedRec["Party Names"]) {
+            pName = matchedRec["Party Names"];
+          }
+        }
+        if (pName) uniqueParties.add(pName.trim());
+      }
+      const partyName = Array.from(uniqueParties).join(" / ") || "—";
 
       // Fetch already-returned qty for this invoice from Material Return table
       const { data: existingReturns } = await supabase
@@ -224,9 +290,9 @@ export default function MaterialReturnPage({ user }) {
       }
 
       setInvoicePartyName(partyName);
-      setInvoiceProducts(data);
+      setInvoiceProducts(allowedData);
 
-      const lines = data.map((row) => {
+      const lines = allowedData.map((row) => {
         const dispatchedQty =
           parseFloat(row["Actual Truck Qty"]) ||
           parseFloat(row["Qty To Be Dispatched"]) ||

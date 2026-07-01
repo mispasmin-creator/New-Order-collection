@@ -40,6 +40,7 @@ const COLUMN_CONFIG = [
   { id: "productName", label: "Product" },
   { id: "transport", label: "Transporter Type" },
   { id: "quantity", label: "Qty" },
+  { id: "dispatched", label: "Dispatched" },
   { id: "pendingQty", label: "Pending Qty" },
   { id: "rate", label: "Rate" },
   { id: "totalValue", label: "Total Value" },
@@ -68,6 +69,7 @@ export default function OrderPage({ user }) {
       productName: true,
       transport: true,
       quantity: true,
+      dispatched: true,
       pendingQty: true,
       rate: true,
       totalValue: true,
@@ -219,7 +221,9 @@ export default function OrderPage({ user }) {
                   (row["logistics_status"] === "Approved" || row["logistics_status"] === "Pending Arrangement" || row["Actual 1"] || row["Actual 2"] || row["Actual 3"]) ? "Pending" :
                   "New Order",
           delivered: parseFloat(row["Delivered"]) || 0,
-          pendingQty: parseFloat(row["Pending Qty"]) || 0,
+          pendingQty: row["Pending Qty"] !== null && row["Pending Qty"] !== undefined && row["Pending Qty"] !== ""
+            ? Math.max(0, parseFloat(row["Pending Qty"]) || 0)
+            : Math.max(0, (parseFloat(row["Quantity"]) || 0) - (parseFloat(row["Delivered"]) || 0)),
           materialReturn: row["Material Return"],
           completeDate: formatDate(row["Complete Date"]),
           crmCustomer: row["Crm For The Customer"],
@@ -417,6 +421,8 @@ export default function OrderPage({ user }) {
           firmName: order.firmName,
           items: [],
           totalQuantity: 0,
+          totalDelivered: 0,
+          totalPendingQty: 0,
           totalValue: 0,
           date: order.partyPODate,
           products: new Set(),
@@ -426,6 +432,8 @@ export default function OrderPage({ user }) {
       }
       groups[po].items.push(order)
       groups[po].totalQuantity += (order.quantity || 0)
+      groups[po].totalDelivered += (order.delivered || 0)
+      groups[po].totalPendingQty += (order.pendingQty || 0)
       groups[po].totalValue += (order.totalValue || 0)
       if (order.productName) groups[po].products.add(order.productName)
       if (order.id > groups[po].maxId) groups[po].maxId = order.id
@@ -734,6 +742,7 @@ export default function OrderPage({ user }) {
                   {visibleColumns.productName && <TableHead className="font-semibold text-gray-900">Product</TableHead>}
                   {visibleColumns.transport && <TableHead className="font-semibold text-gray-900">Transporter Type</TableHead>}
                   {visibleColumns.quantity && <TableHead className="font-semibold text-gray-900 text-right">Qty</TableHead>}
+                  {visibleColumns.dispatched && <TableHead className="font-semibold text-gray-900 text-right">Dispatched</TableHead>}
                   {visibleColumns.pendingQty && <TableHead className="font-semibold text-gray-900 text-right">Pending Qty</TableHead>}
                   {visibleColumns.rate && <TableHead className="font-semibold text-gray-900 text-right">Rate</TableHead>}
                   {/* {visibleColumns.totalValue && <TableHead className="font-semibold text-gray-900 text-right">Basic Value</TableHead>} */}
@@ -784,7 +793,16 @@ export default function OrderPage({ user }) {
                             {group.totalQuantity.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                           </TableCell>
                         )}
-                        {visibleColumns.pendingQty && <TableCell></TableCell>}
+                        {visibleColumns.dispatched && (
+                          <TableCell className="text-right font-semibold text-gray-700">
+                            {group.totalDelivered.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                          </TableCell>
+                        )}
+                        {visibleColumns.pendingQty && (
+                          <TableCell className="text-right font-semibold text-amber-600">
+                            {group.totalPendingQty.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                          </TableCell>
+                        )}
                         {visibleColumns.rate && <TableCell></TableCell>}
                         {/* {visibleColumns.totalValue && (
                           <TableCell className="text-right font-semibold text-gray-700">
@@ -846,6 +864,11 @@ export default function OrderPage({ user }) {
                               {order.typeOfMeasurement && (
                                 <div className="text-xs text-gray-400">{order.typeOfMeasurement}</div>
                               )}
+                            </TableCell>
+                          )}
+                          {visibleColumns.dispatched && (
+                            <TableCell className="text-right text-gray-600">
+                              {order.delivered || "0"}
                             </TableCell>
                           )}
                           {visibleColumns.pendingQty && (
