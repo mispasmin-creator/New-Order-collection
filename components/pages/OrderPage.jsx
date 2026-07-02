@@ -61,6 +61,8 @@ export default function OrderPage({ user }) {
   const [firmFilter, setFirmFilter] = useState("all")
   const [managerFilter, setManagerFilter] = useState("all")
   const [productFilter, setProductFilter] = useState("all")
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
   const [visibleColumns, setVisibleColumns] = useState(() => {
     const defaultState = {
       date: true,
@@ -363,7 +365,38 @@ export default function OrderPage({ user }) {
   const getFilteredOrders = () => {
     let filtered = orders
 
+    const getYYYYMMDD = (dateVal) => {
+      if (!dateVal) return ""
+      try {
+        const date = new Date(dateVal)
+        if (isNaN(date.getTime())) return ""
+        const y = date.getFullYear()
+        const m = String(date.getMonth() + 1).padStart(2, '0')
+        const d = String(date.getDate()).padStart(2, '0')
+        return `${y}-${m}-${d}`
+      } catch {
+        return ""
+      }
+    }
 
+    // Apply date range filter
+    if (startDate) {
+      filtered = filtered.filter(order => {
+        const rawDate = order.rawData?.["Party PO Date"]
+        if (!rawDate) return false
+        const orderDateStr = getYYYYMMDD(rawDate)
+        return orderDateStr >= startDate
+      })
+    }
+
+    if (endDate) {
+      filtered = filtered.filter(order => {
+        const rawDate = order.rawData?.["Party PO Date"]
+        if (!rawDate) return false
+        const orderDateStr = getYYYYMMDD(rawDate)
+        return orderDateStr <= endDate
+      })
+    }
 
     // Apply firm filter
     if (firmFilter !== "all") {
@@ -408,6 +441,22 @@ export default function OrderPage({ user }) {
   }
 
   const filteredOrders = getFilteredOrders()
+
+  const productStats = useMemo(() => {
+    if (productFilter === "all") return null
+
+    let totalQty = 0
+    let totalDispatched = 0
+    let totalPending = 0
+
+    filteredOrders.forEach(order => {
+      totalQty += (order.quantity || 0)
+      totalDispatched += (order.delivered || 0)
+      totalPending += (order.pendingQty || 0)
+    })
+
+    return { totalQty, totalDispatched, totalPending }
+  }, [filteredOrders, productFilter])
 
   const groupedOrders = useMemo(() => {
     const groups = {}
@@ -585,73 +634,25 @@ export default function OrderPage({ user }) {
       </div>
 
       <div className="bg-white border rounded-md shadow-sm p-4">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
+        <div className="flex flex-col gap-4">
+          {/* Row 1: Search and Actions */}
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="relative flex-1 w-full">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
                 placeholder="Search by PO Number, Party Name or Firm..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-9"
+                className="pl-10 h-9 w-full"
               />
             </div>
-          </div>
-
-          <div className="flex flex-wrap gap-4">
-            <Select value={firmFilter} onValueChange={setFirmFilter}>
-              <SelectTrigger className="w-[180px] h-9">
-                <SelectValue placeholder="All Firms" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Firms</SelectItem>
-                {uniqueFirms.map(firm => (
-                  <SelectItem key={firm} value={firm}>{firm}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px] h-9">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                {uniqueStatuses.map(status => (
-                  <SelectItem key={status} value={status}>{status}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={managerFilter} onValueChange={setManagerFilter}>
-              <SelectTrigger className="w-[180px] h-9">
-                <SelectValue placeholder="Manager" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Managers</SelectItem>
-                {uniqueManagers.map(manager => (
-                  <SelectItem key={manager} value={manager}>{manager}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={productFilter} onValueChange={setProductFilter}>
-              <SelectTrigger className="w-[220px] h-9">
-                <SelectValue placeholder="Product" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Products</SelectItem>
-                {uniqueProducts.map(product => (
-                  <SelectItem key={product} value={product}>{product}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <div className="flex gap-2">
+            
+            <div className="flex items-center gap-2 self-end sm:self-auto">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="h-9 px-3">
+                  <Button variant="outline" className="h-9 px-3 flex items-center gap-2">
                     <Filter className="h-4 w-4" />
+                    <span>Columns</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56 max-h-[60vh] overflow-y-auto">
@@ -677,6 +678,8 @@ export default function OrderPage({ user }) {
                       setFirmFilter("all")
                       setManagerFilter("all")
                       setProductFilter("all")
+                      setStartDate("")
+                      setEndDate("")
                     }}
                   >
                     Reset Filters
@@ -692,6 +695,87 @@ export default function OrderPage({ user }) {
               >
                 <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
               </Button>
+            </div>
+          </div>
+
+          {/* Row 2: Select Filters and Date Range */}
+          <div className="flex flex-wrap items-center gap-3">
+            <Select value={firmFilter} onValueChange={setFirmFilter}>
+              <SelectTrigger className="w-full sm:w-[150px] h-9">
+                <SelectValue placeholder="All Firms" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Firms</SelectItem>
+                {uniqueFirms.map(firm => (
+                  <SelectItem key={firm} value={firm}>{firm}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-[150px] h-9">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                {uniqueStatuses.map(status => (
+                  <SelectItem key={status} value={status}>{status}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={managerFilter} onValueChange={setManagerFilter}>
+              <SelectTrigger className="w-full sm:w-[150px] h-9">
+                <SelectValue placeholder="Manager" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Managers</SelectItem>
+                {uniqueManagers.map(manager => (
+                  <SelectItem key={manager} value={manager}>{manager}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={productFilter} onValueChange={setProductFilter}>
+              <SelectTrigger className="w-full sm:w-[180px] h-9">
+                <SelectValue placeholder="Product" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Products</SelectItem>
+                {uniqueProducts.map(product => (
+                  <SelectItem key={product} value={product}>{product}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-2 border rounded-md px-3 py-1 bg-gray-50/50 hover:bg-gray-50 focus-within:bg-white transition-colors duration-200 h-9 w-full sm:w-auto justify-between sm:justify-start">
+              <span className="text-xs font-semibold text-gray-500 whitespace-nowrap">PO Date Range:</span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="bg-transparent border-0 text-sm focus:outline-none focus:ring-0 text-gray-700 w-[120px] h-7 cursor-pointer"
+                />
+                <span className="text-gray-400 font-medium text-xs">to</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="bg-transparent border-0 text-sm focus:outline-none focus:ring-0 text-gray-700 w-[120px] h-7 cursor-pointer"
+                />
+              </div>
+              {(startDate || endDate) && (
+                <button
+                  onClick={() => {
+                    setStartDate("")
+                    setEndDate("")
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors ml-1 p-0.5 rounded-full hover:bg-gray-200"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -712,11 +796,21 @@ export default function OrderPage({ user }) {
 
       {/* Orders Table */}
       <div className="bg-white border rounded-md shadow-sm">
-        <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+        <div className="p-4 border-b flex flex-col sm:flex-row sm:justify-between sm:items-center bg-gray-50 gap-4">
           <h2 className="font-semibold text-gray-700">Order List</h2>
-          <span className="text-sm text-gray-500">
-            {filteredOrders.length} orders
-          </span>
+          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+            <span className="font-medium">{filteredOrders.length} orders</span>
+            {productFilter !== "all" && productStats && (
+              <div className="flex flex-wrap items-center gap-3 bg-blue-50 text-blue-800 px-3 py-1.5 rounded-lg border border-blue-100 font-medium shadow-sm text-xs sm:text-sm">
+                <span className="text-xs text-blue-600 font-bold tracking-wide uppercase">{productFilter} Stats:</span>
+                <span>Total Qty: <strong className="text-blue-950 font-bold">{productStats.totalQty.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</strong></span>
+                <span className="text-blue-200">|</span>
+                <span>Dispatched Qty: <strong className="text-green-700 font-bold">{productStats.totalDispatched.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</strong></span>
+                <span className="text-blue-200">|</span>
+                <span>Pending Qty: <strong className="text-amber-700 font-bold">{productStats.totalPending.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</strong></span>
+              </div>
+            )}
+          </div>
         </div>
 
         {filteredOrders.length === 0 ? (
