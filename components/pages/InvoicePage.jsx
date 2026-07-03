@@ -56,6 +56,7 @@ export default function MakeInvoicePage({ user }) {
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [selectedRowIds, setSelectedRowIds] = useState(new Set());
   const [invoiceNo, setInvoiceNo] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState("");
   const [invoiceCopyFile, setInvoiceCopyFile] = useState(null);
   // Per-product editable lines: [{ id, productName, qty, rate, gstPct }]
   const [productLines, setProductLines] = useState([]);
@@ -324,6 +325,7 @@ export default function MakeInvoicePage({ user }) {
       })),
     );
     setInvoiceNo("");
+    setInvoiceDate("");
     setInvoiceCopyFile(null);
   };
 
@@ -347,6 +349,7 @@ export default function MakeInvoicePage({ user }) {
     setSelectedRowIds(new Set());
     setProductLines([]);
     setInvoiceNo("");
+    setInvoiceDate("");
     setInvoiceCopyFile(null);
   };
 
@@ -491,6 +494,14 @@ export default function MakeInvoicePage({ user }) {
       });
       return;
     }
+    if (!invoiceDate) {
+      toast({
+        variant: "destructive",
+        title: "Validation",
+        description: "Invoice Date is required.",
+      });
+      return;
+    }
     if (!invoiceCopyFile) {
       toast({
         variant: "destructive",
@@ -528,6 +539,7 @@ export default function MakeInvoicePage({ user }) {
             .update({
               Actual4: actualDateTime,
               "Bill Number": invoiceNo.trim(),
+              "Bill Date": invoiceDate,
               "Bill Copy": billCopyUrl,
             })
             .eq("id", row.id);
@@ -538,7 +550,7 @@ export default function MakeInvoicePage({ user }) {
             const { error: deliveryInsertError } = await supabase.from("DELIVERY").insert([
               {
                 "Timestamp": actualDateTime,
-                "Bill Date": null,
+                "Bill Date": invoiceDate,
                 "Delivery Order No.": row.deliveryOrderNo,
                 "Party Name": row.partyName,
                 "Product Name": row.productName,
@@ -1355,7 +1367,7 @@ export default function MakeInvoicePage({ user }) {
               </div>
 
               {/* Invoice details */}
-              <div className="border-t pt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="border-t pt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">
                     Invoice Number <span className="text-red-500">*</span>
@@ -1365,6 +1377,18 @@ export default function MakeInvoicePage({ user }) {
                     placeholder="Enter invoice number"
                     value={invoiceNo}
                     onChange={(e) => setInvoiceNo(e.target.value)}
+                    disabled={submitting}
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    Invoice Date <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    type="date"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
                     disabled={submitting}
                     className="h-10"
                   />
@@ -1414,7 +1438,7 @@ export default function MakeInvoicePage({ user }) {
                 <Button
                   onClick={handleSubmit}
                   className="bg-green-600 hover:bg-green-700 sm:w-auto w-full"
-                  disabled={submitting || !invoiceNo.trim() || !invoiceCopyFile}
+                  disabled={submitting || !invoiceNo.trim() || !invoiceDate || !invoiceCopyFile}
                 >
                   {submitting ? (
                     <>
