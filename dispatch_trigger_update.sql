@@ -3,6 +3,9 @@ CREATE OR REPLACE FUNCTION public.handle_dispatch_workflow()
 RETURNS TRIGGER AS $$
 BEGIN
 
+  -- Sync Order Receipt id from po_id
+  NEW."Order Receipt id" := NEW.po_id;
+
   -- On INSERT: Set Planned1 equal to Timestamp
   IF TG_OP = 'INSERT' THEN
     IF NEW."Planned1" IS NULL THEN
