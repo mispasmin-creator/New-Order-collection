@@ -2,16 +2,17 @@ import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import { Analytics } from '@vercel/analytics/next'
+// @ts-ignore: allow importing global CSS without type declarations
 import './globals.css'
 import { AuthProvider } from '@/components/providers/AuthProvider'
 import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
-  title: 'Order2Delivery System',
+  title: 'New Order To Collection APP',
   description: 'Management dashboard for orders and deliveries',
   icons: {
-    icon: '/passary.jpeg',
-    apple: '/passary.jpeg',
+    icon: '/logo.png',
+    apple: '/logo.png',
   },
 }
 

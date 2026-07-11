@@ -311,7 +311,14 @@ export default function DispatchPlanningPage({ user }) {
       setSplitRows(mergedSplits)
 
       setDispatchHistory([
-        ...(dispatchData || []).map((row) => {
+        ...(dispatchData || [])
+          .filter((row) => {
+            // orderMap is already firm-scoped (built from the firm-filtered orderQuery above).
+            // Without this, a firm-restricted user's History tab would show every firm's
+            // dispatch records, since the DISPATCH query itself isn't firm-filtered.
+            return row.po_id && orderMap.has(row.po_id)
+          })
+          .map((row) => {
           const order = row.po_id ? orderMap.get(row.po_id) : null
           return {
             id: row.id,

@@ -152,13 +152,21 @@ export default function LogisticsApproval({ user }) {
     setAllocations({})
 
     try {
-      const { data: allOrders, error: ordersErr } = await supabase
+      // PO Number is not unique across firms, so scope this lookup to the group's own
+      // firm too — otherwise a colliding PO number in another firm could surface (and
+      // then let this user approve/reject) that other firm's logistics plan.
+      const groupFirmName = group.rows[0]?.["Firm Name"] || group.rows[0]?.firmName || ""
+
+      let allOrdersQuery = supabase
         .from("ORDER RECEIPT")
         .select("id")
         .eq('"PARTY PO NO (As Per Po Exact)"', group.poNumber)
-      
+      if (groupFirmName) allOrdersQuery = allOrdersQuery.eq("Firm Name", groupFirmName)
+
+      const { data: allOrders, error: ordersErr } = await allOrdersQuery
+
       if (ordersErr) throw ordersErr;
-      
+
       const allPoOrderIds = allOrders?.map(o => o.id) || []
 
       const { data: plans, error: planError } = await supabase

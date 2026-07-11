@@ -1,12 +1,12 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { supabase } from "@/lib/supabaseClient"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import Image from "next/image"
 import {
   LayoutDashboard,
+  Activity,
   ShoppingCart,
   FileCheck,
   CheckSquare,
@@ -16,23 +16,19 @@ import {
   FileText,
   Receipt,
   Scale,
-  FileImage,
-  Archive,
   LogOut,
   User,
-  X,
-  Bell,
   RotateCcw,
   PackageCheck,
   BadgeCheck,
   ShieldCheck,
   Users,
 } from "lucide-react"
-import { useEffect, useState } from "react"
 
 // Map page names to icons
 const pageIcons = {
   "Dashboard": LayoutDashboard,
+  "Process Dashboard": Activity,
   "Order": ShoppingCart,
   "Check PO": FileCheck,
   "Received Accounts": FileText,
@@ -60,6 +56,7 @@ const pageIcons = {
 
 const pageRoutes = {
   "Dashboard": "/dashboard",
+  "Process Dashboard": "/process-dashboard",
   "Order": "/order",
   "Make PI": "/payments-pi",
   "Received PI Payment": "/received-pi-payment",
@@ -89,6 +86,7 @@ const pageRoutes = {
 
 const defaultPageOrder = [
   "Dashboard",
+  "Process Dashboard",
   "Order",
   "Check PO",
   "Received Accounts",
@@ -113,420 +111,8 @@ const defaultPageOrder = [
   "Received PI Payment"
 ]
 
-import { useNotification } from "@/components/providers/NotificationProvider"
-
 export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen }) {
-  const { counts: notificationCounts, updateCounts } = useNotification()
-  const [isLoading, setIsLoading] = useState(true)
   const pathname = usePathname()
-
-  useEffect(() => {
-    fetchNotificationCounts()
-
-    // Event listener for external refresh triggers
-    const handleRefresh = () => fetchNotificationCounts()
-    window.addEventListener('refresh-sidebar-counts', handleRefresh)
-
-    return () => {
-      window.removeEventListener('refresh-sidebar-counts', handleRefresh)
-    }
-  }, [user?.Username, user?.role, user?.firm])
-
-  const fetchNotificationCounts = async () => {
-    try {
-      setIsLoading(true)
-      const counts = {}
-      let accessibleOrderIds = []
-      const userFirms = user.role !== "ADMIN"
-        ? (user.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
-        : []
-      const shouldFilterByFirm = user.role !== "ADMIN" && !userFirms.includes('all') && userFirms.length > 0
-
-      // Fetch real-time count for "Order" from Supabase
-      let orderCountQuery = supabase
-        .from('ORDER RECEIPT')
-        .select('id', { count: 'exact', head: !shouldFilterByFirm })
-
-      if (shouldFilterByFirm) {
-        orderCountQuery = orderCountQuery.in('Firm Name', userFirms)
-      }
-
-      const { data: orderRows, count: orderCount, error: orderError } = await orderCountQuery
-
-      if (!orderError && orderCount !== null) {
-        counts["Order"] = orderCount
-      }
-
-      accessibleOrderIds = shouldFilterByFirm ? (orderRows || []).map((row) => row.id) : []
-
-      // Fetch real-time count for "Check PO" from Supabase
-      let checkPOQuery = supabase
-        .from('ORDER RECEIPT')
-        .select('"Planned 1", "Actual 1", "Firm Name"')
-        .not('Planned 1', 'is', null)
-
-      if (user.role !== "ADMIN") {
-        const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
-        if (!userFirms.includes('all')) {
-          checkPOQuery = checkPOQuery.in('Firm Name', userFirms)
-        }
-      }
-
-      const { data: checkPOData, error: checkPOError } = await checkPOQuery
-
-      if (!checkPOError && checkPOData) {
-        // Filter in JS to ensure we don't count empty strings if they slip through
-        const count = checkPOData.filter(row =>
-          row["Planned 1"] && // robustly check if planned is truthy
-          String(row["Planned 1"]).trim() !== "" &&
-          (!row["Actual 1"] || String(row["Actual 1"]).trim() === "")
-        ).length
-        counts["Check PO"] = count
-      }
-
-      // Fetch real-time count for "Received Accounts" from Supabase
-      let receivedAccQuery = supabase
-        .from('ORDER RECEIPT')
-        .select('"Planned 2", "Actual 2", "Firm Name"')
-        .not('Planned 2', 'is', null)
-
-      if (user.role !== "ADMIN") {
-        const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
-        if (!userFirms.includes('all')) {
-          receivedAccQuery = receivedAccQuery.in('Firm Name', userFirms)
-        }
-      }
-
-      const { data: receivedAccData, error: receivedAccError } = await receivedAccQuery
-
-      if (!receivedAccError && receivedAccData) {
-        const count = receivedAccData.filter(row =>
-          row["Planned 2"] &&
-          String(row["Planned 2"]).trim() !== "" &&
-          (!row["Actual 2"] || String(row["Actual 2"]).trim() === "")
-        ).length
-        counts["Received Accounts"] = count
-      }
-
-      // Fetch real-time count for "Make PI" — POs with Actual 2 set that don't have PI created yet
-      let makePIQuery = supabase
-        .from('ORDER RECEIPT')
-        .select('"PARTY PO NO (As Per Po Exact)", "Actual 2", "Firm Name"')
-        .not('Actual 2', 'is', null)
-
-      if (user.role !== "ADMIN") {
-        const userFirms = user.firm ? user.firm.split(',').map(f => f.trim()) : []
-        if (!userFirms.includes('all')) {
-          makePIQuery = makePIQuery.in('Firm Name', userFirms)
-        }
-      }
-
-      const { data: makePIData, error: makePIError } = await makePIQuery
-      if (!makePIError && makePIData) {
-        // Get PO numbers that already have PIs
-        const { data: existingPIs } = await supabase.from('po_pi_records').select('po_number')
-        const existingPOSet = new Set((existingPIs || []).map(r => r.po_number))
-        const uniquePOs = new Set(makePIData.map(r => r["PARTY PO NO (As Per Po Exact)"]))
-        counts["Make PI"] = [...uniquePOs].filter(po => !existingPOSet.has(po)).length
-      }
-
-      // Fetch count for "Received PI Payment" — pending PI slabs
-      const { data: pendingPIs, error: pendingPIsError } = await supabase
-        .from('po_pi_records')
-        .select('po_number')
-        .eq('status', 'Pending')
-      if (!pendingPIsError && pendingPIs) {
-        counts["Received PI Payment"] = new Set(pendingPIs.map(r => r.po_number)).size
-      }
-
-      if (!shouldFilterByFirm || accessibleOrderIds.length > 0) {
-        let checkDeliveryQuery = supabase
-          .from('ORDER RECEIPT')
-          .select('id', { count: 'exact', head: true })
-          .not('Actual 2', 'is', null)
-          .is('check_delivery_actual', null)
-        if (shouldFilterByFirm) checkDeliveryQuery = checkDeliveryQuery.in('id', accessibleOrderIds)
-
-        const { count: checkDeliveryCount, error: checkDeliveryError } = await checkDeliveryQuery
-
-        if (!checkDeliveryError && checkDeliveryCount !== null) {
-          counts["Check for Delivery"] = checkDeliveryCount
-        }
-      } else {
-        counts["Check for Delivery"] = 0
-      }
-
-      if (!shouldFilterByFirm || accessibleOrderIds.length > 0) {
-        let dispatchStartQuery = supabase
-          .from('po_logistics_splits')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'Checked')
-          .is('dispatch_record_id', null)
-        if (shouldFilterByFirm) dispatchStartQuery = dispatchStartQuery.in('po_id', accessibleOrderIds)
-
-        const { count: dispatchStartCount, error: dispatchStartError } = await dispatchStartQuery
-
-        if (!dispatchStartError && dispatchStartCount !== null) {
-          counts["Dispatch Planning"] = dispatchStartCount
-        }
-
-        let accountsQuery = supabase
-          .from('po_logistics_splits')
-          .select('id', { count: 'exact', head: true })
-          .eq('status', 'Dispatched')
-        if (shouldFilterByFirm) accountsQuery = accountsQuery.in('po_id', accessibleOrderIds)
-
-        const { count: accountsCount, error: accountsError } = await accountsQuery
-
-        if (!accountsError && accountsCount !== null) {
-          counts["Accounts Approval"] = accountsCount
-        }
-      } else {
-        counts["Dispatch Planning"] = 0
-        counts["Accounts Approval"] = 0
-      }
-
-      // Fetch real-time count for "Logistic" from Supabase
-      if (shouldFilterByFirm && accessibleOrderIds.length === 0) {
-        counts["Logistic"] = 0
-      } else {
-        let logisticQuery = supabase
-          .from('DISPATCH')
-          .select('Planned1, Actual1, po_id')
-          .not('Planned1', 'is', null)
-
-        if (shouldFilterByFirm) {
-          logisticQuery = logisticQuery.in('po_id', accessibleOrderIds)
-        }
-
-        const { data: logisticData, error: logisticError } = await logisticQuery
-
-        if (!logisticError && logisticData) {
-          const count = logisticData.filter(row =>
-            row["Planned1"] &&
-            (!row["Actual1"] || String(row["Actual1"]).trim() === "")
-          ).length
-          counts["Logistic"] = count
-        }
-      }
-
-      // Fetch real-time count for "Load Material" from Supabase
-      const { data: loadMaterialData, error: loadMaterialError } = await supabase
-        .from('DISPATCH')
-        .select('Planned2, Actual2')
-        .not('Planned2', 'is', null)
-
-      if (!loadMaterialError && loadMaterialData) {
-        const count = loadMaterialData.filter(row =>
-          row["Planned2"] &&
-          (!row["Actual2"] || String(row["Actual2"]).trim() === "")
-        ).length
-        counts["Load Material"] = count
-      }
-
-      // Fetch real-time count for "Invoice" from Supabase
-      const { data: invoiceData, error: invoiceError } = await supabase
-        .from('DISPATCH')
-        .select('Planned4, Actual4')
-        .not('Planned4', 'is', null)
-
-      if (!invoiceError && invoiceData) {
-        const count = invoiceData.filter(row =>
-          row["Planned4"] &&
-          (!row["Actual4"] || String(row["Actual4"]).trim() === "")
-        ).length
-        counts["Invoice"] = count
-      }
-
-      // Fetch real-time count for "Fullkitting" from invoice history
-      const { data: fullkittingDispatchData, error: fullkittingDispatchError } = await supabase
-        .from('DISPATCH')
-        .select('"D-Sr Number", Actual4, "Fullkitting Actual", "Type Of Transporting", "Type Of Transporting  "')
-        .not('Actual4', 'is', null)
-
-      const { data: fullkittingDeliveryData, error: fullkittingDeliveryError } = await supabase
-        .from('DELIVERY')
-        .select('"D-Sr Number", Actual3')
-
-      if (!fullkittingDispatchError && !fullkittingDeliveryError && fullkittingDispatchData && fullkittingDeliveryData) {
-        const deliveryMap = new Map()
-        fullkittingDeliveryData.forEach(row => {
-          if (row["D-Sr Number"]) {
-            deliveryMap.set(row["D-Sr Number"], row)
-          }
-        })
-
-        const count = fullkittingDispatchData.filter(row => {
-          if (row["Fullkitting Actual"] && String(row["Fullkitting Actual"]).trim() !== "") {
-            return false
-          }
-          
-          const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
-          const typeOfTransportingLower = typeOfTransporting.toLowerCase().trim()
-          const dSrNumber = row["D-Sr Number"]
-          const deliveryRow = dSrNumber ? deliveryMap.get(dSrNumber) : null
-          
-          const isReady = typeOfTransportingLower === "ex-factory" || typeOfTransportingLower === "ex factory"
-            ? !!deliveryRow 
-            : !!(deliveryRow && deliveryRow.Actual3)
-             
-          return isReady
-        }).length
-
-        counts["Fullkitting"] = count
-      }
-
-      // Fetch real-time count for "TC"
-      const { data: tcDispatchData, error: tcDispatchError } = await supabase
-        .from('DISPATCH')
-        .select('"D-Sr Number", Actual4, "Type Of Transporting", "Type Of Transporting  ", "TC Required"')
-        .not('Actual4', 'is', null)
-
-      const { data: tcDeliveryData, error: tcDeliveryError } = await supabase
-        .from('DELIVERY')
-        .select('"D-Sr Number"')
-
-      if (!tcDispatchError && !tcDeliveryError && tcDispatchData && tcDeliveryData) {
-        const completedDispatchNumbers = new Set(
-          tcDeliveryData
-            .map(row => row["D-Sr Number"])
-            .filter(value => value && String(value).trim() !== "")
-        )
-
-        const count = tcDispatchData.filter(row => {
-          const dispatchNumber = row["D-Sr Number"]
-          const isTCRequired = row["TC Required"] === "Yes"
-          const readyForTC = isTCRequired && row["Actual4"]
-          return readyForTC && dispatchNumber && !completedDispatchNumbers.has(dispatchNumber)
-        }).length
-
-        counts["TC"] = count
-      }
-
-      // Fetch Bilty Update counts (grouped pending shipments)
-      let biltyUpdateCount = 0
-      try {
-        const userFirms = user?.role !== "ADMIN"
-          ? (user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
-          : null
-        const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
-
-        let allowedDoNumbers = []
-        if (shouldFilter) {
-          const { data: orRows } = await supabase
-            .from('ORDER RECEIPT')
-            .select('"DO-Delivery Order No."')
-            .in('Firm Name', userFirms)
-          allowedDoNumbers = (orRows || [])
-            .map(r => r['DO-Delivery Order No.'])
-            .filter(Boolean)
-        }
-
-        let deliveryQuery = supabase
-          .from('DELIVERY')
-          .select('"Planned 3", "Actual3", "Type Of Transporting", "Bill No.", "Delivery Order No."')
-          .not('Planned 3', 'is', null)
-        if (shouldFilter && allowedDoNumbers.length > 0) {
-          deliveryQuery = deliveryQuery.in('"Delivery Order No."', allowedDoNumbers)
-        }
-
-        let postDeliveryQuery = supabase
-          .from('POST DELIVERY')
-          .select('Planned, Actual, "Bill No.", "Order No."')
-          .not('Planned', 'is', null)
-        if (shouldFilter && allowedDoNumbers.length > 0) {
-          postDeliveryQuery = postDeliveryQuery.in('"Order No."', allowedDoNumbers)
-        }
-
-        const [deliveryRes, postDeliveryRes] = await Promise.all([
-          deliveryQuery,
-          postDeliveryQuery
-        ])
-
-        if (!deliveryRes.error && deliveryRes.data && !postDeliveryRes.error && postDeliveryRes.data) {
-          const shipments = deliveryRes.data
-            .filter(del => {
-              const type = del["Type Of Transporting"] || "";
-              return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
-            })
-            .map(del => {
-              const receipt = postDeliveryRes.data.find(pd => {
-                if (del["Bill No."]) {
-                  return pd["Bill No."] === del["Bill No."]
-                }
-                return pd["Order No."] && pd["Order No."] === del["Delivery Order No."]
-              })
-              return {
-                billNo: del["Bill No."],
-                isReceiptDone: !!receipt?.["Actual"]
-              }
-            })
-
-          const pendingShipments = shipments.filter(s => !s.isReceiptDone)
-          const invoiceSet = new Set()
-          let strayCount = 0
-          pendingShipments.forEach(s => {
-            if (s.billNo) {
-              invoiceSet.add(s.billNo)
-            } else {
-              strayCount++
-            }
-          })
-          biltyUpdateCount = invoiceSet.size + strayCount
-        }
-      } catch (err) {
-        console.error("Error calculating Bilty Update count:", err)
-      }
-
-      counts["Bilty Update"] = biltyUpdateCount
-      counts["Bilty Entry"] = biltyUpdateCount
-      counts["MATERIAL RECEIPT"] = 0
-
-      // Fetch real-time count for "Debit Note" — management-approved returns pending note issuance
-      const { data: debitNoteData, error: debitNoteError } = await supabase
-        .from("Material Return")
-        .select('"Actual5", "Debit Note Issued At", "Reason Of Material Return"')
-        .not("Actual5", "is", null)
-      if (!debitNoteError && debitNoteData) {
-        counts["Debit Note"] = debitNoteData.filter(
-          (r) =>
-            r["Reason Of Material Return"] !== "Material Return" &&
-            (!r["Debit Note Issued At"] || String(r["Debit Note Issued At"]).trim() === "")
-        ).length
-      }
-
-      // Fetch real-time count for "Return of Material" — Material Return reason, approved, not yet dispatched
-      const { data: romData, error: romError } = await supabase
-        .from("Material Return")
-        .select('"Actual5", "Return Dispatched At", "Reason Of Material Return"')
-        .not("Actual5", "is", null)
-        .eq("Reason Of Material Return", "Material Return")
-      if (!romError && romData) {
-        counts["Return of Material"] = romData.filter(
-          (r) => !r["Return Dispatched At"] || String(r["Return Dispatched At"]).trim() === ""
-        ).length
-      }
-
-      // Fetch real-time count for "Management Approval" — Material Return entries pending Actual5
-      const { data: mgmtData, error: mgmtError } = await supabase
-        .from("Material Return")
-        .select('"Time Stamp", "Actual5"')
-        .not("Time Stamp", "is", null)
-      if (!mgmtError && mgmtData) {
-        counts["Management Approval"] = mgmtData.filter(
-          (r) => !r["Actual5"] || String(r["Actual5"]).trim() === ""
-        ).length
-      }
-
-      updateCounts(counts)
-      console.log("Notification counts fetched:", counts)
-    } catch (error) {
-      console.error("Error fetching notification counts:", error)
-      // Don't clear counts on error to avoid flickering if we have data
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   // Get user's accessible pages and sort them
   const hasAllAccess = user.pageAccess && user.pageAccess.some(p => p.toLowerCase().trim() === "all");
@@ -547,11 +133,6 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
     return pages;
   })();
 
-  // Get notification count for a specific page
-  const getNotificationCount = (pageName) => {
-    return notificationCounts[pageName] || 0
-  }
-
   // Helper to check if page is active
   const isPageActive = (pageName) => {
     const route = pageRoutes[pageName]
@@ -562,15 +143,12 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
   return (
     <>
       {/* Desktop Sidebar */}
-      <div className="hidden lg:flex w-64 bg-white shadow-lg flex-col">
+      <div className="hidden lg:flex w-64 bg-white shadow-lg flex-col border-r border-[#5b6e33]/10">
         <SidebarContent
           user={user}
           pathname={pathname}
           onLogout={onLogout}
           userPages={userPages}
-          getNotificationCount={getNotificationCount}
-          isLoading={isLoading}
-          onRefreshCounts={fetchNotificationCounts}
           setSidebarOpen={setSidebarOpen}
         />
       </div>
@@ -582,21 +160,15 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
       >
         <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
           <div className="flex items-center gap-3">
-            <Image src="/passary.jpeg" alt="PASMIN Logo" width={60} height={60} style={{ height: 'auto' }} className="rounded-lg" />
+            <Image src="/logo.png" alt="PASMIN Logo" width={60} height={60} style={{ height: 'auto' }} className="rounded-lg" />
             <h1 className="text-xl font-bold text-gray-800">Order Management System</h1>
           </div>
-          {/* <button onClick={() => setSidebarOpen(false)} className="p-2 rounded-md text-gray-600 hover:bg-gray-100">
-            <X className="w-5 h-5" />
-          </button> */}
         </div>
         <SidebarContent
           user={user}
           pathname={pathname}
           onLogout={onLogout}
           userPages={userPages}
-          getNotificationCount={getNotificationCount}
-          isLoading={isLoading}
-          onRefreshCounts={fetchNotificationCounts}
           isMobile={true}
           setSidebarOpen={setSidebarOpen}
         />
@@ -605,7 +177,7 @@ export default function Sidebar({ user, onLogout, sidebarOpen, setSidebarOpen })
   )
 }
 
-function SidebarContent({ user, pathname, onLogout, userPages, getNotificationCount, isLoading, onRefreshCounts, isMobile = false, setSidebarOpen }) {
+function SidebarContent({ user, pathname, onLogout, userPages, isMobile = false, setSidebarOpen }) {
 
   const isPageActive = (pageName) => {
     const route = pageRoutes[pageName];
@@ -617,32 +189,15 @@ function SidebarContent({ user, pathname, onLogout, userPages, getNotificationCo
     <div className="flex flex-col flex-1 min-h-0">
       {/* Header - only show on desktop */}
       {!isMobile && (
-        <div className="p-6 border-b">
+        <div className="p-6 border-b bg-gradient-to-b from-[#5b6e33]/5 to-transparent">
           <div className="flex items-center gap-3 mb-3">
-            <Image src="/passary.jpeg" alt="PASMIN Logo" width={80} height={80} style={{ height: 'auto' }} className="rounded-lg" />
+            <div className="p-1.5 rounded-xl bg-[#5b6e33]/10">
+              <Image src="/logo.png" alt="PASMIN Logo" width={56} height={56} style={{ height: 'auto' }} className="rounded-lg" />
+            </div>
             <h1 className="text-xl font-bold text-gray-800">Order Management System</h1>
-            {/* <button
-              onClick={onRefreshCounts}
-              className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-              title="Refresh notification counts"
-            >
-              <svg
-                className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                />
-              </svg>
-            </button> */}
           </div>
           <div className="mt-2 flex items-center space-x-2">
-            <User className="h-4 w-4 text-gray-500 flex-shrink-0" />
+            <User className="h-4 w-4 text-[#5b6e33]/70 flex-shrink-0" />
             <div className="min-w-0">
               <p className="text-sm font-medium text-gray-700 truncate">{user.name}</p>
               <p className="text-xs text-gray-500 truncate">
@@ -656,34 +211,13 @@ function SidebarContent({ user, pathname, onLogout, userPages, getNotificationCo
 
       {/* Mobile user info */}
       {isMobile && (
-        <div className="p-4 border-b bg-gray-50">
+        <div className="p-4 border-b bg-[#5b6e33]/5">
           <div className="flex items-center space-x-3">
-            <div className="bg-blue-600 rounded-full p-2">
+            <div className="bg-[#5b6e33] rounded-full p-2">
               <User className="h-4 w-4 text-white" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-700 truncate">{user.name}</p>
-                <button
-                  onClick={onRefreshCounts}
-                  className="p-1 rounded-md text-gray-500 hover:bg-gray-200"
-                  title="Refresh notification counts"
-                >
-                  <svg
-                    className={`w-3 h-3 ${isLoading ? "animate-spin" : ""}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    />
-                  </svg>
-                </button>
-              </div>
+              <p className="text-sm font-medium text-gray-700 truncate">{user.name}</p>
               <p className="text-xs text-gray-500 truncate">
                 {user.firm} - {user.role}
               </p>
@@ -701,7 +235,6 @@ function SidebarContent({ user, pathname, onLogout, userPages, getNotificationCo
           {userPages.length > 0 ? (
             userPages.map((pageName) => {
               const Icon = pageIcons[pageName] || FileText
-              const notificationCount = getNotificationCount(pageName)
               const isActive = isPageActive(pageName)
               const route = pageRoutes[pageName] || "#"
 
@@ -710,25 +243,13 @@ function SidebarContent({ user, pathname, onLogout, userPages, getNotificationCo
                   <Link href={route} onClick={() => isMobile && setSidebarOpen(false)}>
                     <Button
                       variant={isActive ? "default" : "ghost"}
-                      className={`w-full justify-start text-left h-auto min-h-[40px] py-2 relative whitespace-normal ${isActive
-                        ? "bg-blue-600 text-white hover:bg-blue-700"
-                        : "text-gray-700 hover:bg-gray-100"
+                      className={`w-full justify-start text-left h-auto min-h-[40px] py-2 whitespace-normal border-l-4 rounded-l-none transition-colors ${isActive
+                        ? "bg-[#5b6e33] text-white hover:bg-[#48581f] border-l-[#3a4717] shadow-sm"
+                        : "text-gray-700 hover:bg-[#5b6e33]/10 border-l-transparent"
                         }`}
                     >
                       <Icon className="mr-3 h-4 w-4 flex-shrink-0 self-start mt-0.5" />
                       <span className="flex-1 leading-tight text-left">{pageName === "Wetman Entry" ? "Weighment Entry" : pageName === "Debit Note" ? "Credit Note" : pageName}</span>
-
-                      {notificationCount > 0 ? (
-                        <span className="ml-2 bg-red-500 text-white text-xs rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 flex-shrink-0">
-                          {notificationCount > 99 ? '99+' : notificationCount}
-                        </span>
-                      ) : isLoading ? (
-                        <span className="ml-2 w-5 h-5 flex items-center justify-center flex-shrink-0">
-                          <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-300"></div>
-                        </span>
-                      ) : (
-                        <span className="ml-2 w-5 h-5 flex-shrink-0"></span>
-                      )}
                     </Button>
                   </Link>
                 </li>

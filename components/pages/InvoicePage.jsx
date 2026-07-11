@@ -84,7 +84,7 @@ export default function MakeInvoicePage({ user }) {
       let orQuery = supabase
         .from("ORDER RECEIPT")
         .select(
-          'id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Firm Name", "Gst Number", "Address", "Rate Of Material", "Upload SO", "Freight", "Freight Amount", check_delivery_in_stock_or_not, check_delivery_production_order_no, check_delivery_qty_transferred, check_delivery_batch_number_remarks, check_delivery_indent_self_batch_number, check_delivery_gp_percent',
+          'id, "PARTY PO NO (As Per Po Exact)", "Party Names", "Firm Name", "Gst Number", "Address", "Rate Of Material", "Upload SO", "Freight", "Freight Amount", "Marketing Mangager Name", check_delivery_in_stock_or_not, check_delivery_production_order_no, check_delivery_qty_transferred, check_delivery_batch_number_remarks, check_delivery_indent_self_batch_number, check_delivery_gp_percent',
         );
       if (shouldFilter) orQuery = orQuery.in("Firm Name", userFirms);
       const { data: orData, error: orError } = await orQuery;
@@ -165,6 +165,7 @@ export default function MakeInvoicePage({ user }) {
           vehiclePlateImage: row["Vehicle No. Plate Image"] || "",
           biltyNo: row["Bilty No."] || "",
           firmName: or["Firm Name"] || "",
+          marketingSalesPerson: or["Marketing Mangager Name"] || "",
           inStockOrNot: or["check_delivery_in_stock_or_not"] || "",
           productionOrderNo: or["check_delivery_production_order_no"] || "",
           qtyTransferred: or["check_delivery_qty_transferred"] ?? "",
@@ -845,6 +846,7 @@ export default function MakeInvoicePage({ user }) {
                       <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Bill No.</th>
                       <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">PO Number</th>
                       <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Party Name</th>
+                      <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Marketing Sales Person</th>
                       <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Product</th>
                       <th className="text-right font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Qty (MT)</th>
                       <th className="text-left font-semibold text-gray-900 py-3 px-4 whitespace-nowrap">Source</th>
@@ -859,13 +861,14 @@ export default function MakeInvoicePage({ user }) {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {filteredOrders.length === 0 ? (
-                      <tr><td colSpan={14} className="text-center py-8 text-gray-500">No invoices found for this filter.</td></tr>
+                      <tr><td colSpan={15} className="text-center py-8 text-gray-500">No invoices found for this filter.</td></tr>
                     ) : (
                       filteredOrders.map((order) => (
                         <tr key={order.id} className="hover:bg-gray-50">
                           <td className="py-2 px-4 font-semibold">{order.billNumber || "—"}</td>
                           <td className="py-2 px-4 text-xs text-gray-500">{order.partyPONumber || "—"}</td>
                           <td className="py-2 px-4 whitespace-nowrap">{order.partyName || "—"}</td>
+                          <td className="py-2 px-4 whitespace-nowrap">{order.marketingSalesPerson || "—"}</td>
                           <td className="py-2 px-4 whitespace-nowrap">{order.productName || "—"}</td>
                           <td className="py-2 px-4 text-right font-medium">{fmtQty(getInvoiceLineQty(order))}</td>
                           <td className="py-2 px-4">

@@ -217,11 +217,16 @@ export default function AccountsApprovalPage({ user }) {
     setModalPIRecords([])
     setModalPILoading(true)
     try {
-      const { data, error } = await supabase
+      // po_number is not unique across firms, so scope by firm_name too — otherwise a
+      // colliding PO number in another firm could surface that firm's PI records here.
+      let piQuery = supabase
         .from("po_pi_records")
-        .select("pi_number, slab_label, expected_amount, pi_quantity, status, due_date, product_names, created_at, actual_amount")
+        .select("pi_number, slab_label, expected_amount, pi_quantity, status, due_date, product_names, created_at, actual_amount, firm_name")
         .eq("po_number", group.poNumber)
         .order("created_at", { ascending: true })
+      if (group.rows[0]?.firmName) piQuery = piQuery.eq("firm_name", group.rows[0].firmName)
+
+      const { data, error } = await piQuery
       if (!error) setModalPIRecords(data || [])
     } catch {
       // non-critical, silently ignore

@@ -173,30 +173,34 @@ export default function CheckPOPage({ user, onNavigate }) {
     fetchData()
   }, [])
 
+  // Orders scoped to the user's accessible firms — every downstream list, dropdown, and
+  // stat must derive from this, not the raw `orders` array, or a firm-restricted user
+  // sees other firms' names/counts even though the table itself is filtered correctly.
+  const roleScopedOrders = useMemo(() => {
+    if (user.role === "ADMIN") return orders
+    const userFirms = user.firm ? user.firm.split(',').map(f => f.trim().toLowerCase()) : []
+    return orders.filter(order => {
+      if (userFirms.includes('all')) return true
+      const orderFirm = order.firmName ? order.firmName.trim().toLowerCase() : ""
+      return userFirms.includes(orderFirm)
+    })
+  }, [orders, user])
+
   // Get unique firm names for filter
   const firmOptions = useMemo(() => {
-    const firms = [...new Set(orders.map(order => order.firmName).filter(Boolean))]
+    const firms = [...new Set(roleScopedOrders.map(order => order.firmName).filter(Boolean))]
     return ["all", ...firms]
-  }, [orders])
+  }, [roleScopedOrders])
 
   // Get unique party names for filter
   const partyOptions = useMemo(() => {
-    const parties = [...new Set(orders.map(order => order.partyName).filter(Boolean))]
+    const parties = [...new Set(roleScopedOrders.map(order => order.partyName).filter(Boolean))]
     return ["all", ...parties]
-  }, [orders])
+  }, [roleScopedOrders])
 
   // Filter orders
   const baseFilteredOrders = useMemo(() => {
-    let filtered = orders
-
-    if (user.role !== "ADMIN") {
-      const userFirms = user.firm ? user.firm.split(',').map(f => f.trim().toLowerCase()) : []
-      filtered = filtered.filter(order => {
-        if (userFirms.includes('all')) return true
-        const orderFirm = order.firmName ? order.firmName.trim().toLowerCase() : ""
-        return userFirms.includes(orderFirm)
-      })
-    }
+    let filtered = roleScopedOrders
 
     if (filterFirm !== "all") {
       filtered = filtered.filter(order => order.firmName === filterFirm)
@@ -217,7 +221,7 @@ export default function CheckPOPage({ user, onNavigate }) {
     }
 
     return filtered
-  }, [orders, user, filterFirm, filterParty, searchTerm])
+  }, [roleScopedOrders, filterFirm, filterParty, searchTerm])
 
   const pendingOrders = useMemo(() => {
     return baseFilteredOrders.filter(order =>
@@ -527,7 +531,7 @@ export default function CheckPOPage({ user, onNavigate }) {
           <CardContent className="p-6 flex justify-between items-center">
             <div>
               <p className="text-sm font-medium text-blue-600">Total Orders</p>
-              <div className="text-2xl font-bold text-blue-900">{orders.length}</div>
+              <div className="text-2xl font-bold text-blue-900">{roleScopedOrders.length}</div>
             </div>
             <div className="h-10 w-10 bg-blue-500 rounded-full flex items-center justify-center text-white">
               <FileText className="h-6 w-6" />

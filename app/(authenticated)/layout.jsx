@@ -14,6 +14,7 @@ export default function AuthenticatedLayout({ children }) {
 
     const pageRoutesInverse = {
         "/dashboard": "Dashboard",
+        "/process-dashboard": "Process Dashboard",
         "/order": "Order",
         "/payments-pi": "Make PI",
         "/received-pi-payment": "Received PI Payment",

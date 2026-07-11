@@ -104,7 +104,11 @@ export default function UnifiedLogistics({ user }) {
         ...del,
         firmName: firmMap[del["Delivery Order No."]] || ""
       })))
-      setPostDeliveryData(postDeliveryRes.data || [])
+      const taggedPostDelivery = (postDeliveryRes.data || []).map(pd => ({
+        ...pd,
+        firmName: firmMap[pd["Order No."]] || ""
+      }))
+      setPostDeliveryData(taggedPostDelivery)
 
       const tcMap = {}
       dispatchRes.data?.forEach(row => {
@@ -120,9 +124,10 @@ export default function UnifiedLogistics({ user }) {
           return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
         })
         .map(del => {
-          const receipt = (postDeliveryRes.data || []).find(pd => {
+          const delFirm = firmMap[del["Delivery Order No."]] || ""
+          const receipt = taggedPostDelivery.find(pd => {
             if (del["Bill No."]) {
-              return pd["Bill No."] === del["Bill No."]
+              return pd["Bill No."] === del["Bill No."] && pd.firmName === delFirm
             }
             return pd["Order No."] && pd["Order No."] === del["Delivery Order No."]
           })
@@ -174,10 +179,11 @@ export default function UnifiedLogistics({ user }) {
         return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
       })
       .map(del => {
-      // Find matching receipt by Bill No or DO No if Bill No is missing
+      // Find matching receipt by Bill No (scoped to the same firm) or DO No if Bill No is missing.
+      // Bill No. is not unique across firms, so matching by Bill No. alone can pull in another firm's receipt.
       const receipt = postDeliveryData.find(pd => {
         if (del["Bill No."]) {
-          return pd["Bill No."] === del["Bill No."]
+          return pd["Bill No."] === del["Bill No."] && pd.firmName === del.firmName
         }
         return pd["Order No."] && pd["Order No."] === del["Delivery Order No."]
       })
@@ -291,19 +297,22 @@ export default function UnifiedLogistics({ user }) {
     return ["all", ...parties]
   }, [shipments, activeTab])
 
-  // Group by billNo — rows without billNo are individual strays
+  // Group by firm + billNo — Bill No. is not unique across firms, so grouping by
+  // billNo alone would merge different firms' invoices into one update. Rows without
+  // billNo are individual strays.
   const groupedShipments = useMemo(() => {
     const groups = []
     const invoiceMap = {}
     filteredShipments.forEach(s => {
       if (s.billNo) {
-        if (!invoiceMap[s.billNo]) {
-          invoiceMap[s.billNo] = { billNo: s.billNo, partyName: s.partyName, rows: [] }
-          groups.push(invoiceMap[s.billNo])
+        const key = `${s.firmName || ""}::${s.billNo}`
+        if (!invoiceMap[key]) {
+          invoiceMap[key] = { billNo: s.billNo, partyName: s.partyName, firmName: s.firmName, rows: [] }
+          groups.push(invoiceMap[key])
         }
-        invoiceMap[s.billNo].rows.push(s)
+        invoiceMap[key].rows.push(s)
       } else {
-        groups.push({ billNo: "", partyName: s.partyName, rows: [s], stray: true })
+        groups.push({ billNo: "", partyName: s.partyName, firmName: s.firmName, rows: [s], stray: true })
       }
     })
     return groups
@@ -540,7 +549,7 @@ export default function UnifiedLogistics({ user }) {
                 </TableRow>
               ) : (
                 groupedShipments.map((group, gi) => {
-                  const groupKey = group.billNo || `stray-${gi}`
+                  const groupKey = group.billNo ? `${group.firmName || ""}::${group.billNo}` : `stray-${gi}`
                   const isExpanded = !!expandedGroups[groupKey]
                   const isStray = group.stray
                   const allDone = group.rows.every(r => r.isReceiptDone)
@@ -573,6 +582,9 @@ export default function UnifiedLogistics({ user }) {
                               <Badge className="bg-indigo-500 text-white text-xs w-fit">{group.billNo}</Badge>
                             ) : (
                               <span className="text-gray-400 text-xs italic">No Invoice</span>
+                            )}
+                            {group.firmName && (
+                              <span className="text-[10px] text-slate-500">{group.firmName}</span>
                             )}
                             {!isStray && (
                               <span className="text-[10px] text-slate-500">{group.rows.length} product{group.rows.length > 1 ? "s" : ""}</span>

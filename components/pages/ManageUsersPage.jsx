@@ -21,6 +21,7 @@ import { exportToExcel } from "@/lib/exportUtils"
 
 const ALL_PAGES = [
   "Dashboard",
+  "Process Dashboard",
   "Order",
   "Check PO",
   "Received Accounts",

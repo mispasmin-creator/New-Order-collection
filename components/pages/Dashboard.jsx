@@ -233,10 +233,39 @@ export default function AnalyticsDashboard({ user }) {
   const [selectedParty, setSelectedParty] = useState("all");
   const [partySearchTerm, setPartySearchTerm] = useState("");
 
+  // DISPATCH/DELIVERY/POST DELIVERY have no "Firm Name" column of their own, so they can
+  // only be scoped to the user's firms by joining through ORDER RECEIPT's DO number.
+  // Without this, any firm-restricted user could export or view record counts for every
+  // firm in the system via sheetData, which is fetched unfiltered.
+  const getFirmScopedSheetData = () => {
+    const userFirms = user.role !== "ADMIN"
+      ? (user.firm ? user.firm.split(',').map(f => f.trim().toLowerCase()) : [])
+      : null
+    if (!userFirms || userFirms.includes('all')) {
+      return {
+        orderReceipt: sheetData.orderReceipt,
+        dispatch: sheetData.dispatch,
+        delivery: sheetData.delivery,
+        postDelivery: sheetData.postDelivery,
+      }
+    }
+
+    const scopedOrders = sheetData.orderReceipt.filter(o => userFirms.includes((o["Firm Name"] || "").trim().toLowerCase()))
+    const allowedDoNumbers = new Set(scopedOrders.map(o => o["DO-Delivery Order No."]).filter(Boolean))
+    return {
+      orderReceipt: scopedOrders,
+      dispatch: sheetData.dispatch.filter(d => allowedDoNumbers.has(d["Delivery Order No."])),
+      delivery: sheetData.delivery.filter(d => allowedDoNumbers.has(d["Delivery Order No."])),
+      postDelivery: sheetData.postDelivery.filter(p => allowedDoNumbers.has(p["Order No."])),
+    }
+  }
+
   // Quick Actions Handlers
   const handleExportData = async () => {
     try {
       toast.info("Preparing data export...");
+
+      const scoped = getFirmScopedSheetData();
 
       // Create combined data object
       const exportData = {
@@ -256,10 +285,10 @@ export default function AnalyticsDashboard({ user }) {
           completedOrders: stats.completedOrders,
           cancelledOrders: stats.cancelledOrders,
         },
-        orderReceipt: sheetData.orderReceipt,
-        dispatch: sheetData.dispatch,
-        delivery: sheetData.delivery,
-        postDelivery: sheetData.postDelivery,
+        orderReceipt: scoped.orderReceipt,
+        dispatch: scoped.dispatch,
+        delivery: scoped.delivery,
+        postDelivery: scoped.postDelivery,
         charts: {
           monthlyRevenue: chartData.monthlyRevenue,
           statusDistribution: chartData.statusDistribution,
@@ -345,6 +374,8 @@ export default function AnalyticsDashboard({ user }) {
 
   const handleGenerateReport = () => {
     toast.info("Generating dashboard report...");
+
+    const scoped = getFirmScopedSheetData();
 
     // In a real app, this would generate a PDF/Excel report
     // For now, we'll create a simple HTML report
@@ -457,22 +488,22 @@ export default function AnalyticsDashboard({ user }) {
                 </tr>
                 <tr>
                   <td>Order Receipt</td>
-                  <td>${sheetData.orderReceipt.length}</td>
+                  <td>${scoped.orderReceipt.length}</td>
                   <td>${sheetData.lastUpdated ? new Date(sheetData.lastUpdated).toLocaleString() : 'N/A'}</td>
                 </tr>
                 <tr>
                   <td>Dispatch</td>
-                  <td>${sheetData.dispatch.length}</td>
+                  <td>${scoped.dispatch.length}</td>
                   <td>${sheetData.lastUpdated ? new Date(sheetData.lastUpdated).toLocaleString() : 'N/A'}</td>
                 </tr>
                 <tr>
                   <td>Delivery</td>
-                  <td>${sheetData.delivery.length}</td>
+                  <td>${scoped.delivery.length}</td>
                   <td>${sheetData.lastUpdated ? new Date(sheetData.lastUpdated).toLocaleString() : 'N/A'}</td>
                 </tr>
                 <tr>
                   <td>Post Delivery</td>
-                  <td>${sheetData.postDelivery.length}</td>
+                  <td>${scoped.postDelivery.length}</td>
                   <td>${sheetData.lastUpdated ? new Date(sheetData.lastUpdated).toLocaleString() : 'N/A'}</td>
                 </tr>
               </table>
