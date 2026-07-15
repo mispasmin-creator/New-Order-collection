@@ -671,8 +671,8 @@ export default function MakePIPage({ user }) {
                               {enteredQty > 0 && (() => {
                                 const basicAmt = Math.round(enteredQty * (row.rate || 0))
                                 const proportion = row.quantity > 0 ? enteredQty / row.quantity : 0
-                                const gstAdj = Math.round(proportion * (row.adjustedAmount || 0))
-                                const withTaxAmt = basicAmt + gstAdj
+                                const withTaxAmt = Math.round(proportion * (row.adjustedAmount || 0))
+                                const gstOnlyAmt = Math.max(0, withTaxAmt - basicAmt)
                                 return (
                                   <>
                                     <span className={`text-[10px] font-semibold tabular-nums ${
@@ -684,8 +684,8 @@ export default function MakePIPage({ user }) {
                                       piAmountMode === "tax" ? "text-emerald-700" : "text-slate-400"
                                     }`}>
                                       With Tax: {formatCurrency(withTaxAmt)}
-                                      {piAmountMode === "tax" && gstAdj > 0 && (
-                                        <span className="text-slate-400 font-normal"> (GST: {formatCurrency(gstAdj)})</span>
+                                      {piAmountMode === "tax" && gstOnlyAmt > 0 && (
+                                        <span className="text-slate-400 font-normal"> (GST: {formatCurrency(gstOnlyAmt)})</span>
                                       )}
                                     </span>
                                   </>
@@ -754,10 +754,9 @@ export default function MakePIPage({ user }) {
                       }, 0))
                       const totalTax = Math.round(selectedGroup.rows.reduce((sum, r) => {
                         const qty = Number(piToMakeQtys[r.id]) || 0
-                        const basic = qty * (r.rate || 0)
                         const prop = r.quantity > 0 ? qty / r.quantity : 0
-                        const gstAdj = prop * (r.adjustedAmount || 0)
-                        return sum + basic + gstAdj
+                        const withTaxAmt = prop * (r.adjustedAmount || 0)
+                        return sum + withTaxAmt
                       }, 0))
                       return (
                         <>
