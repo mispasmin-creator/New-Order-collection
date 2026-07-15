@@ -1549,25 +1549,27 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
 
                       {/* Alumina% */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Alumina%</Label>
+                        <Label className="text-sm font-medium text-gray-700">Alumina% <span className="text-red-500">*</span></Label>
                         <Input
                           type="text"
                           value={currentProduct["Alumina%"]}
                           onChange={(e) => handleProductChange("Alumina%", e.target.value)}
                           className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                           placeholder="e.g. 70 or 70-80"
+                          required
                         />
                       </div>
 
                       {/* Iron% */}
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-gray-700">Iron%</Label>
+                        <Label className="text-sm font-medium text-gray-700">Iron% <span className="text-red-500">*</span></Label>
                         <Input
                           type="text"
                           value={currentProduct["Iron%"]}
                           onChange={(e) => handleProductChange("Iron%", e.target.value)}
                           className="h-11 border-gray-300 focus:border-orange-500 focus:ring-orange-500"
                           placeholder="e.g. 1.2 or 1.2-1.5"
+                          required
                         />
                       </div>
 
