@@ -220,7 +220,7 @@ export default function FullkittingPage({ user }) {
           ? 0
           : (row["Fullkitting Status"] === "Yes" || (row["Fullkitting Actual"] && String(row["Fullkitting Actual"]).trim() !== ""))
             ? (row["Fullkitting Amount"] !== null && row["Fullkitting Amount"] !== undefined ? Number(row["Fullkitting Amount"]) : 0)
-            : (getTransporterRateValue(row) || splitRate)
+            : (getTransporterRateValue(row) || splitRate) 
         const transporterAmount = rateType === "Ex Factory Transporter"
           ? 0
           : (row["Total Transporter Amount"] !== null && row["Total Transporter Amount"] !== undefined)
