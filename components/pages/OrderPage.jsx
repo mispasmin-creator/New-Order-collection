@@ -56,6 +56,7 @@ export default function OrderPage({ user }) {
   const [showForm, setShowForm] = useState(false)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState("active")
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [firmFilter, setFirmFilter] = useState("all")
@@ -281,9 +282,21 @@ export default function OrderPage({ user }) {
 
   useEffect(() => {
     if (orders) {
-      updateCount("Order", orders.length)
+      const activeCount = orders.filter(o => o.status !== "Completed" && o.status !== "Cancelled").length
+      updateCount("Order", activeCount)
     }
   }, [orders, updateCount])
+
+  // Auto-reset filters when switching tabs
+  useEffect(() => {
+    setSearchTerm("")
+    setStatusFilter("all")
+    setFirmFilter("all")
+    setManagerFilter("all")
+    setProductFilter("all")
+    setStartDate("")
+    setEndDate("")
+  }, [activeTab])
 
   // Function to manually refresh orders
   const refreshOrders = async () => {
@@ -364,6 +377,13 @@ export default function OrderPage({ user }) {
   // Filter orders based on user role and search/filters
   const getFilteredOrders = () => {
     let filtered = orders
+
+    // Filter by Active/History Tab
+    if (activeTab === "history") {
+      filtered = filtered.filter(order => order.status === "Completed" || order.status === "Cancelled")
+    } else {
+      filtered = filtered.filter(order => order.status !== "Completed" && order.status !== "Cancelled")
+    }
 
     const getYYYYMMDD = (dateVal) => {
       if (!dateVal) return ""
@@ -797,7 +817,23 @@ export default function OrderPage({ user }) {
       {/* Orders Table */}
       <div className="bg-white border rounded-md shadow-sm">
         <div className="p-4 border-b flex flex-col sm:flex-row sm:justify-between sm:items-center bg-gray-50 gap-4">
-          <h2 className="font-semibold text-gray-700">Order List</h2>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <h2 className="font-semibold text-gray-700">Order List</h2>
+            <div className="flex bg-gray-200/60 p-0.5 rounded-md w-fit">
+              <button
+                onClick={() => setActiveTab("active")}
+                className={`py-1.5 px-3 text-xs font-semibold rounded-sm transition-all text-center ${activeTab === "active" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+              >
+                Active ({orders.filter(o => o.status !== "Completed" && o.status !== "Cancelled").length})
+              </button>
+              <button
+                onClick={() => setActiveTab("history")}
+                className={`py-1.5 px-3 text-xs font-semibold rounded-sm transition-all text-center ${activeTab === "history" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+              >
+                History ({orders.filter(o => o.status === "Completed" || o.status === "Cancelled").length})
+              </button>
+            </div>
+          </div>
           <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
             <span className="font-medium">{filteredOrders.length} orders</span>
             {productFilter !== "all" && productStats && (

@@ -178,19 +178,31 @@ export default function MaterialReturnPage({ user }) {
     }
     try {
       setInvoiceLookupLoading(true);
+      const lookupTerm = invoiceLookupNo.trim();
       const { data, error } = await supabase
         .from("DISPATCH")
         .select(
-          'id, "Product Name", "Actual Truck Qty", "Qty To Be Dispatched", "Delivery Order No.", "Party Name", po_id',
+          'id, "Product Name", "Actual Truck Qty", "Qty To Be Dispatched", "Delivery Order No.", "Party Name", po_id, "Bill Number"',
         )
-        .eq("Bill Number", invoiceLookupNo.trim());
+        .ilike("Bill Number", `%${lookupTerm}%`);
 
       if (error) throw error;
-      if (!data || data.length === 0) {
+
+      // Filter rows where the lookupTerm is present in the comma-separated Bill Number
+      const matchedData = (data || []).filter((row) => {
+        if (!row["Bill Number"]) return false;
+        const bills = row["Bill Number"]
+          .split(",")
+          .map((b) => b.trim())
+          .filter(Boolean);
+        return bills.includes(lookupTerm);
+      });
+
+      if (matchedData.length === 0) {
         toast({
           variant: "destructive",
           title: "Not Found",
-          description: `No invoice found with number "${invoiceLookupNo.trim()}".`,
+          description: `No invoice found with number "${lookupTerm}".`,
         });
         return;
       }
@@ -208,7 +220,7 @@ export default function MaterialReturnPage({ user }) {
       const shouldFilter =
         userFirms && !userFirms.includes("all") && userFirms.length > 0;
 
-      let allowedData = data;
+      let allowedData = matchedData;
       
       // Fetch all matching ORDER RECEIPT records for these specific po_ids or DO numbers to get Firm Name and Party Names
       const poIds = allowedData.map((item) => item.po_id).filter(Boolean);
@@ -292,22 +304,45 @@ export default function MaterialReturnPage({ user }) {
       setInvoicePartyName(partyName);
       setInvoiceProducts(allowedData);
 
-      const lines = allowedData.map((row) => {
-        const dispatchedQty =
-          parseFloat(row["Actual Truck Qty"]) ||
-          parseFloat(row["Qty To Be Dispatched"]) ||
-          0;
+      // Consolidate duplicate dispatch rows by Product Name and Delivery Order No.
+      const consolidatedMap = new Map();
+      for (const row of allowedData) {
+        const prod = row["Product Name"] || "";
+        const doNo = row["Delivery Order No."] || "";
+        const key = `${prod}|${doNo}`;
+
+        const actualTruckQty = parseFloat(row["Actual Truck Qty"]) || 0;
+        const dispatchQty = parseFloat(row["Qty To Be Dispatched"]) || 0;
+        const qty = (actualTruckQty > 0 && dispatchQty > 0)
+          ? Math.min(actualTruckQty, dispatchQty)
+          : (actualTruckQty || dispatchQty || 0);
+
+        if (consolidatedMap.has(key)) {
+          const existing = consolidatedMap.get(key);
+          existing.qty += qty;
+        } else {
+          consolidatedMap.set(key, {
+            dispatchId: row.id,
+            productName: prod,
+            doNumber: doNo,
+            qty: qty,
+          });
+        }
+      }
+
+      const lines = Array.from(consolidatedMap.values()).map((item) => {
+        const dispatchedQty = item.qty;
         const alreadyReturned =
-          alreadyReturnedMap[row["Product Name"] || ""] || 0;
+          alreadyReturnedMap[item.productName] || 0;
         const availableQty = Math.max(0, dispatchedQty - alreadyReturned);
         return {
-          dispatchId: row.id,
-          productName: row["Product Name"] || "",
+          dispatchId: item.dispatchId,
+          productName: item.productName,
           originalQty: dispatchedQty,
           alreadyReturned,
           availableQty,
           returnQty: "",
-          doNumber: row["Delivery Order No."] || "",
+          doNumber: item.doNumber,
           removed: availableQty === 0, // auto-remove if nothing left to return
           reason: "",
           remarks: "",

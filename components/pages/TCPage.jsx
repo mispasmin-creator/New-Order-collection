@@ -139,7 +139,7 @@ export default function TCPage({ user }) {
           movedToDelivery: !!deliveryRow,
         }
 
-        if (order.movedToDelivery) {
+        if (order.movedToDelivery && order.tcFileUrl) {
           completedOrders.push(order)
         } else {
           pendingOrders.push(order)
@@ -340,29 +340,31 @@ export default function TCPage({ user }) {
         )
       )
 
-      // Insert DELIVERY records for all rows
+      // Insert DELIVERY records for rows that are not already moved to delivery
       const timestamp = getISTTimestamp()
-      const { error: deliveryInsertError } = await supabase.from("DELIVERY").insert(
-        selectedGroup.rows.map(row => ({
-          "Timestamp": timestamp,
-          "Bill Date": null,
-          "Delivery Order No.": row.deliveryOrderNo,
-          "Party Name": row.partyName,
-          "Product Name": row.productName,
-          "Quantity Delivered.": row.actualTruckQty ? parseFloat(row.actualTruckQty) : (row.qtyToBeDispatched ? parseFloat(row.qtyToBeDispatched) : null),
-          "Bill No.": selectedGroup.invoiceNo || "",
-          "Losgistic no.": row.dSrNumber || "",
-          "Rate Of Material": row.rateOfMaterial,
-          "Type Of Transporting": row.typeOfTransporting || "",
-          "Transporter Name": row.transporterName || "",
-          "Vehicle Number.": row.truckNo || "",
-          "Bilty Number.": row.biltyNo || "",
-          "Giving From Where": "",
-          "D-Sr Number": row.dSrNumber || "",
-        }))
-      )
-
-      if (deliveryInsertError) throw deliveryInsertError
+      const rowsToInsert = selectedGroup.rows.filter(row => !row.movedToDelivery)
+      if (rowsToInsert.length > 0) {
+        const { error: deliveryInsertError } = await supabase.from("DELIVERY").insert(
+          rowsToInsert.map(row => ({
+            "Timestamp": timestamp,
+            "Bill Date": null,
+            "Delivery Order No.": row.deliveryOrderNo,
+            "Party Name": row.partyName,
+            "Product Name": row.productName,
+            "Quantity Delivered.": row.actualTruckQty ? parseFloat(row.actualTruckQty) : (row.qtyToBeDispatched ? parseFloat(row.qtyToBeDispatched) : null),
+            "Bill No.": selectedGroup.invoiceNo || "",
+            "Losgistic no.": row.dSrNumber || "",
+            "Rate Of Material": row.rateOfMaterial,
+            "Type Of Transporting": row.typeOfTransporting || "",
+            "Transporter Name": row.transporterName || "",
+            "Vehicle Number.": row.truckNo || "",
+            "Bilty Number.": row.biltyNo || "",
+            "Giving From Where": "",
+            "D-Sr Number": row.dSrNumber || "",
+          }))
+        )
+        if (deliveryInsertError) throw deliveryInsertError
+      }
 
       await fetchData()
       handleCancel()
