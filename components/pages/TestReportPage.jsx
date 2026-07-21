@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { X, Search, CheckCircle2, Loader2, Upload, Eye, Trash2, Truck, Download } from "lucide-react"
+import { X, Search, CheckCircle2, Loader2, Upload, Eye, Trash2, Truck, Download, Pencil } from "lucide-react"
 import { exportToExcel } from "@/lib/exportUtils"
 import { getSignedUrl } from "@/lib/storageUtils"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -63,7 +63,7 @@ export default function TestReportPage({ user }) {
 
       const [{ data, error }, { data: orderData, error: orderError }] = await Promise.all([
         supabase.from('DISPATCH').select('*').not('Planned2', 'is', null),
-        supabase.from('ORDER RECEIPT').select('id, "PARTY PO NO (As Per Po Exact)"'),
+        supabase.from('ORDER RECEIPT').select('id, "PARTY PO NO (As Per Po Exact)", "Firm Name"'),
       ])
 
       if (error) throw error
@@ -82,6 +82,7 @@ export default function TestReportPage({ user }) {
         const order = {
           id: row.id,
           partyPONumber: orderRef?.["PARTY PO NO (As Per Po Exact)"] || "",
+          firmName: orderRef?.["Firm Name"] || "",
           timestamp: row["Timestamp"],
           dSrNumber: row["D-Sr Number"],
           deliveryOrderNo: row["Delivery Order No."],
@@ -167,7 +168,11 @@ export default function TestReportPage({ user }) {
     setSelectedGroup(group)
     setSelectedRowIds(new Set(group.rows.map((r) => r.id)))
     setFormData({ loadingImage1: null, loadingImage2: null, loadingImage3: null })
-    setUploadedUrls({ loadingImage1: "", loadingImage2: "", loadingImage3: "" })
+    setUploadedUrls({
+      loadingImage1: group.rows[0]?.loadingImage1 || "",
+      loadingImage2: group.rows[0]?.loadingImage2 || "",
+      loadingImage3: group.rows[0]?.loadingImage3 || "",
+    })
   }
 
   const toggleRow = (id) => {
@@ -222,7 +227,7 @@ export default function TestReportPage({ user }) {
   const handleSubmit = async () => {
     if (!selectedGroup) return
 
-    if (!formData.loadingImage1) {
+    if (activeTab === "pending" && !formData.loadingImage1 && !uploadedUrls.loadingImage1) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -243,7 +248,11 @@ export default function TestReportPage({ user }) {
       // Use the first row's LGST number as the reference for file naming
       const refLgst = selectedRows[0]?.lgstSrNumber || "unknown"
 
-      const finalUrls = { loadingImage1: "", loadingImage2: "", loadingImage3: "" }
+      const finalUrls = {
+        loadingImage1: uploadedUrls.loadingImage1 || "",
+        loadingImage2: uploadedUrls.loadingImage2 || "",
+        loadingImage3: uploadedUrls.loadingImage3 || "",
+      }
 
       // Upload images once (shared across all rows in the group)
       for (const num of [1, 2, 3]) {
@@ -272,22 +281,25 @@ export default function TestReportPage({ user }) {
 
       // Update every row in the group simultaneously
       await Promise.all(
-        selectedRows.map((row) =>
-          supabase
+        selectedRows.map((row) => {
+          const updatePayload = {
+            "Loading Image 1": finalUrls.loadingImage1 || "",
+            "Loading Image 2": finalUrls.loadingImage2 || "",
+            "Loading Image 3": finalUrls.loadingImage3 || "",
+          }
+          if (activeTab === "pending" || !row.actual2) {
+            updatePayload["Actual2"] = actualDateTime
+          }
+          return supabase
             .from('DISPATCH')
-            .update({
-              "Actual2": actualDateTime,
-              "Loading Image 1": finalUrls.loadingImage1 || "",
-              "Loading Image 2": finalUrls.loadingImage2 || "",
-              "Loading Image 3": finalUrls.loadingImage3 || "",
-            })
+            .update(updatePayload)
             .eq('id', row.id)
-        )
+        })
       )
 
       toast({
         title: "Success",
-        description: `Load Material submitted for PO ${selectedGroup.poNumber} (${selectedRows.length} row${selectedRows.length > 1 ? "s" : ""}).`,
+        description: `Load Material ${activeTab === "history" ? "images updated" : "submitted"} for PO ${selectedGroup.poNumber} (${selectedRows.length} row${selectedRows.length > 1 ? "s" : ""}).`,
       })
 
       handleClose()
@@ -337,99 +349,118 @@ export default function TestReportPage({ user }) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <div className="p-6 max-w-[1600px] mx-auto space-y-6">
+      {/* Page header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Load Material</h1>
-          <p className="text-gray-600">Upload loading images and complete material loading process</p>
+          <p className="text-sm text-gray-500">
+            Upload loading images to move dispatches to stage 2
+          </p>
+        </div>
+
+        {/* Tab switcher */}
+        <div className="flex items-center gap-3">
+          <Button onClick={handleExport} variant="outline" className="h-10 px-3 flex items-center gap-2">
+            <Download className="w-4 h-4" />
+            Export
+          </Button>
+          <div className="flex bg-gray-100 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveTab("pending")}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                activeTab === "pending"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              Pending ({orders.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                activeTab === "history"
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              History ({completedOrders.length})
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Stats cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="bg-blue-50 border-blue-100 shadow-sm">
-          <CardContent className="p-6 flex justify-between items-center">
+          <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-blue-600">Total Pending</p>
-              <div className="text-2xl font-bold text-blue-900">{orders.length}</div>
+              <p className="text-xs font-medium text-blue-600 uppercase tracking-wider">
+                Pending Orders
+              </p>
+              <p className="text-2xl font-bold text-blue-900 mt-1">{orders.length}</p>
             </div>
-            <div className="h-10 w-10 bg-blue-500 rounded-full flex items-center justify-center text-white">
-              <Loader2 className="h-6 w-6" />
+            <div className="p-3 bg-blue-500 text-white rounded-lg">
+              <Truck className="w-6 h-6" />
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-green-50 border-green-100 shadow-sm">
-          <CardContent className="p-6 flex justify-between items-center">
+          <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-green-600">Completed Load Material</p>
-              <div className="text-2xl font-bold text-green-900">{completedOrders.length}</div>
+              <p className="text-xs font-medium text-green-600 uppercase tracking-wider">
+                Completed Load Material
+              </p>
+              <p className="text-2xl font-bold text-green-900 mt-1">{completedOrders.length}</p>
             </div>
-            <div className="h-10 w-10 bg-green-500 rounded-full flex items-center justify-center text-white">
-              <CheckCircle2 className="h-6 w-6" />
+            <div className="p-3 bg-green-500 text-white rounded-lg">
+              <CheckCircle2 className="w-6 h-6" />
             </div>
           </CardContent>
         </Card>
 
         <Card className="bg-purple-50 border-purple-100 shadow-sm">
-          <CardContent className="p-6 flex justify-between items-center">
+          <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-purple-600">Total Parties</p>
-              <div className="text-2xl font-bold text-purple-900">{totalParties}</div>
+              <p className="text-xs font-medium text-purple-600 uppercase tracking-wider">
+                Total Parties
+              </p>
+              <p className="text-2xl font-bold text-purple-900 mt-1">{totalParties}</p>
             </div>
-            <div className="h-10 w-10 bg-purple-500 rounded-full flex items-center justify-center text-white">
-              <Truck className="h-6 w-6" />
+            <div className="p-3 bg-purple-500 text-white rounded-lg">
+              <Truck className="w-6 h-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-amber-50 border-amber-100 shadow-sm">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-amber-600 uppercase tracking-wider">
+                Total Records
+              </p>
+              <p className="text-2xl font-bold text-amber-900 mt-1">
+                {orders.length + completedOrders.length}
+              </p>
+            </div>
+            <div className="p-3 bg-amber-500 text-white rounded-lg">
+              <Truck className="w-6 h-6" />
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="bg-white border rounded-md shadow-sm p-4">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <Input
-                placeholder="Search orders..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-10 w-full"
-              />
-            </div>
-          </div>
-
-          <Button
-            onClick={() => fetchLoadMaterialData()}
-            variant="outline"
-            className="h-10 px-3"
-            disabled={loading || submitting}
-          >
-            <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
-
-          <Button
-            onClick={handleExport}
-            variant="outline"
-            className="h-10 px-3 flex items-center gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Export
-          </Button>
-        </div>
-
-        <div className="mt-4 flex bg-gray-100 p-1 rounded-md w-fit">
-          <button
-            onClick={() => setActiveTab("pending")}
-            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all text-center ${activeTab === "pending" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
-          >
-            Pending ({orders.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("history")}
-            className={`py-1.5 px-4 text-sm font-medium rounded-sm transition-all text-center ${activeTab === "history" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
-          >
-            History ({completedOrders.length})
-          </button>
+      {/* Search bar */}
+      <div className="bg-white p-4 rounded-md border shadow-sm">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Input
+            placeholder="Search by LGST Number, Delivery Order No, Party Name, Product..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 h-10"
+          />
         </div>
       </div>
 
@@ -442,6 +473,7 @@ export default function TestReportPage({ user }) {
                   <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Action</TableHead>
                 )}
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">LGST-Sr Number</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[140px]">Firm Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Delivery Order No.</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Dispatch No.</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Product Name</TableHead>
@@ -458,7 +490,7 @@ export default function TestReportPage({ user }) {
             <TableBody>
               {displayOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={11} className="text-center py-8 text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <span className="text-lg">
                         {activeTab === "pending"
@@ -473,7 +505,7 @@ export default function TestReportPage({ user }) {
                   <Fragment key={group.key}>
                     {/* ── PO group header row ── */}
                     <TableRow className="bg-slate-50">
-                      <TableCell colSpan={10} className="px-4 py-3">
+                      <TableCell colSpan={11} className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           {activeTab === "pending" && (
                             <Button
@@ -503,6 +535,9 @@ export default function TestReportPage({ user }) {
                           <Badge className="bg-blue-500 text-white rounded-sm whitespace-nowrap text-xs">
                             {order.lgstSrNumber || "N/A"}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[140px] text-sm text-gray-700 font-medium">
+                          {order.firmName || "N/A"}
                         </TableCell>
                         <TableCell className="py-2 px-4 min-w-[150px] font-medium text-sm">
                           {order.deliveryOrderNo || "N/A"}
@@ -564,7 +599,16 @@ export default function TestReportPage({ user }) {
                                   <Eye className="w-3 h-3 mr-1" />Img 3
                                 </Badge>
                               )}
-                              {!order.loadingImage1 && !order.loadingImage2 && !order.loadingImage3 && (
+                              {user?.role === "ADMIN" && (
+                                <Badge
+                                  variant="outline"
+                                  className="cursor-pointer hover:bg-amber-50 text-amber-700 border-amber-200 text-xs font-normal"
+                                  onClick={() => handleOpen(group)}
+                                >
+                                  <Pencil className="w-3 h-3 mr-1" />Edit Images
+                                </Badge>
+                              )}
+                              {!order.loadingImage1 && !order.loadingImage2 && !order.loadingImage3 && user?.role !== "ADMIN" && (
                                 <span className="text-gray-400 text-xs">No images</span>
                               )}
                             </div>

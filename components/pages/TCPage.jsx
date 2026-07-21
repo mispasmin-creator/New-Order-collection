@@ -513,6 +513,7 @@ export default function TCPage({ user }) {
                 <TableHead className="w-8" />
                 {activeTab === "pending" && <TableHead className="font-semibold text-gray-900 py-3 px-4">Action</TableHead>}
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Invoice No.</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4">Firm Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Party Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Transporter Type</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Products</TableHead>
@@ -523,7 +524,7 @@ export default function TCPage({ user }) {
             <TableBody>
               {groupedByInvoice.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "pending" ? 8 : 7} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={activeTab === "pending" ? 9 : 8} className="text-center py-8 text-gray-500">
                     No {activeTab} Test Certificate entries found
                   </TableCell>
                 </TableRow>
@@ -552,6 +553,7 @@ export default function TCPage({ user }) {
                             <span className="text-gray-400 text-xs italic">No Invoice</span>
                           )}
                         </TableCell>
+                        <TableCell className="py-2 px-4 text-slate-700 font-medium">{group.rows[0]?.firmName || "N/A"}</TableCell>
                         <TableCell className="py-2 px-4 text-slate-700">{group.partyName}</TableCell>
                         <TableCell className="py-2 px-4 text-sm text-slate-700">{getGroupTransportTypes(group)}</TableCell>
                         <TableCell className="py-2 px-4 text-xs text-slate-500">
@@ -592,6 +594,7 @@ export default function TCPage({ user }) {
                           <TableCell className="py-2 px-4">
                             <Badge className="bg-blue-500 text-white rounded-sm text-xs">{order.dSrNumber || "N/A"}</Badge>
                           </TableCell>
+                          <TableCell className="py-2 px-4 text-sm font-medium text-gray-700">{order.firmName || "N/A"}</TableCell>
                           <TableCell className="py-2 px-4 text-sm text-gray-600">{order.productName || "N/A"}</TableCell>
                           <TableCell className="py-2 px-4 text-sm text-gray-600">{order.typeOfTransporting || "N/A"}</TableCell>
                           <TableCell className="py-2 px-4 text-sm text-gray-600">Qty: {order.qtyToBeDispatched || "N/A"} · DO: {order.deliveryOrderNo || "N/A"}</TableCell>

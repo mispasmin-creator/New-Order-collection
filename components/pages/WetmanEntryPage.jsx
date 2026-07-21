@@ -645,6 +645,7 @@ export default function WeighmentEntryPage({ user }) {
               <TableRow className="bg-gray-50 border-b border-gray-200">
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Action</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[150px]">Delivery Order No.</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[140px]">Firm Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">D-Sr Number</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[120px]">Bill Date</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4 min-w-[100px]">Bill No.</TableHead>
@@ -675,7 +676,7 @@ export default function WeighmentEntryPage({ user }) {
               {displayOrders.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeTab === "pending" ? 13 : 14}
+                    colSpan={activeTab === "pending" ? 14 : 15}
                     className="text-center py-8 text-gray-500"
                   >
                     <div className="flex flex-col items-center gap-2">
@@ -706,7 +707,7 @@ export default function WeighmentEntryPage({ user }) {
                           </Button>
                         )}
                       </TableCell>
-                      <TableCell colSpan={activeTab === "pending" ? 12 : 13} className="px-4 py-2">
+                      <TableCell colSpan={activeTab === "pending" ? 13 : 14} className="px-4 py-2">
                         <div className="flex items-center gap-2">
                           {collapsedGroups[group.key]
                             ? <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
@@ -732,6 +733,9 @@ export default function WeighmentEntryPage({ user }) {
                         <TableCell />
                         <TableCell className="py-2 px-4 min-w-[150px] font-medium text-sm">
                           {order.deliveryOrderNo}
+                        </TableCell>
+                        <TableCell className="py-2 px-4 min-w-[140px] text-sm text-gray-700 font-medium">
+                          {order.firmName || "N/A"}
                         </TableCell>
                         <TableCell className="py-2 px-4 min-w-[120px] text-sm">
                           <Badge variant="outline" className="font-mono bg-purple-50 text-purple-700 border-purple-200">

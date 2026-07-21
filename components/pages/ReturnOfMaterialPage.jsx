@@ -434,6 +434,7 @@ export default function ReturnOfMaterialPage({ user }) {
                 {activeTab === "pending" && <TableHead className="w-[110px]">Action</TableHead>}
                 <TableHead className="w-8" />
                 <TableHead>Return No.</TableHead>
+                <TableHead>Firm Name</TableHead>
                 <TableHead>Party</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Qty</TableHead>
@@ -451,7 +452,7 @@ export default function ReturnOfMaterialPage({ user }) {
             <TableBody>
               {displayList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-12 text-gray-500">
+                  <TableCell colSpan={11} className="text-center py-12 text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <PackageCheck className="w-8 h-8 text-gray-300" />
                       <span>No {activeTab} records found</span>
@@ -482,6 +483,7 @@ export default function ReturnOfMaterialPage({ user }) {
                         </Button>
                       </TableCell>
                       <TableCell className="font-medium text-blue-600">{entry["Return No."]}</TableCell>
+                      <TableCell className="text-sm font-medium text-gray-700">{entry.firmName || "—"}</TableCell>
                       <TableCell className="text-sm">{entry["Party Name"]}</TableCell>
                       <TableCell className="text-sm">{entry["Product Name"]}</TableCell>
                       <TableCell className="font-bold text-sm">{entry["Qty Of Return Material"] || entry["Qty"]}</TableCell>
@@ -502,7 +504,7 @@ export default function ReturnOfMaterialPage({ user }) {
 
                     {expandedRows[entry.id] && (
                       <TableRow>
-                        <TableCell colSpan={12} className="p-0 bg-gray-50/50 border-b border-gray-200">
+                        <TableCell colSpan={13} className="p-0 bg-gray-50/50 border-b border-gray-200">
                           <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm">
                             {entry["Invoice Number"] && (
                               <div className="col-span-2">

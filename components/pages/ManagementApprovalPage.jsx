@@ -338,6 +338,7 @@ export default function ManagementApprovalPage({ user }) {
                 {activeTab === "pending" && <TableHead className="w-[110px]">Action</TableHead>}
                 <TableHead className="w-8" />
                 <TableHead>Return No.</TableHead>
+                <TableHead>Firm Name</TableHead>
                 <TableHead>Party</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Qty</TableHead>
@@ -353,7 +354,7 @@ export default function ManagementApprovalPage({ user }) {
             <TableBody>
               {displayList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-10 text-gray-500">No records found</TableCell>
+                  <TableCell colSpan={9} className="text-center py-10 text-gray-500">No records found</TableCell>
                 </TableRow>
               ) : (
                 displayList.map((entry) => (
@@ -379,6 +380,7 @@ export default function ManagementApprovalPage({ user }) {
                         </Button>
                       </TableCell>
                       <TableCell className="font-medium text-blue-600">{entry["Return No."]}</TableCell>
+                      <TableCell className="text-sm font-medium text-gray-700">{entry.firmName || "—"}</TableCell>
                       <TableCell className="text-sm">{entry["Party Name"]}</TableCell>
                       <TableCell className="text-sm">{entry["Product Name"]}</TableCell>
                       <TableCell className="font-bold text-sm">{entry["Qty"]}</TableCell>
@@ -409,7 +411,7 @@ export default function ManagementApprovalPage({ user }) {
 
                     {expandedRows[entry.id] && (
                       <TableRow>
-                        <TableCell colSpan={8} className="p-0 bg-gray-50/50 border-b border-gray-200">
+                        <TableCell colSpan={9} className="p-0 bg-gray-50/50 border-b border-gray-200">
                           <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm">
                             {entry["Invoice Number"] && (
                               <div className="col-span-2">

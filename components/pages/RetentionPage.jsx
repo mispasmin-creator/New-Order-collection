@@ -410,6 +410,7 @@ export default function RetentionPage({ user }) {
               <TableRow>
                 <TableHead className="text-center w-[100px]">Action</TableHead>
                 <TableHead>PO Number</TableHead>
+                <TableHead>Firm Name</TableHead>
                 <TableHead>Customer Name</TableHead>
                 <TableHead className="text-right">Bill Amount</TableHead>
                 <TableHead className="text-right">Ret. %</TableHead>
@@ -422,7 +423,7 @@ export default function RetentionPage({ user }) {
             </TableHeader>
             <TableBody>
               {filteredData.length === 0 ? (
-                <TableRow><TableCell colSpan={10} className="text-center py-12 text-gray-500">
+                <TableRow><TableCell colSpan={11} className="text-center py-12 text-gray-500">
                   <div className="flex flex-col items-center gap-2"><FileText className="w-8 h-8 text-gray-300" /><span>No retention records found</span></div>
                 </TableCell></TableRow>
               ) : (
@@ -432,6 +433,7 @@ export default function RetentionPage({ user }) {
                       <Button size="sm" onClick={() => handleOpenDialog(row)} className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white">Manage</Button>
                     </TableCell>
                     <TableCell className="font-semibold text-xs">{row.poNumber}</TableCell>
+                    <TableCell className="text-sm font-medium text-gray-700">{row.firmName || "N/A"}</TableCell>
                     <TableCell className="text-sm max-w-[200px] truncate" title={row.partyName}>{row.partyName}</TableCell>
                     <TableCell className="text-right tabular-nums text-slate-600">
                       {formatCurrency(row.billAmount)}

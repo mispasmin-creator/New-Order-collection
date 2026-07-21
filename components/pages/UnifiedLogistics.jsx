@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   X, Search, Loader2, Upload, FileText,
   CheckCircle2, Clock, Truck, Eye, ArrowRight,
-  PackageCheck, ListFilter, ChevronDown, ChevronRight, Download, Building, User
+  PackageCheck, ListFilter, ChevronDown, ChevronRight, Download, Building, User, Pencil
 } from "lucide-react"
 import { exportToExcel } from "@/lib/exportUtils"
 import { format } from "date-fns"
@@ -327,7 +327,7 @@ export default function UnifiedLogistics({ user }) {
     setCombinedForm({
       biltyNo: group.rows[0]?.biltyNo || "",
       biltyCopy: null,
-      materialReceivedDate: "",
+      materialReceivedDate: group.rows[0]?.receiptActual ? new Date(group.rows[0].receiptActual).toISOString().split("T")[0] : "",
       grnNumber: group.rows[0]?.grnNumber || "",
       receiptFile: null,
       receiptPreviewUrl: "",
@@ -384,11 +384,21 @@ export default function UnifiedLogistics({ user }) {
       }
 
       // 1. Update all DELIVERY rows in the group
-      await Promise.all(rows.map(row =>
-        supabase.from('DELIVERY')
-          .update({ "Actual3": now, "Bilty No.": combinedForm.biltyNo, "Bilty Copy": biltyUrl })
+      await Promise.all(rows.map(row => {
+        const delPayload = { "Bilty No.": combinedForm.biltyNo, "Bilty Copy": biltyUrl }
+        if (!row.Actual3) delPayload["Actual3"] = now
+        return supabase.from('DELIVERY')
+          .update(delPayload)
           .eq('id', row.id)
-      ))
+      }))
+
+      // Also update DISPATCH table for matching D-Sr Numbers
+      const dSrNumbers = [...new Set(rows.map(r => r.dSrNumber || r["D-Sr Number"] || r["Losgistic no."]).filter(Boolean))]
+      if (dSrNumbers.length > 0) {
+        await supabase.from('DISPATCH')
+          .update({ "Bilty No.": combinedForm.biltyNo, "Bilty Copy": biltyUrl })
+          .in('D-Sr Number', dSrNumbers)
+      }
 
       // 2. Upsert POST DELIVERY for each row
       await Promise.all(rows.map(row => {
@@ -535,6 +545,7 @@ export default function UnifiedLogistics({ user }) {
                 <TableHead className="w-8" />
                 <TableHead>Action</TableHead>
                 <TableHead>Invoice / Shipment</TableHead>
+                <TableHead>Firm Name</TableHead>
                 <TableHead>Party</TableHead>
                 <TableHead>Transporter Type</TableHead>
                 <TableHead>Transporter Name</TableHead>
@@ -545,7 +556,7 @@ export default function UnifiedLogistics({ user }) {
             <TableBody>
               {groupedShipments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
+                  <TableCell colSpan={9} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
                 </TableRow>
               ) : (
                 groupedShipments.map((group, gi) => {
@@ -566,9 +577,9 @@ export default function UnifiedLogistics({ user }) {
                           {!isStray && (isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />)}
                         </TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
-                          {!allDone ? (
+                          {!allDone || user?.role === "ADMIN" ? (
                             <Button size="sm" onClick={() => openModal(group)} className="bg-blue-600 hover:bg-blue-700 h-8">
-                              Fill Details
+                              {allDone ? "Edit Details" : "Fill Details"}
                             </Button>
                           ) : (
                             <Button variant="ghost" size="sm" className="text-green-600" disabled>
@@ -583,9 +594,6 @@ export default function UnifiedLogistics({ user }) {
                             ) : (
                               <span className="text-gray-400 text-xs italic">No Invoice</span>
                             )}
-                            {group.firmName && (
-                              <span className="text-[10px] text-slate-500">{group.firmName}</span>
-                            )}
                             {!isStray && (
                               <span className="text-[10px] text-slate-500">{group.rows.length} product{group.rows.length > 1 ? "s" : ""}</span>
                             )}
@@ -594,6 +602,7 @@ export default function UnifiedLogistics({ user }) {
                             )}
                           </div>
                         </TableCell>
+                        <TableCell className="text-sm font-medium text-gray-700">{group.firmName || group.rows[0]?.firmName || "—"}</TableCell>
                         <TableCell className="text-sm font-medium">{group.partyName}</TableCell>
                         <TableCell className="text-sm text-gray-600">
                           {[...new Set(group.rows.map(r => r.typeOfTransporting).filter(Boolean))].join(", ") || "—"}
@@ -607,9 +616,14 @@ export default function UnifiedLogistics({ user }) {
                               <CheckCircle2 className="w-4 h-4 text-green-500" />
                               <span className="text-xs font-medium text-green-700">{group.rows[0]?.biltyNo}</span>
                               {group.rows[0]?.biltyCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(group.rows[0].biltyCopy)}><Eye className="h-3 w-3" /></Button>}
+                              {user?.role === "ADMIN" && (
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600 hover:text-amber-800" title="Edit Bilty" onClick={(e) => { e.stopPropagation(); openModal(group); }}>
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                              )}
                             </div>
                           ) : (
-                            <Badge variant="outline" className="text-amber-600 bg-amber-50 border-amber-200">Pending Docs</Badge>
+                            <span className="text-xs font-medium text-amber-600">Pending</span>
                           )}
                         </TableCell>
                         <TableCell>
@@ -620,9 +634,7 @@ export default function UnifiedLogistics({ user }) {
                               {group.rows[0]?.receiptCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(group.rows[0].receiptCopy)}><Eye className="h-3 w-3" /></Button>}
                             </div>
                           ) : (
-                            <Badge variant="outline" className="text-gray-400 bg-gray-50 border-gray-200 font-normal">
-                              {biltyDone ? "Awaiting GRN" : "Waiting for Bilty"}
-                            </Badge>
+                            <span className="text-xs font-medium text-gray-400">Pending</span>
                           )}
                         </TableCell>
                       </TableRow>
@@ -633,6 +645,7 @@ export default function UnifiedLogistics({ user }) {
                           <TableCell />
                           <TableCell />
                           <TableCell className="py-2 text-xs text-gray-500 font-mono">{s.orderNo}</TableCell>
+                          <TableCell className="py-2 text-sm text-gray-700 font-medium">{s.firmName || "—"}</TableCell>
                           <TableCell className="py-2 text-sm text-gray-700">{s.productName}</TableCell>
                           <TableCell className="py-2 text-sm text-gray-600">{s.typeOfTransporting || "—"}</TableCell>
                           <TableCell className="py-2 text-sm text-gray-600">{s.transporterName || "—"}</TableCell>

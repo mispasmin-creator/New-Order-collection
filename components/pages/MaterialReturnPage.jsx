@@ -304,46 +304,26 @@ export default function MaterialReturnPage({ user }) {
       setInvoicePartyName(partyName);
       setInvoiceProducts(allowedData);
 
-      // Consolidate duplicate dispatch rows by Product Name and Delivery Order No.
-      const consolidatedMap = new Map();
-      for (const row of allowedData) {
-        const prod = row["Product Name"] || "";
-        const doNo = row["Delivery Order No."] || "";
-        const key = `${prod}|${doNo}`;
-
+      const lines = allowedData.map((row) => {
         const actualTruckQty = parseFloat(row["Actual Truck Qty"]) || 0;
         const dispatchQty = parseFloat(row["Qty To Be Dispatched"]) || 0;
-        const qty = (actualTruckQty > 0 && dispatchQty > 0)
+        const dispatchedQty = (actualTruckQty > 0 && dispatchQty > 0)
           ? Math.min(actualTruckQty, dispatchQty)
           : (actualTruckQty || dispatchQty || 0);
 
-        if (consolidatedMap.has(key)) {
-          const existing = consolidatedMap.get(key);
-          existing.qty += qty;
-        } else {
-          consolidatedMap.set(key, {
-            dispatchId: row.id,
-            productName: prod,
-            doNumber: doNo,
-            qty: qty,
-          });
-        }
-      }
-
-      const lines = Array.from(consolidatedMap.values()).map((item) => {
-        const dispatchedQty = item.qty;
-        const alreadyReturned =
-          alreadyReturnedMap[item.productName] || 0;
+        const prodName = row["Product Name"] || "";
+        const alreadyReturned = alreadyReturnedMap[prodName] || 0;
         const availableQty = Math.max(0, dispatchedQty - alreadyReturned);
+
         return {
-          dispatchId: item.dispatchId,
-          productName: item.productName,
+          dispatchId: row.id,
+          productName: prodName,
           originalQty: dispatchedQty,
           alreadyReturned,
           availableQty,
           returnQty: "",
-          doNumber: item.doNumber,
-          removed: availableQty === 0, // auto-remove if nothing left to return
+          doNumber: row["Delivery Order No."] || "",
+          removed: availableQty === 0,
           reason: "",
           remarks: "",
           debitNoteFile: null,

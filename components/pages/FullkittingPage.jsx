@@ -655,6 +655,7 @@ export default function FullkittingPage({ user }) {
                 <TableHead>Status</TableHead>
                 {activeTab === "pending" && <TableHead>Action</TableHead>}
                 <TableHead>Invoice</TableHead>
+                <TableHead>Firm Name</TableHead>
                 <TableHead>PO / Party</TableHead>
                 <TableHead>DO Number</TableHead>
                 <TableHead>Product</TableHead>
@@ -675,7 +676,7 @@ export default function FullkittingPage({ user }) {
             <TableBody>
               {groupedRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "history" ? 18 : 17} className="py-8 text-center text-gray-500">
+                  <TableCell colSpan={activeTab === "history" ? 19 : 18} className="py-8 text-center text-gray-500">
                     No {activeTab} Fullkitting entries found
                   </TableCell>
                 </TableRow>
@@ -683,7 +684,7 @@ export default function FullkittingPage({ user }) {
                 groupedRows.map((group) => (
                   <Fragment key={group.key}>
                     <TableRow className="bg-slate-50">
-                      <TableCell colSpan={activeTab === "history" ? 18 : 17} className="py-2 px-4">
+                      <TableCell colSpan={activeTab === "history" ? 19 : 18} className="py-2 px-4">
                         <div className="flex flex-wrap items-center gap-3 text-sm">
                           <span className="font-semibold text-slate-900">{group.poNumber}</span>
                           <span className="text-slate-500">{group.partyName}</span>
@@ -716,6 +717,7 @@ export default function FullkittingPage({ user }) {
                             )}
                           </div>
                         </TableCell>
+                        <TableCell className="text-sm font-medium text-gray-700">{row.firmName || "N/A"}</TableCell>
                         <TableCell>
                           <div className="text-sm font-medium text-gray-900">{row.partyPONumber || "N/A"}</div>
                           <div className="text-xs text-gray-500">{row.partyName || "N/A"}</div>

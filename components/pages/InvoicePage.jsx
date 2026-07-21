@@ -27,6 +27,7 @@ import {
   FileText,
   Download,
   Building,
+  Pencil,
 } from "lucide-react";
 import {
   Select,
@@ -60,6 +61,14 @@ export default function MakeInvoicePage({ user }) {
   const [invoiceCopyFile, setInvoiceCopyFile] = useState(null);
   // Per-product editable lines: [{ id, productName, qty, rate, gstPct }]
   const [productLines, setProductLines] = useState([]);
+
+  // Admin edit bill modal state (History tab)
+  const [adminEditBillModalOpen, setAdminEditBillModalOpen] = useState(false);
+  const [adminEditBillOrder, setAdminEditBillOrder] = useState(null);
+  const [adminEditBillNo, setAdminEditBillNo] = useState("");
+  const [adminEditBillCopyFile, setAdminEditBillCopyFile] = useState(null);
+  const [adminEditBillCopyUrl, setAdminEditBillCopyUrl] = useState("");
+  const [adminEditSubmitting, setAdminEditSubmitting] = useState(false);
 
   useEffect(() => {
     fetchInvoiceData();
@@ -591,6 +600,85 @@ export default function MakeInvoicePage({ user }) {
     }
   };
 
+  const handleOpenAdminEditBill = (order) => {
+    setAdminEditBillOrder(order);
+    setAdminEditBillNo(order.billNumber || "");
+    setAdminEditBillCopyUrl(order.billCopy || "");
+    setAdminEditBillCopyFile(null);
+    setAdminEditBillModalOpen(true);
+  };
+
+  const handleSaveAdminEditBill = async () => {
+    if (!adminEditBillOrder) return;
+    try {
+      setAdminEditSubmitting(true);
+      let newBillCopyUrl = adminEditBillCopyUrl;
+
+      if (adminEditBillCopyFile) {
+        const fileExt = adminEditBillCopyFile.name.split(".").pop();
+        const fileName = `invoice/bill_${adminEditBillOrder.dSrNumber || adminEditBillOrder.id}_${Date.now()}.${fileExt}`;
+        const { error: upErr } = await supabase.storage
+          .from("images")
+          .upload(fileName, adminEditBillCopyFile);
+        if (upErr) throw upErr;
+
+        const { data: pubData } = supabase.storage
+          .from("images")
+          .getPublicUrl(fileName);
+        newBillCopyUrl = pubData.publicUrl;
+      }
+
+      // Update DISPATCH
+      await supabase
+        .from("DISPATCH")
+        .update({
+          "Bill Number": adminEditBillNo,
+          "Bill Copy": newBillCopyUrl,
+        })
+        .eq("id", adminEditBillOrder.id);
+
+      // Update DELIVERY if exists
+      if (adminEditBillOrder.dSrNumber) {
+        await supabase
+          .from("DELIVERY")
+          .update({
+            "Bill No.": adminEditBillNo,
+            "Bilty Copy": newBillCopyUrl,
+          })
+          .eq("D-Sr Number", adminEditBillOrder.dSrNumber);
+      }
+
+      // Update POST DELIVERY if exists
+      if (adminEditBillOrder.deliveryOrderNo) {
+        await supabase
+          .from("POST DELIVERY")
+          .update({
+            "Bill No.": adminEditBillNo,
+            "Copy Of Bill": newBillCopyUrl,
+          })
+          .eq("Order No.", adminEditBillOrder.deliveryOrderNo);
+      }
+
+      toast({
+        title: "Bill Updated",
+        description: "Bill number & copy updated successfully.",
+        className: "bg-green-50 text-green-800 border-green-200",
+      });
+
+      setAdminEditBillModalOpen(false);
+      fetchInvoiceData();
+    } catch (err) {
+      console.error("Error updating bill:", err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: err.message,
+      });
+    } finally {
+      setAdminEditSubmitting(false);
+    }
+  };
+
   const totalParties = useMemo(
     () => new Set([...orders, ...completedOrders].map((o) => o.partyName)).size,
     [orders, completedOrders],
@@ -1035,9 +1123,22 @@ export default function MakeInvoicePage({ user }) {
                         {activeTab === "history" && (
                           <TableCell className="py-2 px-4 text-sm">
                             <div className="flex flex-col gap-0.5">
-                              <span className="font-medium">
-                                {order.billNumber || "—"}
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-medium">
+                                  {order.billNumber || "—"}
+                                </span>
+                                {user?.role === "ADMIN" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5 text-amber-600 hover:text-amber-800"
+                                    title="Edit Bill"
+                                    onClick={() => handleOpenAdminEditBill(order)}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
                               {order.billCopy && (
                                 <a
                                   href={order.billCopy}
@@ -1453,6 +1554,76 @@ export default function MakeInvoicePage({ user }) {
                       <CheckCircle2 className="w-4 h-4 mr-2" />
                       Submit Invoice
                     </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Admin Edit Bill Modal */}
+      {adminEditBillModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md shadow-2xl">
+            <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50 rounded-t-xl">
+              <CardTitle className="text-lg">Edit Bill Details (Admin)</CardTitle>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setAdminEditBillModalOpen(false)}
+                disabled={adminEditSubmitting}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="adminBillNo">Bill Number</Label>
+                <Input
+                  id="adminBillNo"
+                  value={adminEditBillNo}
+                  onChange={(e) => setAdminEditBillNo(e.target.value)}
+                  placeholder="Enter Bill Number"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="adminBillCopy">Bill Copy PDF / Image</Label>
+                {adminEditBillCopyUrl && (
+                  <p className="text-xs text-blue-600 truncate mb-1">
+                    Current: <a href={adminEditBillCopyUrl} target="_blank" rel="noopener noreferrer" className="underline">View Existing Copy</a>
+                  </p>
+                )}
+                <Input
+                  id="adminBillCopy"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  onChange={(e) => setAdminEditBillCopyFile(e.target.files?.[0] || null)}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => setAdminEditBillModalOpen(false)}
+                  disabled={adminEditSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveAdminEditBill}
+                  className="bg-blue-600 hover:bg-blue-700"
+                  disabled={adminEditSubmitting}
+                >
+                  {adminEditSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save Changes"
                   )}
                 </Button>
               </div>
