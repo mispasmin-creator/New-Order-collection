@@ -1146,6 +1146,9 @@ export default function MaterialReturnPage({ user }) {
                                 <SelectItem value="Material Return">
                                   Material Return
                                 </SelectItem>
+                                <SelectItem value="Material Reject">
+                                  Material Reject
+                                </SelectItem>
                                 <SelectItem value="Other">Other</SelectItem>
                               </SelectContent>
                             </Select>
