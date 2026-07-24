@@ -28,7 +28,15 @@ import {
   Download,
   Building,
   Pencil,
+  Package,
+  ChevronDown,
+  Check,
 } from "lucide-react";
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -50,6 +58,9 @@ export default function MakeInvoicePage({ user }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [reportSourceFilter, setReportSourceFilter] = useState("all");
   const [filterFirm, setFilterFirm] = useState("all");
+  const [filterProduct, setFilterProduct] = useState("all");
+  const [productPopoverOpen, setProductPopoverOpen] = useState(false);
+  const [productSearchTerm, setProductSearchTerm] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
 
@@ -271,6 +282,7 @@ export default function MakeInvoicePage({ user }) {
   const searchFilter = (list) => {
     let result = list;
     if (filterFirm !== "all") result = result.filter((o) => o.firmName === filterFirm);
+    if (filterProduct !== "all") result = result.filter((o) => o.productName === filterProduct);
     if (filterDateFrom) {
       const from = new Date(filterDateFrom);
       result = result.filter((o) => {
@@ -689,6 +701,21 @@ export default function MakeInvoicePage({ user }) {
     return ["all", ...new Set(all.map((o) => o.firmName).filter(Boolean))];
   }, [orders, completedOrders]);
 
+  const productOptions = useMemo(() => {
+    const all = [...orders, ...completedOrders];
+    return ["all", ...new Set(all.map((o) => o.productName).filter(Boolean))];
+  }, [orders, completedOrders]);
+
+  const filteredProductOptions = useMemo(() => {
+    if (!productSearchTerm.trim()) return productOptions;
+    const term = productSearchTerm.toLowerCase();
+    return productOptions.filter((p) =>
+      p === "all"
+        ? "all products".includes(term)
+        : p.toLowerCase().includes(term)
+    );
+  }, [productOptions, productSearchTerm]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
@@ -783,6 +810,70 @@ export default function MakeInvoicePage({ user }) {
               ))}
             </SelectContent>
           </Select>
+          <Popover open={productPopoverOpen} onOpenChange={setProductPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={productPopoverOpen}
+                className="h-10 w-[200px] justify-between font-normal"
+              >
+                <div className="flex items-center truncate">
+                  <Package className="w-4 h-4 mr-2 shrink-0 text-gray-500" />
+                  <span className="truncate">
+                    {filterProduct === "all" ? "All Products" : filterProduct}
+                  </span>
+                </div>
+                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[240px] p-2" align="start">
+              <div className="flex items-center border-b pb-2 mb-2 px-1">
+                <Search className="w-4 h-4 mr-2 text-gray-400 shrink-0" />
+                <Input
+                  placeholder="Search product..."
+                  value={productSearchTerm}
+                  onChange={(e) => setProductSearchTerm(e.target.value)}
+                  className="h-8 border-none focus-visible:ring-0 focus-visible:ring-offset-0 px-0 text-sm"
+                  autoFocus
+                />
+                {productSearchTerm && (
+                  <button
+                    onClick={() => setProductSearchTerm("")}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="max-h-[200px] overflow-y-auto space-y-1">
+                {filteredProductOptions.length === 0 ? (
+                  <div className="py-2 text-center text-xs text-gray-500">
+                    No products found
+                  </div>
+                ) : (
+                  filteredProductOptions.map((p) => (
+                    <div
+                      key={p}
+                      onClick={() => {
+                        setFilterProduct(p);
+                        setProductPopoverOpen(false);
+                        setProductSearchTerm("");
+                      }}
+                      className={`flex items-center justify-between px-2 py-1.5 text-sm rounded-md cursor-pointer hover:bg-slate-100 transition-colors ${
+                        filterProduct === p ? "bg-slate-100 font-medium text-slate-900" : "text-slate-700"
+                      }`}
+                    >
+                      <span className="truncate">{p === "all" ? "All Products" : p}</span>
+                      {filterProduct === p && (
+                        <Check className="w-4 h-4 text-blue-600 shrink-0 ml-2" />
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
           <div className="flex items-center gap-1">
             <Input
               type="date"
