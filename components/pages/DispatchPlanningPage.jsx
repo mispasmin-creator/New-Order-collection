@@ -668,9 +668,8 @@ export default function DispatchPlanningPage({ user }) {
 
       // Step 2: Insert DISPATCH rows and update po_logistics_splits
       await Promise.all(
-        activeLines.map(async (line) => {
+        activeLines.map(async (line, idx) => {
           const dispatchQty = parseFloat(line.dispatchQty) || 0
-          const idx = activeLines.indexOf(line) // Use original index for D-Sr numbers
 
           let finalSplitId = line.splitId;
           let finalPlanId = line.planId;

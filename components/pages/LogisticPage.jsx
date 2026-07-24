@@ -399,13 +399,17 @@ export default function LogisticPage({ user }) {
       await Promise.all(
         selectedRows.map((row, i) => {
           const lgstNumber = lgstNumbers[i]
+          const rowUpdates = {
+            ...baseUpdates,
+            [DB_COLUMNS.LGST_SR_NUMBER]: lgstNumber,
+            [DB_COLUMNS.ACTUAL_TRUCK_QTY]: parseFloat(row.qtyToBeDispatched) || null,
+          }
+          if (showTransportDetails && formData.typeOfRate === "Fixed Amount") {
+            rowUpdates[DB_COLUMNS.FIXED_AMOUNT] = i === 0 ? (parseFloat(formData.fixedAmount) || null) : null
+          }
           return supabase
             .from("DISPATCH")
-            .update({
-              ...baseUpdates,
-              [DB_COLUMNS.LGST_SR_NUMBER]: lgstNumber,
-              [DB_COLUMNS.ACTUAL_TRUCK_QTY]: parseFloat(row.qtyToBeDispatched) || null,
-            })
+            .update(rowUpdates)
             .eq("id", row.id)
         })
       )
