@@ -103,56 +103,55 @@ export default function ReturnOfMaterialPage({ user }) {
         : null
       const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
 
-      // D.O Number alone is not always unique across ORDER RECEIPT (e.g. two
-      // different parties/firms can end up with the same DO number), so we key
-      // the firm lookup on DO number + Party Name to disambiguate, and keep a
-      // DO-number-only map as a fallback for rows where that composite match fails.
+      // D.O Number alone is not always unique across ORDER RECEIPT (the same DO
+      // number can end up on orders for two different parties/firms), so the
+      // firm lookup is keyed on DO number + Party Name to disambiguate. We fetch
+      // the FULL (unfiltered) ORDER RECEIPT set for this — filtering it by the
+      // logged-in user's firm first would only see that firm's rows and could
+      // wrongly resolve a shared DO number to the wrong firm (and leak another
+      // firm's return into this user's view). Per-firm visibility is applied
+      // afterwards, using the resolved firmName instead of raw DO membership.
       const normalize = (v) => String(v || '').trim().toLowerCase()
 
-      let allowedDoNumbers = []
       const firmMap = {}
-      const firmMapByDoOnly = {}
-
-      let orQuery = supabase
+      const doNumberFirms = {}
+      const { data: orRows } = await supabase
         .from('ORDER RECEIPT')
         .select('"DO-Delivery Order No.", "Firm Name", "Party Names"')
-
-      if (shouldFilter) {
-        orQuery = orQuery.in('Firm Name', userFirms)
-      }
-
-      const { data: orRows } = await orQuery
       orRows?.forEach(r => {
-        if (r['DO-Delivery Order No.']) {
-          allowedDoNumbers.push(r['DO-Delivery Order No.'])
-          const key = `${r['DO-Delivery Order No.']}|${normalize(r['Party Names'])}`
-          firmMap[key] = r['Firm Name']
-          firmMapByDoOnly[r['DO-Delivery Order No.']] = r['Firm Name']
-        }
+        const doNo = r['DO-Delivery Order No.']
+        if (!doNo) return
+        const key = `${doNo}|${normalize(r['Party Names'])}`
+        firmMap[key] = r['Firm Name']
+        if (!doNumberFirms[doNo]) doNumberFirms[doNo] = new Set()
+        doNumberFirms[doNo].add(r['Firm Name'])
+      })
+      // Only use a DO-number-only fallback when that DO number maps to a single
+      // firm everywhere — if it's shared across multiple firms, guessing would
+      // silently pick the wrong one, so we deliberately leave it unresolved instead.
+      const firmMapByDoOnly = {}
+      Object.entries(doNumberFirms).forEach(([doNo, firms]) => {
+        if (firms.size === 1) firmMapByDoOnly[doNo] = [...firms][0]
       })
 
       // All reasons — management approved AND credit note issued
-      let returnQuery = supabase
+      const { data, error } = await supabase
         .from("Material Return")
         .select("*")
         .not("Actual5", "is", null)
         .not("Debit Note Issued At", "is", null)
         .order("id", { ascending: false })
-      
-      if (shouldFilter) {
-        returnQuery = returnQuery.in('"D.O Number"', allowedDoNumbers)
-      }
-      
-      const { data, error } = await returnQuery
       if (error) throw error
 
-      const mappedData = (data || []).map(row => {
-        const key = `${row["D.O Number"]}|${normalize(row["Party Name"])}`
-        return {
-          ...row,
-          firmName: firmMap[key] || firmMapByDoOnly[row["D.O Number"]] || ""
-        }
-      })
+      const mappedData = (data || [])
+        .map(row => {
+          const key = `${row["D.O Number"]}|${normalize(row["Party Name"])}`
+          return {
+            ...row,
+            firmName: firmMap[key] || firmMapByDoOnly[row["D.O Number"]] || ""
+          }
+        })
+        .filter(row => !shouldFilter || userFirms.includes(row.firmName))
 
       const pending = []
       const history = []
