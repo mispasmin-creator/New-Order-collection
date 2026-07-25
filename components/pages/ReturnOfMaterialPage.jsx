@@ -103,22 +103,31 @@ export default function ReturnOfMaterialPage({ user }) {
         : null
       const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
 
+      // D.O Number alone is not always unique across ORDER RECEIPT (e.g. two
+      // different parties/firms can end up with the same DO number), so we key
+      // the firm lookup on DO number + Party Name to disambiguate, and keep a
+      // DO-number-only map as a fallback for rows where that composite match fails.
+      const normalize = (v) => String(v || '').trim().toLowerCase()
+
       let allowedDoNumbers = []
       const firmMap = {}
-      
+      const firmMapByDoOnly = {}
+
       let orQuery = supabase
         .from('ORDER RECEIPT')
-        .select('"DO-Delivery Order No.", "Firm Name"')
-      
+        .select('"DO-Delivery Order No.", "Firm Name", "Party Names"')
+
       if (shouldFilter) {
         orQuery = orQuery.in('Firm Name', userFirms)
       }
-      
+
       const { data: orRows } = await orQuery
       orRows?.forEach(r => {
         if (r['DO-Delivery Order No.']) {
           allowedDoNumbers.push(r['DO-Delivery Order No.'])
-          firmMap[r['DO-Delivery Order No.']] = r['Firm Name']
+          const key = `${r['DO-Delivery Order No.']}|${normalize(r['Party Names'])}`
+          firmMap[key] = r['Firm Name']
+          firmMapByDoOnly[r['DO-Delivery Order No.']] = r['Firm Name']
         }
       })
 
@@ -137,10 +146,13 @@ export default function ReturnOfMaterialPage({ user }) {
       const { data, error } = await returnQuery
       if (error) throw error
 
-      const mappedData = (data || []).map(row => ({
-        ...row,
-        firmName: firmMap[row["D.O Number"]] || ""
-      }))
+      const mappedData = (data || []).map(row => {
+        const key = `${row["D.O Number"]}|${normalize(row["Party Name"])}`
+        return {
+          ...row,
+          firmName: firmMap[key] || firmMapByDoOnly[row["D.O Number"]] || ""
+        }
+      })
 
       const pending = []
       const history = []
