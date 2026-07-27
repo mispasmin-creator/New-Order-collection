@@ -67,10 +67,10 @@ export default function MakeInvoicePage({ user }) {
   // Group-level modal state
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [selectedRowIds, setSelectedRowIds] = useState(new Set());
-  const [invoiceNo, setInvoiceNo] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState("");
-  const [invoiceCopyFile, setInvoiceCopyFile] = useState(null);
-  // Per-product editable lines: [{ id, productName, qty, rate, gstPct }]
+  const [commonInvoiceNo, setCommonInvoiceNo] = useState("");
+  const [commonInvoiceDate, setCommonInvoiceDate] = useState("");
+  const [commonInvoiceCopyFile, setCommonInvoiceCopyFile] = useState(null);
+  // Per-product editable lines: [{ id, productName, qty, rate, gstPct, invoiceNo, invoiceDate, invoiceCopyFile }]
   const [productLines, setProductLines] = useState([]);
 
   // Admin edit bill modal state (History tab)
@@ -344,11 +344,22 @@ export default function MakeInvoicePage({ user }) {
         imageOfSlip: row.imageOfSlip || "",
         imageOfSlip2: row.imageOfSlip2 || "",
         imageOfSlip3: row.imageOfSlip3 || "",
+        // Per-row invoice details
+        invoiceNo: "",
+        invoiceDate: "",
+        invoiceCopyFile: null,
+        tcRequired: row.tcRequired,
+        partyName: row.partyName,
+        qtyToBeDispatched: row.qtyToBeDispatched,
+        rateOfMaterial: row.rateOfMaterial,
+        typeOfTransporting: row.typeOfTransporting,
+        biltyNo: row.biltyNo,
+        dSrNumber: row.dSrNumber,
       })),
     );
-    setInvoiceNo("");
-    setInvoiceDate("");
-    setInvoiceCopyFile(null);
+    setCommonInvoiceNo("");
+    setCommonInvoiceDate("");
+    setCommonInvoiceCopyFile(null);
   };
 
   const toggleRow = (id) => {
@@ -366,13 +377,31 @@ export default function MakeInvoicePage({ user }) {
     else setSelectedRowIds(new Set());
   };
 
+  const handleApplyToAll = () => {
+    setProductLines((prev) =>
+      prev.map((line) => {
+        if (!selectedRowIds.has(line.id)) return line;
+        return {
+          ...line,
+          invoiceNo: commonInvoiceNo.trim() ? commonInvoiceNo.trim() : line.invoiceNo,
+          invoiceDate: commonInvoiceDate ? commonInvoiceDate : line.invoiceDate,
+          invoiceCopyFile: commonInvoiceCopyFile ? commonInvoiceCopyFile : line.invoiceCopyFile,
+        };
+      })
+    );
+    toast({
+      title: "Quick Fill Applied",
+      description: "Common invoice details applied to selected rows.",
+    });
+  };
+
   const handleClose = () => {
     setSelectedGroup(null);
     setSelectedRowIds(new Set());
     setProductLines([]);
-    setInvoiceNo("");
-    setInvoiceDate("");
-    setInvoiceCopyFile(null);
+    setCommonInvoiceNo("");
+    setCommonInvoiceDate("");
+    setCommonInvoiceCopyFile(null);
   };
 
   const updateLine = (index, field, value) => {
@@ -508,84 +537,92 @@ export default function MakeInvoicePage({ user }) {
       return;
     }
 
-    if (!invoiceNo.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Validation",
-        description: "Invoice Number is required.",
-      });
-      return;
-    }
-    if (!invoiceDate) {
-      toast({
-        variant: "destructive",
-        title: "Validation",
-        description: "Invoice Date is required.",
-      });
-      return;
-    }
-    if (!invoiceCopyFile) {
-      toast({
-        variant: "destructive",
-        title: "Validation",
-        description: "Invoice copy upload is required.",
-      });
-      return;
+    const selectedLines = productLines.filter((l) => selectedRowIds.has(l.id));
+    for (let i = 0; i < selectedLines.length; i++) {
+      const line = selectedLines[i];
+      const rowLabel = line.deliveryOrderNo || line.truckNo || `Row ${i + 1}`;
+      if (!line.invoiceNo || !line.invoiceNo.trim()) {
+        toast({
+          variant: "destructive",
+          title: "Validation Error",
+          description: `Invoice Number * is required for: ${rowLabel}.`,
+        });
+        return;
+      }
+      if (!line.invoiceDate) {
+        toast({
+          variant: "destructive",
+          title: "Validation Error",
+          description: `Invoice Date * is required for: ${rowLabel}.`,
+        });
+        return;
+      }
+      if (!line.invoiceCopyFile) {
+        toast({
+          variant: "destructive",
+          title: "Validation Error",
+          description: `Invoice Copy * file is required for: ${rowLabel}.`,
+        });
+        return;
+      }
     }
 
     try {
       setSubmitting(true);
       const actualDateTime = getISTTimestamp();
 
-      // Upload invoice copy once (shared for the whole PO group)
-      const fileExt = invoiceCopyFile.name.split(".").pop();
-      const refDsr = selectedGroup.rows[0]?.dSrNumber || "unknown";
-      const fileName = `invoices/bill-copies/${refDsr}_${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage
-        .from("images")
-        .upload(fileName, invoiceCopyFile, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-      if (uploadError) throw uploadError;
-
-      const {
-        data: { publicUrl: billCopyUrl },
-      } = supabase.storage.from("images").getPublicUrl(fileName);
-
-      // Update every selected DISPATCH row in the group
+      // Process each selected line (upload invoice file & update DB)
       await Promise.all(
-        selectedRows.map(async (row) => {
+        selectedLines.map(async (line) => {
+          let billCopyUrl = "";
+          if (line.invoiceCopyFile) {
+            const fileExt = line.invoiceCopyFile.name.split(".").pop();
+            const refDsr = line.lgstSrNumber || line.id || "unknown";
+            const fileName = `invoices/bill-copies/${refDsr}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.${fileExt}`;
+            const { error: uploadError } = await supabase.storage
+              .from("images")
+              .upload(fileName, line.invoiceCopyFile, {
+                cacheControl: "3600",
+                upsert: false,
+              });
+            if (uploadError) throw uploadError;
+
+            const {
+              data: { publicUrl },
+            } = supabase.storage.from("images").getPublicUrl(fileName);
+            billCopyUrl = publicUrl;
+          }
+
           const { error: updateErr } = await supabase
             .from("DISPATCH")
             .update({
               Actual4: actualDateTime,
-              "Bill Number": invoiceNo.trim(),
-              "Bill Date": invoiceDate,
+              "Bill Number": line.invoiceNo.trim(),
+              "Bill Date": line.invoiceDate,
               "Bill Copy": billCopyUrl,
             })
-            .eq("id", row.id);
+            .eq("id", line.id);
           if (updateErr) throw updateErr;
 
           // If TC is not required, automatically move to DELIVERY
-          if (row.tcRequired === "No") {
+          if (line.tcRequired === "No" || line.tcRequired === "no") {
             const { error: deliveryInsertError } = await supabase.from("DELIVERY").insert([
               {
                 "Timestamp": actualDateTime,
-                "Bill Date": invoiceDate,
-                "Delivery Order No.": row.deliveryOrderNo,
-                "Party Name": row.partyName,
-                "Product Name": row.productName,
-                "Quantity Delivered.": row.actualTruckQty || row.qtyToBeDispatched || null,
-                "Bill No.": invoiceNo.trim(),
-                "Losgistic no.": row.dSrNumber || "",
-                "Rate Of Material": row.rateOfMaterial,
-                "Type Of Transporting": row.typeOfTransporting || "",
-                "Transporter Name": row.transporterName || "",
-                "Vehicle Number.": row.truckNo || "",
-                "Bilty Number.": row.biltyNo || "",
+                "Bill Date": line.invoiceDate,
+                "Delivery Order No.": line.deliveryOrderNo,
+                "Party Name": line.partyName,
+                "Product Name": line.productName,
+                "Quantity Delivered.": line.actualTruckQty || line.qtyToBeDispatched || null,
+                "Bill No.": line.invoiceNo.trim(),
+                "Losgistic no.": line.dSrNumber || line.lgstSrNumber || "",
+                "Rate Of Material": line.rate,
+                "Type Of Transporting": line.typeOfTransporting || "",
+                "Transporter Name": line.transporterName || "",
+                "Vehicle Number.": line.truckNo || "",
+                "Bilty Number.": line.biltyNo || "",
                 "Giving From Where": "",
-                "D-Sr Number": row.dSrNumber || "",
+                "D-Sr Number": line.dSrNumber || line.lgstSrNumber || "",
               }
             ]);
             if (deliveryInsertError) throw deliveryInsertError;
@@ -595,7 +632,7 @@ export default function MakeInvoicePage({ user }) {
 
       toast({
         title: "Success",
-        description: `Invoice submitted for PO ${selectedGroup.poNumber} (${selectedRows.length} row${selectedRows.length > 1 ? "s" : ""}).`,
+        description: `Invoice submitted for PO ${selectedGroup.poNumber} (${selectedLines.length} row${selectedLines.length > 1 ? "s" : ""}).`,
       });
 
       handleClose();
@@ -1257,7 +1294,7 @@ export default function MakeInvoicePage({ user }) {
       {/* ── Invoice Modal ─────────────────────────────────────────────────────── */}
       {selectedGroup && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+          <Card className="w-full max-w-6xl max-h-[90vh] overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b z-10">
               <CardTitle className="text-lg">Make Invoice</CardTitle>
               <Button
@@ -1428,12 +1465,49 @@ export default function MakeInvoicePage({ user }) {
 
               {/* Product lines table */}
               <div>
-                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                  <span className="w-1 h-5 bg-green-600 rounded-full inline-block" />
-                  Product Lines
-                </h3>
-                <div className="border rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <span className="w-1 h-5 bg-green-600 rounded-full inline-block" />
+                    Product Lines
+                  </h3>
+                </div>
+
+                {selectedGroup.rows.length > 1 && (
+                  <div className="bg-slate-50 p-3 rounded-lg border flex flex-wrap items-center gap-3 text-xs mb-3">
+                    <span className="font-semibold text-slate-700">Quick Fill All Selected:</span>
+                    <Input
+                      type="text"
+                      placeholder="Invoice No"
+                      value={commonInvoiceNo}
+                      onChange={(e) => setCommonInvoiceNo(e.target.value)}
+                      className="h-7 w-28 bg-white text-xs"
+                    />
+                    <Input
+                      type="date"
+                      value={commonInvoiceDate}
+                      onChange={(e) => setCommonInvoiceDate(e.target.value)}
+                      className="h-7 w-32 bg-white text-xs"
+                    />
+                    <Input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={(e) => setCommonInvoiceCopyFile(e.target.files?.[0] || null)}
+                      className="h-7 w-44 bg-white text-[10px] p-0.5"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleApplyToAll}
+                      className="h-7 text-xs bg-blue-100 text-blue-700 hover:bg-blue-200"
+                    >
+                      Apply to Selected Rows
+                    </Button>
+                  </div>
+                )}
+
+                <div className="border rounded-lg overflow-x-auto">
+                  <table className="w-full text-sm min-w-[900px]">
                     <thead className="bg-gray-100 text-[10px]">
                       <tr>
                         <th className="w-8 px-2 py-2">
@@ -1453,7 +1527,7 @@ export default function MakeInvoicePage({ user }) {
                         <th className="text-right px-3 py-2 font-semibold text-gray-600">
                           Qty
                         </th>
-                        <th className="text-right px-3 py-2 font-semibold text-gray-600 min-w-[100px]">
+                        <th className="text-right px-3 py-2 font-semibold text-gray-600 min-w-[90px]">
                           Rate (₹)
                         </th>
                         {hasFreightAmount && (
@@ -1466,6 +1540,15 @@ export default function MakeInvoicePage({ user }) {
                         </th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-600">
                           Amt w/ Tax (₹)
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[120px]">
+                          Invoice Number <span className="text-red-500">*</span>
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[130px]">
+                          Invoice Date <span className="text-red-500">*</span>
+                        </th>
+                        <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[160px]">
+                          Invoice Copy <span className="text-red-500">*</span>
                         </th>
                       </tr>
                     </thead>
@@ -1538,6 +1621,51 @@ export default function MakeInvoicePage({ user }) {
                           <td className="px-3 py-2 text-right font-bold text-gray-900">
                             {fmt(line.amountWithTax)}
                           </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              type="text"
+                              placeholder="Invoice No"
+                              value={productLines[i]?.invoiceNo || ""}
+                              onChange={(e) =>
+                                updateLine(i, "invoiceNo", e.target.value)
+                              }
+                              className="h-7 w-28 text-xs"
+                              disabled={submitting || !line.isSelected}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              type="date"
+                              value={productLines[i]?.invoiceDate || ""}
+                              onChange={(e) =>
+                                updateLine(i, "invoiceDate", e.target.value)
+                              }
+                              className="h-7 w-32 text-xs"
+                              disabled={submitting || !line.isSelected}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex flex-col gap-0.5">
+                              <Input
+                                type="file"
+                                accept="image/*,.pdf"
+                                onChange={(e) =>
+                                  updateLine(
+                                    i,
+                                    "invoiceCopyFile",
+                                    e.target.files?.[0] || null,
+                                  )
+                                }
+                                className="h-7 w-40 text-[10px] p-0.5"
+                                disabled={submitting || !line.isSelected}
+                              />
+                              {productLines[i]?.invoiceCopyFile && (
+                                <span className="text-[9px] text-green-600 truncate max-w-[150px]">
+                                  ✓ {productLines[i].invoiceCopyFile.name}
+                                </span>
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1555,57 +1683,10 @@ export default function MakeInvoicePage({ user }) {
                         <td className="px-3 py-2 text-right text-green-700 text-xs">
                           {fmt(grandWithTax)}
                         </td>
+                        <td colSpan={3} />
                       </tr>
                     </tfoot>
                   </table>
-                </div>
-              </div>
-
-              {/* Invoice details */}
-              <div className="border-t pt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">
-                    Invoice Number <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    type="text"
-                    placeholder="Enter invoice number"
-                    value={invoiceNo}
-                    onChange={(e) => setInvoiceNo(e.target.value)}
-                    disabled={submitting}
-                    className="h-10"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">
-                    Invoice Date <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    type="date"
-                    value={invoiceDate}
-                    onChange={(e) => setInvoiceDate(e.target.value)}
-                    disabled={submitting}
-                    className="h-10"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">
-                    Invoice Copy <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) =>
-                      setInvoiceCopyFile(e.target.files?.[0] || null)
-                    }
-                    disabled={submitting}
-                    className="h-10"
-                  />
-                  {invoiceCopyFile && (
-                    <p className="text-xs text-green-600">
-                      ✓ {invoiceCopyFile.name}
-                    </p>
-                  )}
                 </div>
               </div>
 
@@ -1615,8 +1696,7 @@ export default function MakeInvoicePage({ user }) {
                 <span>
                   Submitting will set <strong>Actual4</strong> to the current
                   date/time for the {selectedRowIds.size} selected row
-                  {selectedRowIds.size > 1 ? "s" : ""}. The same invoice copy
-                  will be linked to each selected dispatch row.
+                  {selectedRowIds.size > 1 ? "s" : ""}. Each selected row will store its own individual invoice details and copy.
                 </span>
               </div>
 
@@ -1633,7 +1713,7 @@ export default function MakeInvoicePage({ user }) {
                 <Button
                   onClick={handleSubmit}
                   className="bg-green-600 hover:bg-green-700 sm:w-auto w-full"
-                  disabled={submitting || !invoiceNo.trim() || !invoiceDate || !invoiceCopyFile}
+                  disabled={submitting || selectedRowIds.size === 0}
                 >
                   {submitting ? (
                     <>
