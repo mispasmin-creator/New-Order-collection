@@ -62,72 +62,166 @@ export default function UnifiedLogistics({ user }) {
       const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
 
       let allowedDoNumbers = []
-      const firmMap = {}
+      const firmMapCombined = {}
+      const doNumberPartyFirmMap = {}
+      const doNumberFirms = {}
+      const poIdFirmMap = new Map()
+
+      let orQuery = supabase
+        .from('ORDER RECEIPT')
+        .select('id, "DO-Delivery Order No.", "Firm Name", "Party Names"')
+
       if (shouldFilter) {
-        const { data: orRows } = await supabase
-          .from('ORDER RECEIPT')
-          .select('id, "DO-Delivery Order No.", "Firm Name"')
-          .in('Firm Name', userFirms)
-        orRows?.forEach(r => {
-          if (r['DO-Delivery Order No.']) {
-            allowedDoNumbers.push(r['DO-Delivery Order No.'])
-            firmMap[r['DO-Delivery Order No.']] = r['Firm Name']
-          }
-        })
-      } else {
-        const { data: orRows } = await supabase
-          .from('ORDER RECEIPT')
-          .select('"DO-Delivery Order No.", "Firm Name"')
-        orRows?.forEach(r => {
-          if (r['DO-Delivery Order No.']) {
-            firmMap[r['DO-Delivery Order No.']] = r['Firm Name']
-          }
-        })
+        orQuery = orQuery.in('Firm Name', userFirms)
       }
 
+      const { data: orRows } = await orQuery
+
+      orRows?.forEach(r => {
+        if (r.id && r['Firm Name']) poIdFirmMap.set(r.id, r['Firm Name'])
+        const doNo = (r['DO-Delivery Order No.'] || '').trim()
+        const firm = r['Firm Name']
+        const party = (r['Party Names'] || '').trim()
+
+        if (doNo) {
+          allowedDoNumbers.push(doNo)
+
+          if (party && firm) {
+            firmMapCombined[`${doNo}|${party.toLowerCase()}`] = firm
+            if (!doNumberPartyFirmMap[doNo]) doNumberPartyFirmMap[doNo] = []
+            doNumberPartyFirmMap[doNo].push({ party, firm })
+          }
+
+          if (!doNumberFirms[doNo]) doNumberFirms[doNo] = new Set()
+          if (firm) doNumberFirms[doNo].add(firm)
+        }
+      })
+
+      const firmMapByDoOnly = {}
+      Object.entries(doNumberFirms).forEach(([doNo, firms]) => {
+        if (firms.size === 1) {
+          firmMapByDoOnly[doNo] = [...firms][0]
+        }
+      })
+
       let deliveryQuery = supabase.from('DELIVERY').select('*').not('Planned 3', 'is', null)
-      if (shouldFilter) deliveryQuery = deliveryQuery.in('"Delivery Order No."', allowedDoNumbers)
+      if (shouldFilter && allowedDoNumbers.length > 0) deliveryQuery = deliveryQuery.in('"Delivery Order No."', allowedDoNumbers)
 
       let postDeliveryQuery = supabase.from('POST DELIVERY').select('*')
-      if (shouldFilter) postDeliveryQuery = postDeliveryQuery.in('"Order No."', allowedDoNumbers)
+      if (shouldFilter && allowedDoNumbers.length > 0) postDeliveryQuery = postDeliveryQuery.in('"Order No."', allowedDoNumbers)
 
       const [deliveryRes, postDeliveryRes, dispatchRes] = await Promise.all([
         deliveryQuery,
         postDeliveryQuery,
-        supabase.from('DISPATCH').select('"D-Sr Number", "Trust Certificate Made"')
+        supabase.from('DISPATCH').select('"D-Sr Number", "Trust Certificate Made", "Delivery Order No.", "Party Name", po_id')
       ])
 
       if (deliveryRes.error) throw deliveryRes.error
       if (postDeliveryRes.error) throw postDeliveryRes.error
 
-      setDeliveryData((deliveryRes.data || []).map(del => ({
-        ...del,
-        firmName: firmMap[del["Delivery Order No."]] || ""
-      })))
-      const taggedPostDelivery = (postDeliveryRes.data || []).map(pd => ({
-        ...pd,
-        firmName: firmMap[pd["Order No."]] || ""
-      }))
-      setPostDeliveryData(taggedPostDelivery)
-
       const tcMap = {}
+      const dispatchFirmMapCombined = {}
+      const dispatchFirmMapByDo = {}
+
       dispatchRes.data?.forEach(row => {
-        const key = row["D-Sr Number"]
-        if (key) tcMap[key] = row["Trust Certificate Made"] || ""
+        const dSr = (row["D-Sr Number"] || "").toString().trim()
+        const doNo = (row["Delivery Order No."] || "").toString().trim()
+        const party = (row["Party Name"] || "").toString().trim().toLowerCase()
+
+        if (dSr) {
+          tcMap[dSr] = row["Trust Certificate Made"] || ""
+          if (row.po_id && poIdFirmMap.has(row.po_id)) {
+            const firm = poIdFirmMap.get(row.po_id)
+            if (party) dispatchFirmMapCombined[`${dSr}|${party}`] = firm
+            if (doNo) dispatchFirmMapByDo[`${dSr}|${doNo}`] = firm
+          }
+        }
       })
       setDispatchTCMap(tcMap)
 
+      const resolveFirm = (poId, doNo, partyName, dSrNo) => {
+        // 1. Direct po_id lookup (highest accuracy)
+        if (poId && poIdFirmMap.has(poId)) {
+          return poIdFirmMap.get(poId)
+        }
+
+        const cleanDSr = (dSrNo || "").toString().trim()
+        const cleanDo = (doNo || "").toString().trim()
+        const cleanParty = (partyName || "").toString().trim().toLowerCase()
+
+        // 2. D-Sr Number + Party Name match from DISPATCH
+        if (cleanDSr && cleanParty && dispatchFirmMapCombined[`${cleanDSr}|${cleanParty}`]) {
+          return dispatchFirmMapCombined[`${cleanDSr}|${cleanParty}`]
+        }
+
+        // 3. D-Sr Number + DO Number match from DISPATCH
+        if (cleanDSr && cleanDo && dispatchFirmMapByDo[`${cleanDSr}|${cleanDo}`]) {
+          return dispatchFirmMapByDo[`${cleanDSr}|${cleanDo}`]
+        }
+
+        // 4. DO Number + Party Name match from ORDER RECEIPT
+        if (cleanDo && cleanParty) {
+          const exactKey = `${cleanDo}|${cleanParty}`
+          if (firmMapCombined[exactKey]) return firmMapCombined[exactKey]
+
+          if (doNumberPartyFirmMap[cleanDo]) {
+            for (const entry of doNumberPartyFirmMap[cleanDo]) {
+              const entryParty = entry.party.toLowerCase()
+              if (entryParty.includes(cleanParty) || cleanParty.includes(entryParty)) {
+                return entry.firm
+              }
+            }
+          }
+        }
+
+        // 5. Single DO Fallback
+        if (cleanDo && firmMapByDoOnly[cleanDo]) {
+          return firmMapByDoOnly[cleanDo]
+        }
+
+        return ""
+      }
+
+      const taggedDelivery = (deliveryRes.data || []).map(del => {
+        const poId = del.po_id || del["po_id"] || del["Order Receipt id"]
+        const dSr = del["D-Sr Number"] || del["Losgistic no."] || ""
+        return {
+          ...del,
+          firmName: resolveFirm(poId, del["Delivery Order No."], del["Party Name"], dSr)
+        }
+      })
+      setDeliveryData(taggedDelivery)
+
+      const billToFirmMap = {}
+      taggedDelivery.forEach(del => {
+        if (del["Bill No."] && del.firmName) {
+          billToFirmMap[del["Bill No."]] = del.firmName
+        }
+      })
+
+      const taggedPostDelivery = (postDeliveryRes.data || []).map(pd => {
+        const poId = pd.po_id || pd["po_id"]
+        let firm = resolveFirm(poId, pd["Order No."], pd["Party Name"], "")
+        if (!firm && pd["Bill No."] && billToFirmMap[pd["Bill No."]]) {
+          firm = billToFirmMap[pd["Bill No."]]
+        }
+        return {
+          ...pd,
+          firmName: firm
+        }
+      })
+      setPostDeliveryData(taggedPostDelivery)
+
       // Update notifications
-      const activePendingShipments = (deliveryRes.data || [])
+      const activePendingShipments = taggedDelivery
         .filter(del => {
           const type = del["Type Of Transporting"] || "";
           return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
         })
         .map(del => {
-          const delFirm = firmMap[del["Delivery Order No."]] || ""
           const receipt = taggedPostDelivery.find(pd => {
             if (del["Bill No."]) {
-              return pd["Bill No."] === del["Bill No."] && pd.firmName === delFirm
+              return pd["Bill No."] === del["Bill No."] && (pd.firmName === del.firmName || !pd.firmName || !del.firmName)
             }
             return pd["Order No."] && pd["Order No."] === del["Delivery Order No."]
           })
