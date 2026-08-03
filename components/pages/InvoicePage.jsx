@@ -1601,10 +1601,8 @@ export default function MakeInvoicePage({ user }) {
                               step="0.01"
                               min="0"
                               value={productLines[i].rate}
-                              onChange={(e) =>
-                                updateLine(i, "rate", e.target.value)
-                              }
-                              className="h-7 w-20 text-right ml-auto text-xs"
+                              readOnly
+                              className="h-7 w-20 text-right ml-auto text-xs bg-gray-100 cursor-not-allowed"
                               disabled={submitting || !line.isSelected}
                             />
                           </td>
