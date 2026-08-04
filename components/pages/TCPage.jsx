@@ -34,6 +34,7 @@ export default function TCPage({ user }) {
   const [activeTab, setActiveTab] = useState("pending")
   const [filterFirm, setFilterFirm] = useState("all")
   const [filterParty, setFilterParty] = useState("all")
+  const [filterTcStatus, setFilterTcStatus] = useState("all")
   const [selectedGroup, setSelectedGroup] = useState(null)
   const [expandedGroups, setExpandedGroups] = useState({})
   const [formData, setFormData] = useState({
@@ -165,6 +166,7 @@ export default function TCPage({ user }) {
   useEffect(() => {
     setFilterFirm("all")
     setFilterParty("all")
+    setFilterTcStatus("all")
     setSearchTerm("")
   }, [activeTab])
 
@@ -191,6 +193,9 @@ export default function TCPage({ user }) {
     if (filterParty !== "all") {
       source = source.filter(order => order.partyName === filterParty)
     }
+    if (filterTcStatus !== "all") {
+      source = source.filter(order => (order.tcFileUrl ? "uploaded" : "pending") === filterTcStatus)
+    }
 
     if (!searchTerm.trim()) return source
     const term = searchTerm.toLowerCase()
@@ -199,7 +204,7 @@ export default function TCPage({ user }) {
         value?.toString().toLowerCase().includes(term)
       )
     )
-  }, [activeTab, orders, historyOrders, searchTerm, filterFirm, filterParty])
+  }, [activeTab, orders, historyOrders, searchTerm, filterFirm, filterParty, filterTcStatus])
 
   const firmOptions = useMemo(() => {
     const source = activeTab === "pending" ? orders : historyOrders
@@ -473,6 +478,18 @@ export default function TCPage({ user }) {
             </SelectContent>
           </Select>
 
+          <Select value={filterTcStatus} onValueChange={setFilterTcStatus}>
+            <SelectTrigger className="h-10 w-[180px]">
+              <FileCheck className="w-4 h-4 mr-2" />
+              <SelectValue placeholder="TC Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All TC Status</SelectItem>
+              <SelectItem value="uploaded">TC Uploaded</SelectItem>
+              <SelectItem value="pending">TC Pending</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Button
             onClick={() => fetchData()}
             variant="outline"
@@ -512,11 +529,13 @@ export default function TCPage({ user }) {
               <TableRow className="bg-gray-50 border-b border-gray-200">
                 <TableHead className="w-8" />
                 {activeTab === "pending" && <TableHead className="font-semibold text-gray-900 py-3 px-4">Action</TableHead>}
+                <TableHead className="font-semibold text-gray-900 py-3 px-4">D-Sr No.</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Invoice No.</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4">DO Number</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Firm Name</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Party Name</TableHead>
+                <TableHead className="font-semibold text-gray-900 py-3 px-4">Product</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">Transporter Type</TableHead>
-                <TableHead className="font-semibold text-gray-900 py-3 px-4">Products</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">TC Required</TableHead>
                 <TableHead className="font-semibold text-gray-900 py-3 px-4">TC Status</TableHead>
               </TableRow>
@@ -524,7 +543,7 @@ export default function TCPage({ user }) {
             <TableBody>
               {groupedByInvoice.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "pending" ? 9 : 8} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={activeTab === "pending" ? 11 : 10} className="text-center py-8 text-gray-500">
                     No {activeTab} Test Certificate entries found
                   </TableCell>
                 </TableRow>
@@ -546,6 +565,9 @@ export default function TCPage({ user }) {
                           {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                         </TableCell>
                         {activeTab === "pending" && <TableCell />}
+                        <TableCell className="py-2 px-4 text-xs text-slate-500">
+                          {group.rows.length} D-Sr{group.rows.length > 1 ? "s" : ""}
+                        </TableCell>
                         <TableCell className="py-2 px-4 font-semibold text-slate-900">
                           {group.invoiceNo ? (
                             <Badge className="bg-indigo-500 text-white rounded-sm text-xs">{group.invoiceNo}</Badge>
@@ -553,12 +575,15 @@ export default function TCPage({ user }) {
                             <span className="text-gray-400 text-xs italic">No Invoice</span>
                           )}
                         </TableCell>
+                        <TableCell className="py-2 px-4 text-sm text-slate-700">
+                          {[...new Set(group.rows.map(r => r.deliveryOrderNo).filter(Boolean))].join(", ") || "N/A"}
+                        </TableCell>
                         <TableCell className="py-2 px-4 text-slate-700 font-medium">{group.rows[0]?.firmName || "N/A"}</TableCell>
                         <TableCell className="py-2 px-4 text-slate-700">{group.partyName}</TableCell>
-                        <TableCell className="py-2 px-4 text-sm text-slate-700">{getGroupTransportTypes(group)}</TableCell>
                         <TableCell className="py-2 px-4 text-xs text-slate-500">
                           {group.rows.length} product{group.rows.length > 1 ? "s" : ""}
                         </TableCell>
+                        <TableCell className="py-2 px-4 text-sm text-slate-700">{getGroupTransportTypes(group)}</TableCell>
                         <TableCell className="py-2 px-4 text-xs font-medium text-slate-700">
                           {/* Only show in child rows */}
                         </TableCell>
@@ -594,10 +619,14 @@ export default function TCPage({ user }) {
                           <TableCell className="py-2 px-4">
                             <Badge className="bg-blue-500 text-white rounded-sm text-xs">{order.dSrNumber || "N/A"}</Badge>
                           </TableCell>
+                          <TableCell className="py-2 px-4 text-sm text-gray-600">
+                            {order.billNumber ? <Badge className="bg-indigo-100 text-indigo-700 rounded-sm text-xs">{order.billNumber}</Badge> : "N/A"}
+                          </TableCell>
+                          <TableCell className="py-2 px-4 text-sm text-gray-600">{order.deliveryOrderNo || "N/A"}</TableCell>
                           <TableCell className="py-2 px-4 text-sm font-medium text-gray-700">{order.firmName || "N/A"}</TableCell>
-                          <TableCell className="py-2 px-4 text-sm text-gray-600">{order.productName || "N/A"}</TableCell>
+                          <TableCell className="py-2 px-4 text-sm text-gray-600">{order.partyName || "N/A"}</TableCell>
+                          <TableCell className="py-2 px-4 text-sm text-gray-600">{order.productName || "N/A"} <span className="text-gray-400">(Qty: {order.qtyToBeDispatched || "N/A"})</span></TableCell>
                           <TableCell className="py-2 px-4 text-sm text-gray-600">{order.typeOfTransporting || "N/A"}</TableCell>
-                          <TableCell className="py-2 px-4 text-sm text-gray-600">Qty: {order.qtyToBeDispatched || "N/A"} · DO: {order.deliveryOrderNo || "N/A"}</TableCell>
                           <TableCell className="py-2 px-4 text-xs font-medium text-gray-700">{order.tcRequired || "No"}</TableCell>
                           <TableCell className="py-2 px-4">
                             {order.tcFileUrl ? (
