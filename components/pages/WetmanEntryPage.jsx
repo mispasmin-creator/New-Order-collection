@@ -38,6 +38,7 @@ export default function WeighmentEntryPage({ user }) {
   const { updateCount } = useNotification()
   const [selectedGroup, setSelectedGroup] = useState(null)
   const [selectedRowIds, setSelectedRowIds] = useState(new Set())
+  const [rowQuantities, setRowQuantities] = useState({}) // { [rowId]: { truckQty: "", weighmentQty: "" } }
   const [activeTab, setActiveTab] = useState("pending")
   const [searchTerm, setSearchTerm] = useState("")
   const [filterFirm, setFilterFirm] = useState("all")
@@ -47,8 +48,6 @@ export default function WeighmentEntryPage({ user }) {
     imageOfSlip2: null,
     imageOfSlip3: null,
     remarks: "",
-    actualQtyLoadedInTruck: "",
-    actualQtyAsPerWeighmentSlip: "",
   })
 
   useEffect(() => {
@@ -227,9 +226,18 @@ export default function WeighmentEntryPage({ user }) {
       .reduce((sum, row) => sum + (parseFloat(row.qtyToBeDispatched) || 0), 0)
   }, [selectedGroup, selectedRowIds])
 
-  const actualTruckQtyValue = parseFloat(formData.actualQtyLoadedInTruck) || 0
-  const extraQtyValue = Math.max(0, actualTruckQtyValue - selectedDispatchQtyTotal)
-  const shortQtyValue = Math.max(0, selectedDispatchQtyTotal - actualTruckQtyValue)
+  const selectedTruckQtyTotal = useMemo(() => {
+    if (!selectedGroup) return 0
+    return selectedGroup.rows
+      .filter((row) => selectedRowIds.has(row.id))
+      .reduce((sum, row) => sum + (parseFloat(rowQuantities[row.id]?.truckQty) || 0), 0)
+  }, [selectedGroup, selectedRowIds, rowQuantities])
+
+  const extraQtyValue = Math.max(0, selectedTruckQtyTotal - selectedDispatchQtyTotal)
+  const shortQtyValue = Math.max(0, selectedDispatchQtyTotal - selectedTruckQtyTotal)
+
+  const updateRowQuantity = (id, field, value) =>
+    setRowQuantities((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }))
 
   const [collapsedGroups, setCollapsedGroups] = useState({})
   const toggleGroup = (key) => setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }))
@@ -242,13 +250,12 @@ export default function WeighmentEntryPage({ user }) {
   const handleWeighment = (group) => {
     setSelectedGroup(group)
     setSelectedRowIds(new Set(group.rows.map((r) => r.id)))
+    setRowQuantities(Object.fromEntries(group.rows.map((r) => [r.id, { truckQty: "", weighmentQty: "" }])))
     setFormData({
       imageOfSlip: null,
       imageOfSlip2: null,
       imageOfSlip3: null,
       remarks: "",
-      actualQtyLoadedInTruck: "",
-      actualQtyAsPerWeighmentSlip: "",
     })
   }
 
@@ -278,6 +285,18 @@ export default function WeighmentEntryPage({ user }) {
       if (selectedRows.length === 0) {
         toast({ title: "Validation Error", description: "Please select at least one row to submit.", variant: "destructive" })
         return
+      }
+
+      for (const row of selectedRows) {
+        const rq = rowQuantities[row.id] || {}
+        if (!rq.truckQty || parseFloat(rq.truckQty) <= 0) {
+          toast({ title: "Validation Error", description: `Enter Truck Qty for "${row.productName}" (${row.dSrNumber || row.deliveryOrderNo}).`, variant: "destructive" })
+          return
+        }
+        if (!rq.weighmentQty || parseFloat(rq.weighmentQty) <= 0) {
+          toast({ title: "Validation Error", description: `Enter Weighment Qty for "${row.productName}" (${row.dSrNumber || row.deliveryOrderNo}).`, variant: "destructive" })
+          return
+        }
       }
 
       const actual3Date = getISTTimestamp() // Use timestamp for Stage 3
@@ -351,12 +370,13 @@ export default function WeighmentEntryPage({ user }) {
       const slip3Url = uploadedFiles.find(f => f.type === "Image Of Slip3")?.url
       if (slip3Url) commonPayload["Image Of Slip3"] = slip3Url
 
-      // Update all rows in the group
+      // Update all rows in the group — each row gets its own Truck Qty / Weighment Qty
       const updatePromises = selectedRows.map(order => {
+        const rq = rowQuantities[order.id] || {}
         const rowPayload = {
           ...commonPayload,
-          "Actual Truck Qty": formData.actualQtyLoadedInTruck ? parseFloat(formData.actualQtyLoadedInTruck) : null,
-          "Actual Qty As Per Weighment Slip": formData.actualQtyAsPerWeighmentSlip ? parseFloat(formData.actualQtyAsPerWeighmentSlip) : null,
+          "Actual Truck Qty": rq.truckQty ? parseFloat(rq.truckQty) : null,
+          "Actual Qty As Per Weighment Slip": rq.weighmentQty ? parseFloat(rq.weighmentQty) : null,
         }
         return supabase
           .from('DISPATCH')
@@ -371,13 +391,12 @@ export default function WeighmentEntryPage({ user }) {
 
       await fetchData()
       setSelectedGroup(null)
+      setRowQuantities({})
       setFormData({
         imageOfSlip: null,
         imageOfSlip2: null,
         imageOfSlip3: null,
         remarks: "",
-        actualQtyLoadedInTruck: "",
-        actualQtyAsPerWeighmentSlip: "",
       })
 
       toast({
@@ -400,13 +419,12 @@ export default function WeighmentEntryPage({ user }) {
   const handleCancel = () => {
     setSelectedGroup(null)
     setSelectedRowIds(new Set())
+    setRowQuantities({})
     setFormData({
       imageOfSlip: null,
       imageOfSlip2: null,
       imageOfSlip3: null,
       remarks: "",
-      actualQtyLoadedInTruck: "",
-      actualQtyAsPerWeighmentSlip: "",
     })
   }
 
@@ -855,16 +873,18 @@ export default function WeighmentEntryPage({ user }) {
                           <th className="w-8 px-2 py-1"></th>
                           <th className="text-left px-2 py-1 font-medium text-gray-600">Logistic Details</th>
                           <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
-                          <th className="text-right px-2 py-1 font-medium text-gray-600">Qty</th>
+                          <th className="text-right px-2 py-1 font-medium text-gray-600">Order Qty</th>
                           <th className="text-left px-2 py-1 font-medium text-gray-600">Transporter Rate</th>
+                          <th className="text-left px-2 py-1 font-medium text-gray-600 min-w-[90px]">Truck Qty *</th>
+                          <th className="text-left px-2 py-1 font-medium text-gray-600 min-w-[90px]">Weighment Qty *</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y">
                         {selectedGroup.rows.map((order) => (
                           <tr key={order.id} className={`transition-colors ${selectedRowIds.has(order.id) ? "bg-blue-50/30" : "bg-white opacity-60"}`}>
                             <td className="px-2 py-1 text-center">
-                              <Checkbox 
-                                checked={selectedRowIds.has(order.id)} 
+                              <Checkbox
+                                checked={selectedRowIds.has(order.id)}
                                 onCheckedChange={() => toggleRow(order.id)}
                               />
                             </td>
@@ -887,48 +907,49 @@ export default function WeighmentEntryPage({ user }) {
                             </td>
                             <td className="px-2 py-1 text-gray-700 text-right font-bold">{order.qtyToBeDispatched || "N/A"}</td>
                             <td className="px-2 py-1 text-gray-700">{getTransporterRateDisplay(order)}</td>
+                            <td className="px-2 py-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={rowQuantities[order.id]?.truckQty ?? ""}
+                                onChange={(e) => updateRowQuantity(order.id, "truckQty", e.target.value)}
+                                className="h-7 text-[11px] px-2"
+                                placeholder="Qty"
+                                disabled={submitting || !selectedRowIds.has(order.id)}
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={rowQuantities[order.id]?.weighmentQty ?? ""}
+                                onChange={(e) => updateRowQuantity(order.id, "weighmentQty", e.target.value)}
+                                className="h-7 text-[11px] px-2"
+                                placeholder="Qty"
+                                disabled={submitting || !selectedRowIds.has(order.id)}
+                              />
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
                   <p className="text-[10px] text-green-600 font-medium mt-2">
-                    Actual3 will be set for the {selectedRowIds.size} selected row(s).
+                    Actual3 will be set for the {selectedRowIds.size} selected row(s). Enter each row's own Truck Qty and Weighment Qty above.
                   </p>
                 </div>
 
 
                 <div className="space-y-3">
-                  <div className="space-y-2">
-                    <Label className="text-sm">Actual Qty loaded In Truck (Total Qty) *</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={formData.actualQtyLoadedInTruck}
-                      onChange={(e) => setFormData(prev => ({ ...prev, actualQtyLoadedInTruck: e.target.value }))}
-                      className="h-10"
-                      placeholder="Enter truck quantity"
-                      disabled={submitting}
-                    />
-                  </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-sm">Actual Qty As Per Weighment Slip *</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={formData.actualQtyAsPerWeighmentSlip}
-                      onChange={(e) => setFormData(prev => ({ ...prev, actualQtyAsPerWeighmentSlip: e.target.value }))}
-                      className="h-10"
-                      placeholder="Enter weighment quantity"
-                      disabled={submitting}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-lg border bg-slate-50 p-3 text-sm">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-lg border bg-slate-50 p-3 text-sm">
                     <div>
                       <p className="text-xs text-slate-500">Dispatch Qty</p>
                       <p className="font-semibold text-slate-900">{selectedDispatchQtyTotal.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Truck Qty (entered)</p>
+                      <p className="font-semibold text-slate-900">{selectedTruckQtyTotal.toFixed(2)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-slate-500">Extra Qty</p>
@@ -1070,10 +1091,14 @@ export default function WeighmentEntryPage({ user }) {
                       onClick={handleSubmit}
                       className="bg-blue-600 hover:bg-blue-700"
                       disabled={
-                        !formData.actualQtyLoadedInTruck ||
-                        !formData.actualQtyAsPerWeighmentSlip ||
                         !formData.imageOfSlip ||
-                        submitting
+                        submitting ||
+                        selectedGroup.rows
+                          .filter((r) => selectedRowIds.has(r.id))
+                          .some((r) => {
+                            const rq = rowQuantities[r.id] || {}
+                            return !rq.truckQty || parseFloat(rq.truckQty) <= 0 || !rq.weighmentQty || parseFloat(rq.weighmentQty) <= 0
+                          })
                       }
                     >
                       {submitting ? (
