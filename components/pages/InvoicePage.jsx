@@ -179,8 +179,8 @@ export default function MakeInvoicePage({ user }) {
           truckNo: row["Truck No."] || "",
           driverMobileNo: row["Driver Mobile No."] || "",
           typeOfRate: row["Type Of Rate"] || splitRate?.type || "",
-          transportRatePerTon: row["Transport Rate @Per Matric Ton"] || (splitRate?.type === "Per MT" ? splitRate?.rate : ""),
-          fixedAmount: row["Fixed Amount"] || (splitRate?.type === "Fixed" ? splitRate?.rate : ""),
+          transportRatePerTon: row["Type Of Rate"] ? row["Transport Rate @Per Matric Ton"] : (row["Transport Rate @Per Matric Ton"] || (splitRate?.type === "Per MT" ? splitRate?.rate : "")),
+          fixedAmount: row["Type Of Rate"] ? row["Fixed Amount"] : (row["Fixed Amount"] || (splitRate?.type === "Fixed" ? splitRate?.rate : "")),
           plannedTransporterRate: splitRate?.rate || "",
           vehiclePlateImage: row["Vehicle No. Plate Image"] || "",
           biltyNo: row["Bilty No."] || "",
@@ -269,6 +269,14 @@ export default function MakeInvoicePage({ user }) {
   };
 
   const getTransporterRateDisplay = (row) => {
+    if (row.typeOfRate === "Per MT" || row.typeOfRate === "Per Metric Ton") {
+      const perMt = Number(row.transportRatePerTon) || 0;
+      return perMt > 0 ? `₹${perMt.toLocaleString("en-IN")} / MT` : "—";
+    }
+    if (row.typeOfRate === "Fixed Amount" || row.typeOfRate === "Fixed") {
+      const fixed = Number(row.fixedAmount) || 0;
+      return fixed > 0 ? `₹${fixed.toLocaleString("en-IN")} fixed` : "—";
+    }
     const perMt = Number(row.transportRatePerTon) || 0;
     const fixed = Number(row.fixedAmount) || 0;
     const splitRate = Number(row.plannedTransporterRate) || 0;
