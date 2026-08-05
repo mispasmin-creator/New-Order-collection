@@ -345,6 +345,17 @@ export default function DispatchPlanningPage({ user }) {
             dateOfDispatch: formatDate(row["Date Of Dispatch"]),
             timestamp: formatDate(row["Timestamp"]),
             firmName: order?.["Firm Name"] || "",
+            partyPODate: order?.["Party PO Date"] || "",
+            rate: order?.["Rate Of Material"] || "",
+            totalPOValue: order?.["Total PO Basic Value"] || "",
+            freight: order?.["Freight"] || "",
+            freightAmount: parseFloat(order?.["Freight Amount"]) || 0,
+            typeOfTransporting: row["Type Of Transporting"] || order?.["Type Of Transporting"] || "",
+            paymentToBeTaken: order?.["Payment to Be Taken"] || "",
+            gstNumber: order?.["Gst Number"] || "",
+            contactPersonName: order?.["Contact Person Name"] || "",
+            address: order?.["Address"] || "",
+            specificConcern: order?.["Specific Concern"] || "",
           }
         }),
         ...(orderData || []).filter(o => o.logistics_status === "Order Cancelled").map(order => ({
@@ -364,6 +375,17 @@ export default function DispatchPlanningPage({ user }) {
           dateOfDispatch: formatDate(order.order_cancelled_at),
           timestamp: formatDate(order.order_cancelled_at),
           firmName: order["Firm Name"] || "",
+          partyPODate: order["Party PO Date"] || "",
+          rate: order["Rate Of Material"] || "",
+          totalPOValue: order["Total PO Basic Value"] || "",
+          freight: order["Freight"] || "",
+          freightAmount: parseFloat(order["Freight Amount"]) || 0,
+          typeOfTransporting: order["Type Of Transporting"] || "",
+          paymentToBeTaken: order["Payment to Be Taken"] || "",
+          gstNumber: order["Gst Number"] || "",
+          contactPersonName: order["Contact Person Name"] || "",
+          address: order["Address"] || "",
+          specificConcern: order["Specific Concern"] || "",
         }))
       ].sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0)))
 
@@ -1104,7 +1126,7 @@ export default function DispatchPlanningPage({ user }) {
                                 <span className="text-xs text-slate-600">{group.partyName}</span>
                               </div>
                             </div>
-                            
+
                             {activeTab === "pending" && (
                               <div className="mr-auto" onClick={(e) => e.stopPropagation()}>
                                 <Button size="sm" onClick={() => handleOpenGroup(group)} className="bg-blue-600 hover:bg-blue-700 h-8 text-xs shrink-0 shadow-sm" disabled={submitting}>
@@ -1172,6 +1194,12 @@ export default function DispatchPlanningPage({ user }) {
                                       <span className="text-gray-500">DO Number</span>
                                       <p className="font-mono font-medium text-gray-800">{row.doNumber || row.deliveryOrderNo || "—"}</p>
                                     </div>
+                                    {activeTab === "history" && (
+                                      <div>
+                                        <span className="text-gray-500">Dispatch Date</span>
+                                        <p className="font-medium text-gray-800">{row.dateOfDispatch || row.timestamp || "—"}</p>
+                                      </div>
+                                    )}
                                     <div>
                                       <span className="text-gray-500">Party PO Date</span>
                                       <p className="font-medium text-gray-800">{row.partyPODate || "—"}</p>
