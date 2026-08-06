@@ -612,8 +612,10 @@ export default function MakeInvoicePage({ user }) {
             .eq("id", line.id);
           if (updateErr) throw updateErr;
 
-          // If TC is not required, automatically move to DELIVERY
-          if (line.tcRequired === "No" || line.tcRequired === "no") {
+          // If TC is not required (or was never set), automatically move to DELIVERY.
+          // A blank/missing value must be treated the same as "No" — otherwise the DELIVERY
+          // row silently never gets created and the record gets stuck invisible downstream.
+          if (!line.tcRequired || line.tcRequired === "No" || line.tcRequired === "no") {
             const { error: deliveryInsertError } = await supabase.from("DELIVERY").insert([
               {
                 "Timestamp": actualDateTime,
