@@ -295,6 +295,36 @@ export default function LogisticPage({ user }) {
     )
   }, [historyOrders])
 
+  // Used only at actual-submit time: scans every existing "LGST-Sr Number" in the DB (not just
+  // the loaded history list, which is a partial/possibly-stale snapshot) and skips any value
+  // already taken, so the number that actually gets written is guaranteed unused.
+  const generateLGSTNumbersFresh = async (count) => {
+    const { data } = await supabase.from("DISPATCH").select('"LGST-Sr Number"')
+    const used = new Set()
+    let maxNumber = 0
+    ;(data || []).forEach((row) => {
+      const val = row["LGST-Sr Number"]
+      if (!val) return
+      used.add(val)
+      const match = val.match(/^LGST-(\d+)$/i)
+      if (match) {
+        const n = parseInt(match[1], 10)
+        if (n > maxNumber) maxNumber = n
+      }
+    })
+    const results = []
+    let candidate = maxNumber
+    while (results.length < count) {
+      candidate += 1
+      const lgst = `LGST-${String(candidate).padStart(3, "0")}`
+      if (!used.has(lgst)) {
+        results.push(lgst)
+        used.add(lgst)
+      }
+    }
+    return results
+  }
+
   const handleOpen = (group) => {
     const firstRow = group.rows[0]
     const types = [...new Set(group.rows.map(r => r.typeOfTransporting).filter(Boolean))]
@@ -359,7 +389,7 @@ export default function LogisticPage({ user }) {
       }
 
       const actualDate = getISTTimestamp()
-      const lgstNumbers = generateLGSTNumbers(selectedRows.length)
+      const lgstNumbers = await generateLGSTNumbersFresh(selectedRows.length)
 
       let vehicleImageUrl = ""
       if (formData.vehicleNoPlateImage) {

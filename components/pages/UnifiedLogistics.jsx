@@ -26,6 +26,7 @@ export default function UnifiedLogistics({ user }) {
   const [deliveryData, setDeliveryData] = useState([])
   const [postDeliveryData, setPostDeliveryData] = useState([])
   const [dispatchTCMap, setDispatchTCMap] = useState({})
+  const [dispatchExtraMap, setDispatchExtraMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
@@ -113,13 +114,14 @@ export default function UnifiedLogistics({ user }) {
       const [deliveryRes, postDeliveryRes, dispatchRes] = await Promise.all([
         deliveryQuery,
         postDeliveryQuery,
-        supabase.from('DISPATCH').select('"D-Sr Number", "Trust Certificate Made", "Delivery Order No.", "Party Name", po_id')
+        supabase.from('DISPATCH').select('"D-Sr Number", "Trust Certificate Made", "Delivery Order No.", "Party Name", po_id, "LGST-Sr Number", "Transport Rate @Per Matric Ton", "Fixed Amount", "Type Of Rate"')
       ])
 
       if (deliveryRes.error) throw deliveryRes.error
       if (postDeliveryRes.error) throw postDeliveryRes.error
 
       const tcMap = {}
+      const extraMap = {}
       const dispatchFirmMapCombined = {}
       const dispatchFirmMapByDo = {}
 
@@ -130,6 +132,12 @@ export default function UnifiedLogistics({ user }) {
 
         if (dSr) {
           tcMap[dSr] = row["Trust Certificate Made"] || ""
+          extraMap[dSr] = {
+            lgstSrNumber: row["LGST-Sr Number"] || "",
+            transportRatePerTon: row["Transport Rate @Per Matric Ton"] || "",
+            fixedAmount: row["Fixed Amount"] || "",
+            typeOfRate: row["Type Of Rate"] || "",
+          }
           if (row.po_id && poIdFirmMap.has(row.po_id)) {
             const firm = poIdFirmMap.get(row.po_id)
             if (party) dispatchFirmMapCombined[`${dSr}|${party}`] = firm
@@ -138,6 +146,7 @@ export default function UnifiedLogistics({ user }) {
         }
       })
       setDispatchTCMap(tcMap)
+      setDispatchExtraMap(extraMap)
 
       const resolveFirm = (poId, doNo, partyName, dSrNo) => {
         // 1. Direct po_id lookup (highest accuracy)
@@ -305,9 +314,21 @@ export default function UnifiedLogistics({ user }) {
         receiptId: receipt?.id,
         isReceiptDone: !!receipt?.["Actual"],
         tcFileUrl: dSrNumber ? (dispatchTCMap[dSrNumber] || "") : "",
+        lgstSrNumber: dSrNumber ? (dispatchExtraMap[dSrNumber]?.lgstSrNumber || "") : "",
+        truckQty: del["Quantity Delivered."] ?? "",
+        truckNo: del["Vehicle Number."] || "",
+        transporterRate: (() => {
+          const extra = dSrNumber ? dispatchExtraMap[dSrNumber] : null
+          if (!extra) return ""
+          const perMt = Number(extra.transportRatePerTon) || 0
+          const fixed = Number(extra.fixedAmount) || 0
+          if (perMt > 0) return `₹${perMt.toLocaleString("en-IN")} / MT`
+          if (fixed > 0) return `₹${fixed.toLocaleString("en-IN")} fixed`
+          return ""
+        })(),
       }
     })
-  }, [deliveryData, postDeliveryData, dispatchTCMap])
+  }, [deliveryData, postDeliveryData, dispatchTCMap, dispatchExtraMap])
 
   // Grouped counts for cards
   const pendingGroupedCount = useMemo(() => {
@@ -645,12 +666,16 @@ export default function UnifiedLogistics({ user }) {
                 <TableHead>Transporter Name</TableHead>
                 <TableHead>Bilty Stage</TableHead>
                 <TableHead>Receipt Stage</TableHead>
+                <TableHead>LGST-Sr</TableHead>
+                <TableHead>Truck Qty</TableHead>
+                <TableHead>Transporter Rate</TableHead>
+                <TableHead>Truck No</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {groupedShipments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
+                  <TableCell colSpan={13} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
                 </TableRow>
               ) : (
                 groupedShipments.map((group, gi) => {
@@ -731,6 +756,18 @@ export default function UnifiedLogistics({ user }) {
                             <span className="text-xs font-medium text-gray-400">Pending</span>
                           )}
                         </TableCell>
+                        <TableCell className="text-xs text-gray-500">
+                          {[...new Set(group.rows.map(r => r.lgstSrNumber).filter(Boolean))].join(", ") || "—"}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {group.rows.reduce((sum, r) => sum + (Number(r.truckQty) || 0), 0) || "—"}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {[...new Set(group.rows.map(r => r.transporterRate).filter(Boolean))].join(", ") || "—"}
+                        </TableCell>
+                        <TableCell className="text-sm text-gray-600">
+                          {[...new Set(group.rows.map(r => r.truckNo).filter(Boolean))].join(", ") || "—"}
+                        </TableCell>
                       </TableRow>
 
                       {/* Expanded product rows (only for invoice groups) */}
@@ -757,6 +794,12 @@ export default function UnifiedLogistics({ user }) {
                               <span className="text-xs text-gray-400">Pending</span>
                             )}
                           </TableCell>
+                          <TableCell className="py-2 text-xs text-gray-500">
+                            {s.lgstSrNumber ? <Badge className="bg-blue-500 text-white text-[10px]">{s.lgstSrNumber}</Badge> : "—"}
+                          </TableCell>
+                          <TableCell className="py-2 text-sm text-gray-600">{s.truckQty || "—"}</TableCell>
+                          <TableCell className="py-2 text-sm text-gray-600">{s.transporterRate || "—"}</TableCell>
+                          <TableCell className="py-2 text-sm text-gray-600">{s.truckNo || "—"}</TableCell>
                         </TableRow>
                       ))}
                     </Fragment>

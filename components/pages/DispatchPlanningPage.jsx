@@ -500,13 +500,34 @@ export default function DispatchPlanningPage({ user }) {
 
   // ── D-Sr number generation ───────────────────────────────────────────────────
   const generateDSrNumbers = async (count) => {
-    const { data } = await supabase.from("DISPATCH").select('"D-Sr Number"').order("id", { ascending: false }).limit(1)
-    let lastNum = 0
-    if (data?.[0]?.["D-Sr Number"]) {
-      const match = data[0]["D-Sr Number"].match(/D-(\d+)/i)
-      if (match) lastNum = parseInt(match[1], 10)
+    // Scan every existing "D-Sr Number" rather than trusting the most-recently-inserted row:
+    // id order doesn't reliably track the numeric D-Sr sequence (a bad historical import left
+    // many low-id rows holding a high D-Sr value), and relying on just the last row silently
+    // reissued numbers that were already taken, producing duplicate D-Sr Numbers.
+    const { data } = await supabase.from("DISPATCH").select('"D-Sr Number"')
+    const usedNumbers = new Set()
+    let maxNum = 0
+    ;(data || []).forEach((row) => {
+      const val = row["D-Sr Number"]
+      if (!val) return
+      usedNumbers.add(val)
+      const match = val.match(/^D-(\d+)$/i)
+      if (match) {
+        const n = parseInt(match[1], 10)
+        if (n > maxNum) maxNum = n
+      }
+    })
+    const results = []
+    let candidate = maxNum
+    while (results.length < count) {
+      candidate += 1
+      const dSr = `D-${String(candidate).padStart(2, "0")}`
+      if (!usedNumbers.has(dSr)) {
+        results.push(dSr)
+        usedNumbers.add(dSr)
+      }
     }
-    return Array.from({ length: count }, (_, i) => `D-${String(lastNum + i + 1).padStart(2, "0")}`)
+    return results
   }
 
   // ── Modal: open group ────────────────────────────────────────────────────────
