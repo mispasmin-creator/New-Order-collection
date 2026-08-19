@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useState, useEffect, useMemo, useRef } from "react"
+import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
@@ -53,21 +53,35 @@ export default function TestReportPage({ user }) {
   const fileInputRef2 = useRef(null)
   const fileInputRef3 = useRef(null)
 
-  useEffect(() => {
-    fetchLoadMaterialData()
-  }, [])
-
-  const fetchLoadMaterialData = async () => {
+  const fetchLoadMaterialData = useCallback(async () => {
     try {
       setLoading(true)
 
-      const [{ data, error }, { data: orderData, error: orderError }] = await Promise.all([
-        supabase.from('DISPATCH').select('*').not('Planned2', 'is', null),
-        supabase.from('ORDER RECEIPT').select('id, "PARTY PO NO (As Per Po Exact)", "Firm Name"'),
-      ])
+      const userFirms = user?.role !== "ADMIN"
+        ? (user?.firm ? user.firm.split(',').map(f => f.trim()).filter(Boolean) : [])
+        : null
+      const shouldFilter = userFirms && !userFirms.includes('all') && userFirms.length > 0
+
+      let orQuery = supabase.from('ORDER RECEIPT').select('id, "PARTY PO NO (As Per Po Exact)", "Firm Name"')
+      if (shouldFilter) orQuery = orQuery.in('Firm Name', userFirms)
+      const { data: orderData, error: orderError } = await orQuery
+
+      if (orderError) throw orderError
+
+      const allowedPoIds = (orderData || []).map(r => r.id)
+
+      if (shouldFilter && allowedPoIds.length === 0) {
+        setOrders([])
+        setCompletedOrders([])
+        return
+      }
+
+      let dispatchQuery = supabase.from('DISPATCH').select('*').not('Planned2', 'is', null)
+      if (shouldFilter) dispatchQuery = dispatchQuery.in('po_id', allowedPoIds)
+
+      const { data, error } = await dispatchQuery
 
       if (error) throw error
-      if (orderError) throw orderError
 
       const orderMap = new Map()
       ;(orderData || []).forEach((row) => {
@@ -142,7 +156,11 @@ export default function TestReportPage({ user }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [user])
+
+  useEffect(() => {
+    fetchLoadMaterialData()
+  }, [fetchLoadMaterialData])
 
   const handleExport = () => {
     const dataToExport = activeTab === "pending" ? orders : completedOrders
