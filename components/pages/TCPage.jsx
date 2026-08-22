@@ -109,7 +109,7 @@ export default function TCPage({ user }) {
 
       dispatchData?.forEach(row => {
         const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
-        const isTCRequired = (row.po_id ? tcRequiredMap.get(row.po_id) : row["TC Required"]) === "Yes"
+        const isTCRequired = row["TC Required"] === "Yes"
         if (!isTCRequired) return
 
         const dispatchNumber = row["D-Sr Number"]
@@ -132,7 +132,7 @@ export default function TCPage({ user }) {
           fullkittingAt: row["Fullkitting Actual"] || "",
           fullkittingAmount: row["Fullkitting Amount"] || "",
           tcFileUrl: row["Trust Certificate Made"] || "",
-          tcRequired: (row.po_id ? tcRequiredMap.get(row.po_id) : row["TC Required"]) || "No",
+          tcRequired: row["TC Required"] || "No",
           billNumber: row["Bill Number"] || "",
           rateOfMaterial: rateMap.get(row["Delivery Order No."]) || null,
           firmName: (row.po_id ? firmMap.get(row.po_id) : "") || "",
