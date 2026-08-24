@@ -16,6 +16,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Loader2, Upload, FileCheck, CheckCircle2, X, Eye, ChevronDown, ChevronRight, Download, Building, User } from "lucide-react"
 import { exportToExcel } from "@/lib/exportUtils"
 
+// Supabase/PostgREST caps a plain select() at 1000 rows. DISPATCH and DELIVERY have both
+// grown past that, so an unpaginated fetch silently drops rows off the end — a dispatch line
+// whose DELIVERY row falls outside the first 1000 looks like it was never moved to delivery
+// and gets stuck showing as "Pending" forever even after TC is uploaded. Page through in
+// batches of 1000 so every row is actually considered.
+const fetchAllRows = async (buildQuery) => {
+  const pageSize = 1000
+  let from = 0
+  let all = []
+  while (true) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1)
+    if (error) throw error
+    all = all.concat(data || [])
+    if (!data || data.length < pageSize) break
+    from += pageSize
+  }
+  return all
+}
+
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const ACCEPTED_FILE_TYPES = [
   "application/pdf",
@@ -69,18 +88,15 @@ export default function TCPage({ user }) {
 
       const allowedPoIds = (orderReceiptData || []).map(r => r.id)
 
-      let dispatchQuery = supabase.from("DISPATCH").select('*').not('Actual4', 'is', null)
-      if (shouldFilter) dispatchQuery = dispatchQuery.in('po_id', allowedPoIds)
+      const dispatchData = await fetchAllRows(() => {
+        let q = supabase.from("DISPATCH").select('*').not('Actual4', 'is', null)
+        if (shouldFilter) q = q.in('po_id', allowedPoIds)
+        return q
+      })
 
-      const { data: dispatchData, error: dispatchError } = await dispatchQuery
-
-      if (dispatchError) throw dispatchError
-
-      const { data: deliveryData, error: deliveryError } = await supabase
-        .from("DELIVERY")
-        .select('id, "D-Sr Number", Timestamp')
-
-      if (deliveryError) throw deliveryError
+      const deliveryData = await fetchAllRows(() =>
+        supabase.from("DELIVERY").select('id, "D-Sr Number", Timestamp')
+      )
 
       const rateMap = new Map()
       const tcRequiredMap = new Map()
