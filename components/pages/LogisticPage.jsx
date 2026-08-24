@@ -62,6 +62,10 @@ const formatDate = (value) => {
 }
 
 const getTransporterRateDisplay = (row) => {
+  // Direct Supply means the party collects the material themselves — no transporter is
+  // engaged, so a rate quoted earlier at the Arrange Logistics stage (for a different
+  // transport option) does not apply here and must not be shown.
+  if (row.typeOfTransporting === "Direct Supply") return "—"
   const perMt = Number(row.transportRatePerTon) || 0
   const fixed = Number(row.fixedAmount) || 0
   const splitRate = Number(row.plannedTransporterRate) || 0
