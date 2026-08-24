@@ -22,6 +22,9 @@ import { getSignedUrl } from "@/lib/storageUtils"
 import { groupRowsByPo } from "@/lib/workflowGrouping"
 
 const getTransporterRateDisplay = (row) => {
+  // Direct Supply means the party collects the material themselves — no transporter is
+  // engaged, so a transporter rate must not be shown for it.
+  if (row.typeOfTransporting === "Direct Supply") return "—"
   const perMt = Number(row.transportRatePerTon) || 0
   const fixed = Number(row.fixedAmount) || 0
   if (perMt > 0) return `₹${perMt.toLocaleString("en-IN")} / MT`

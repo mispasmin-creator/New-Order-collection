@@ -216,12 +216,15 @@ export default function FullkittingPage({ user }) {
         const splitId = row.logistics_split_id || null
         const split = splitId ? splitsMap.get(splitId) : null
         const splitRate = split ? parseFloat(split.rate) || 0 : 0
-        const transporterRate = rateType === "Ex Factory Transporter"
+        // Direct Supply means the party collects the material themselves — no transporter is
+        // engaged, so a rate quoted earlier at the Arrange Logistics stage (for a different
+        // transport option) does not apply here and must not be shown.
+        const transporterRate = rateType === "Ex Factory Transporter" || typeOfTransporting === "Direct Supply"
           ? 0
           : (row["Fullkitting Status"] === "Yes" || (row["Fullkitting Actual"] && String(row["Fullkitting Actual"]).trim() !== ""))
             ? (row["Fullkitting Amount"] !== null && row["Fullkitting Amount"] !== undefined ? Number(row["Fullkitting Amount"]) : 0)
-            : (getTransporterRateValue(row) || splitRate) 
-        const transporterAmount = rateType === "Ex Factory Transporter"
+            : (getTransporterRateValue(row) || splitRate)
+        const transporterAmount = rateType === "Ex Factory Transporter" || typeOfTransporting === "Direct Supply"
           ? 0
           : (row["Total Transporter Amount"] !== null && row["Total Transporter Amount"] !== undefined)
             ? Number(row["Total Transporter Amount"])

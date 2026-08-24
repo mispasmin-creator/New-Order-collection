@@ -269,6 +269,10 @@ export default function MakeInvoicePage({ user }) {
   };
 
   const getTransporterRateDisplay = (row) => {
+    // Direct Supply means the party collects the material themselves — no transporter is
+    // engaged, so a rate quoted earlier at the Arrange Logistics stage (for a different
+    // transport option) does not apply here and must not be shown.
+    if (row.typeOfTransporting === "Direct Supply") return "—";
     if (row.typeOfRate === "Per MT" || row.typeOfRate === "Per Metric Ton") {
       const perMt = Number(row.transportRatePerTon) || 0;
       return perMt > 0 ? `₹${perMt.toLocaleString("en-IN")} / MT` : "—";
