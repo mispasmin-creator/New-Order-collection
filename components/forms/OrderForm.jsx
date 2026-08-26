@@ -590,13 +590,13 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
         console.log("File uploaded successfully:", uploadedFileUrl);
       }
 
-      // ✅ Ensure latest DO is fetched
-      if (!isDoNumberFetched) {
-        await fetchLastDoNumber();
-      }
-
-      // ✅ SINGLE SOURCE OF TRUTH
-      const generatedDo = `DO-${lastDoNumber + 1}`;
+      // ✅ Generate the DO number via an atomic DB counter (next_do_number RPC) instead of
+      // reading the current max client-side and adding 1. That approach let two orders created
+      // around the same time (common across the different firm operators) end up with the same
+      // DO number, which then let one firm's shipment data leak into another firm's views
+      // wherever pages matched records by DO number.
+      const { data: generatedDo, error: doNumberError } = await supabase.rpc('next_do_number');
+      if (doNumberError) throw doNumberError;
 
       const rowsToInsert = formData.products.map(product => {
         const baseRow = prepareRowData(generatedDo, uploadedFileUrl);
