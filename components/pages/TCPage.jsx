@@ -95,7 +95,7 @@ export default function TCPage({ user }) {
       })
 
       const deliveryData = await fetchAllRows(() =>
-        supabase.from("DELIVERY").select('id, "D-Sr Number", Timestamp')
+        supabase.from("DELIVERY").select('id, "D-Sr Number", "Delivery Order No.", Timestamp')
       )
 
       const rateMap = new Map()
@@ -112,11 +112,17 @@ export default function TCPage({ user }) {
         }
       })
 
+      // "D-Sr Number" is not guaranteed unique across DISPATCH (a data issue upstream can
+      // produce duplicates), so matching on it alone can find a sibling dispatch's DELIVERY
+      // row and wrongly conclude this one was already moved to delivery — silently skipping
+      // the DELIVERY insert for it. Keying on D-Sr Number + Delivery Order No. together
+      // disambiguates those collisions since the DO number differs per dispatch line.
       const deliveryMap = new Map()
       deliveryData?.forEach(row => {
         const dispatchNumber = row["D-Sr Number"]
         if (dispatchNumber) {
-          deliveryMap.set(dispatchNumber, row)
+          const key = `${dispatchNumber}|${row["Delivery Order No."] || ""}`
+          deliveryMap.set(key, row)
         }
       })
 
@@ -129,7 +135,7 @@ export default function TCPage({ user }) {
         if (!isTCRequired) return
 
         const dispatchNumber = row["D-Sr Number"]
-        const deliveryRow = deliveryMap.get(dispatchNumber)
+        const deliveryRow = deliveryMap.get(`${dispatchNumber}|${row["Delivery Order No."] || ""}`)
         const order = {
           id: row.id,
           po_id: row.po_id,
