@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { X, Search, CheckCircle2, Loader2, Truck, FileText, LayoutDashboard, ChevronDown, ChevronRight, PackageCheck, Trash2, RotateCcw, Download, Building, User, XCircle } from "lucide-react"
+import { X, Search, CheckCircle2, Loader2, Truck, FileText, LayoutDashboard, ChevronDown, ChevronRight, PackageCheck, Trash2, RotateCcw, Download, Building, User, XCircle, Package, Calendar } from "lucide-react"
 import { exportToExcel } from "@/lib/exportUtils"
 import { useNotification } from "@/components/providers/NotificationProvider"
 import { supabase } from "@/lib/supabaseClient"
@@ -70,6 +70,48 @@ const formatDate = (value) => {
   } catch { return String(value) }
 }
 
+const parseToDate = (val) => {
+  if (!val) return null
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val
+  if (typeof val === "string") {
+    const s = val.trim()
+    const dmyMatch = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+    if (dmyMatch) {
+      const d = parseInt(dmyMatch[1], 10)
+      const m = parseInt(dmyMatch[2], 10) - 1
+      const y = parseInt(dmyMatch[3], 10)
+      return new Date(y, m, d)
+    }
+  }
+  const d = new Date(val)
+  return isNaN(d.getTime()) ? null : d
+}
+
+const isDateInRange = (dateVal, fromStr, toStr) => {
+  if (!fromStr && !toStr) return true
+  const d = parseToDate(dateVal)
+  if (!d) return false
+
+  let from = fromStr ? parseToDate(fromStr) : null
+  let to = toStr ? parseToDate(toStr) : null
+
+  if (from && to && from > to) {
+    const temp = from
+    from = to
+    to = temp
+  }
+
+  if (from) {
+    const fromStart = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 0, 0, 0, 0)
+    if (d < fromStart) return false
+  }
+  if (to) {
+    const toEnd = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23, 59, 59, 999)
+    if (d > toEnd) return false
+  }
+  return true
+}
+
 const toNumber = (value, fallback = 0) => {
   const parsed = parseFloat(value)
   return Number.isFinite(parsed) ? parsed : fallback
@@ -112,14 +154,10 @@ export default function DispatchPlanningPage({ user }) {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterFirm, setFilterFirm] = useState("all")
   const [filterParty, setFilterParty] = useState("all")
+  const [filterProduct, setFilterProduct] = useState("all")
+  const [filterDateFrom, setFilterDateFrom] = useState("")
+  const [filterDateTo, setFilterDateTo] = useState("")
   const [expandedPOs, setExpandedPOs] = useState(new Set())
-
-  // Auto-reset filters when switching tabs
-  useEffect(() => {
-    setFilterFirm("all")
-    setFilterParty("all")
-    setSearchTerm("")
-  }, [activeTab])
 
   // ── Modal state ──────────────────────────────────────────────────────────────
   const [selectedGroup, setSelectedGroup] = useState(null)   // PO group from groupedDisplayRows
@@ -251,6 +289,7 @@ export default function DispatchPlanningPage({ user }) {
           address: order["Address"] || "",
           specificConcern: order["Specific Concern"] || "",
           checkDeliveryActual: split.check_delivery_actual || "",
+          rawDate: split.check_delivery_actual || order.check_delivery_actual || order["Party PO Date"] || null,
           doNumber: order["DO-Delivery Order No."] || "",
           partyPONumber: order["PARTY PO NO (As Per Po Exact)"] || "",
           partyName: order["Party Names"] || "",
@@ -295,6 +334,7 @@ export default function DispatchPlanningPage({ user }) {
             address: order["Address"] || "",
             specificConcern: order["Specific Concern"] || "",
             checkDeliveryActual: order.check_delivery_actual || "",
+            rawDate: order.check_delivery_actual || order["Party PO Date"] || null,
             doNumber: order["DO-Delivery Order No."] || "",
             partyPONumber: order["PARTY PO NO (As Per Po Exact)"] || "",
             partyName: order["Party Names"] || "",
@@ -343,7 +383,9 @@ export default function DispatchPlanningPage({ user }) {
             pendingQty: getOrderPendingQty(order),
             transporterName: row["Transporter Name"] || "",
             dateOfDispatch: formatDate(row["Date Of Dispatch"]),
+            rawDateOfDispatch: row["Date Of Dispatch"] || row["Timestamp"] || null,
             timestamp: formatDate(row["Timestamp"]),
+            rawTimestamp: row["Timestamp"] || null,
             firmName: order?.["Firm Name"] || "",
             partyPODate: order?.["Party PO Date"] || "",
             rate: order?.["Rate Of Material"] || "",
@@ -373,7 +415,9 @@ export default function DispatchPlanningPage({ user }) {
           pendingQty: getOrderPendingQty(order),
           transporterName: "—",
           dateOfDispatch: formatDate(order.order_cancelled_at),
+          rawDateOfDispatch: order.order_cancelled_at || null,
           timestamp: formatDate(order.order_cancelled_at),
+          rawTimestamp: order.order_cancelled_at || null,
           firmName: order["Firm Name"] || "",
           partyPODate: order["Party PO Date"] || "",
           rate: order["Rate Of Material"] || "",
@@ -439,16 +483,28 @@ export default function DispatchPlanningPage({ user }) {
   const pendingRows = useMemo(() => splitRows.filter((r) => r.splitStatus === STATUS_CHECKED && !r.dispatchRecordId), [splitRows])
   
   const firmOptions = useMemo(() => {
-    const source = activeTab === "pending" ? pendingRows : dispatchHistory
-    const firms = [...new Set(source.map(row => row.firmName).filter(Boolean))]
-    return ["all", ...firms]
-  }, [activeTab, pendingRows, dispatchHistory])
+    const allFirms = new Set()
+    pendingRows.forEach(r => r.firmName && allFirms.add(r.firmName))
+    dashboardGroups.forEach(g => g.firmName && allFirms.add(g.firmName))
+    dispatchHistory.forEach(r => r.firmName && allFirms.add(r.firmName))
+    return ["all", ...Array.from(allFirms).sort()]
+  }, [pendingRows, dashboardGroups, dispatchHistory])
 
   const partyOptions = useMemo(() => {
-    const source = activeTab === "pending" ? pendingRows : dispatchHistory
-    const parties = [...new Set(source.map(row => row.partyName).filter(Boolean))]
-    return ["all", ...parties]
-  }, [activeTab, pendingRows, dispatchHistory])
+    const allParties = new Set()
+    pendingRows.forEach(r => r.partyName && allParties.add(r.partyName))
+    dashboardGroups.forEach(g => g.partyName && allParties.add(g.partyName))
+    dispatchHistory.forEach(r => r.partyName && allParties.add(r.partyName))
+    return ["all", ...Array.from(allParties).sort()]
+  }, [pendingRows, dashboardGroups, dispatchHistory])
+
+  const productOptions = useMemo(() => {
+    const allProducts = new Set()
+    pendingRows.forEach(r => r.productName && allProducts.add(r.productName))
+    dashboardGroups.forEach(g => (g.orders || []).forEach(o => o["Product Name"] && allProducts.add(o["Product Name"])))
+    dispatchHistory.forEach(r => r.productName && allProducts.add(r.productName))
+    return ["all", ...Array.from(allProducts).sort()]
+  }, [pendingRows, dashboardGroups, dispatchHistory])
 
   useEffect(() => { updateCount("Dispatch Planning", pendingRows.length) }, [pendingRows.length, updateCount])
 
@@ -461,11 +517,20 @@ export default function DispatchPlanningPage({ user }) {
     if (filterParty !== "all") {
       source = source.filter(row => row.partyName === filterParty)
     }
+    if (filterProduct !== "all") {
+      source = source.filter(row => row.productName === filterProduct)
+    }
+    if (filterDateFrom || filterDateTo) {
+      source = source.filter(row => {
+        const dVal = row.rawDateOfDispatch || row.dateOfDispatch || row.timestamp || row.rawDate || row.partyPODate
+        return isDateInRange(dVal, filterDateFrom, filterDateTo)
+      })
+    }
 
     if (!searchTerm.trim()) return source
     const term = searchTerm.toLowerCase()
     return source.filter((row) => Object.values(row).some((v) => v?.toString().toLowerCase().includes(term)))
-  }, [activeTab, dispatchHistory, pendingRows, searchTerm, filterFirm, filterParty])
+  }, [activeTab, dispatchHistory, pendingRows, searchTerm, filterFirm, filterParty, filterProduct, filterDateFrom, filterDateTo])
 
   const groupedDisplayRows = useMemo(() => groupRowsByPo(displayRows), [displayRows])
 
@@ -479,11 +544,50 @@ export default function DispatchPlanningPage({ user }) {
     if (filterParty !== "all") {
       result = result.filter(g => g.partyName === filterParty)
     }
+    if (filterProduct !== "all") {
+      result = result.filter(g => (g.orders || []).some(o => o["Product Name"] === filterProduct))
+    }
+    if (filterDateFrom || filterDateTo) {
+      result = result.filter(g => {
+        return (g.orders || []).some(o => {
+          const dVal = o["Party PO Date"] || o["Actual 4"] || o["Timestamp"] || o.check_delivery_actual
+          return isDateInRange(dVal, filterDateFrom, filterDateTo)
+        })
+      })
+    }
 
     if (!searchTerm.trim()) return result
     const term = searchTerm.toLowerCase()
     return result.filter((g) => g.poNumber.toLowerCase().includes(term) || g.partyName.toLowerCase().includes(term) || g.firmName.toLowerCase().includes(term))
-  }, [dashboardGroups, searchTerm, pendingRows, filterFirm, filterParty])
+  }, [dashboardGroups, searchTerm, pendingRows, filterFirm, filterParty, filterProduct, filterDateFrom, filterDateTo])
+
+  const currentTabQtyLabel = useMemo(() => {
+    if (activeTab === "pending") return "Total Pending Qty"
+    return "Total Dispatched Qty"
+  }, [activeTab])
+
+  const currentTabQty = useMemo(() => {
+    if (activeTab === "overview") {
+      return filteredDashboard.reduce((sum, g) => {
+        if (filterProduct !== "all") {
+          const prodDelivered = (g.orders || [])
+            .filter((o) => o["Product Name"] === filterProduct)
+            .reduce((s, o) => s + (toNumber(o.Delivered) || 0), 0)
+          return sum + prodDelivered
+        }
+        return sum + (toNumber(g.deliveredQty) || 0)
+      }, 0)
+    }
+
+    if (activeTab === "pending") {
+      return displayRows.reduce((sum, r) => sum + (toNumber(r.allocatedQty) || 0), 0)
+    }
+
+    // history tab
+    return displayRows
+      .filter((r) => r.type !== "cancelled")
+      .reduce((sum, r) => sum + (toNumber(r.qtyToBeDispatched) || 0), 0)
+  }, [activeTab, filteredDashboard, displayRows, filterProduct])
 
   const stageCounts = useMemo(() => {
     const c = {}
@@ -827,7 +931,7 @@ export default function DispatchPlanningPage({ user }) {
                 <span className="text-gray-600">Total Qty:</span><span className="font-medium text-right">{order.Quantity}</span>
               </div>
               <div className="flex justify-between border-b pb-1">
-                <span className="text-gray-600">Delivered:</span><span className="font-medium text-right text-green-700">{order.Delivered || 0}</span>
+                <span className="text-gray-600">Dispatch Qty:</span><span className="font-medium text-right text-green-700">{order.Delivered || 0}</span>
               </div>
               <div className="flex justify-between border-b pb-1">
                 <span className="text-gray-600">Pending Qty:</span><span className="font-medium text-right text-amber-600">{order["Pending Qty"] != null ? order["Pending Qty"] : Math.max(0, (Number(order.Quantity) || 0) - (Number(order.Delivered) || 0))}</span>
@@ -933,7 +1037,7 @@ export default function DispatchPlanningPage({ user }) {
         </Card>
         <Card className="bg-green-50 border-green-100 shadow-sm">
           <CardContent className="p-6 flex justify-between items-center">
-            <div><p className="text-sm font-medium text-green-600">Dispatch History</p><div className="text-2xl font-bold text-green-900">{dispatchHistory.length}</div></div>
+            <div><p className="text-sm font-medium text-green-600">Dispatch Records</p><div className="text-2xl font-bold text-green-900">{dispatchHistory.length}</div></div>
             <div className="h-10 w-10 bg-green-500 rounded-full flex items-center justify-center text-white"><CheckCircle2 className="h-6 w-6" /></div>
           </CardContent>
         </Card>
@@ -980,6 +1084,48 @@ export default function DispatchPlanningPage({ user }) {
             </SelectContent>
           </Select>
 
+          <Select value={filterProduct} onValueChange={setFilterProduct}>
+            <SelectTrigger className="h-10 w-[180px]">
+              <Package className="w-4 h-4 mr-2" />
+              <SelectValue placeholder="Product" />
+            </SelectTrigger>
+            <SelectContent>
+              {productOptions.map(product => (
+                <SelectItem key={product} value={product}>
+                  {product === "all" ? "All Products" : product}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center gap-1 bg-white border rounded-md px-2 h-10 shadow-sm">
+            <Calendar className="w-4 h-4 text-gray-400 shrink-0 mr-1" />
+            <Input
+              type="date"
+              value={filterDateFrom}
+              onChange={(e) => setFilterDateFrom(e.target.value)}
+              className="h-8 w-[130px] border-none p-0 text-xs focus-visible:ring-0 focus-visible:ring-offset-0"
+              title="From Date"
+            />
+            <span className="text-gray-400 text-xs shrink-0">–</span>
+            <Input
+              type="date"
+              value={filterDateTo}
+              onChange={(e) => setFilterDateTo(e.target.value)}
+              className="h-8 w-[130px] border-none p-0 text-xs focus-visible:ring-0 focus-visible:ring-offset-0"
+              title="To Date"
+            />
+            {(filterDateFrom || filterDateTo) && (
+              <button
+                onClick={() => { setFilterDateFrom(""); setFilterDateTo(""); }}
+                className="text-gray-400 hover:text-gray-700 p-0.5 ml-1"
+                title="Clear dates"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
           <div className="flex items-center gap-2">
             <Button onClick={fetchData} variant="outline" className="h-10 px-3" disabled={loading || submitting}>
               <Loader2 className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -991,17 +1137,27 @@ export default function DispatchPlanningPage({ user }) {
           </div>
         </div>
 
-        <div className="mt-4 flex bg-gray-100 p-1 rounded-md w-fit gap-1">
-          {[
-            { key: "overview", label: `PO Overview (${dashboardGroups.length})`, icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
-            { key: "pending", label: `Pending Dispatch (${pendingRows.length})`, icon: <Truck className="w-3.5 h-3.5" /> },
-            { key: "history", label: `History (${dispatchHistory.length})` },
-          ].map((tab) => (
-            <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-1.5 py-1.5 px-4 text-sm font-medium rounded-sm transition-all ${activeTab === tab.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
-              {tab.icon}{tab.label}
-            </button>
-          ))}
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div className="flex bg-gray-100 p-1 rounded-md w-fit gap-1">
+            {[
+              { key: "overview", label: `PO Overview (${dashboardGroups.length})`, icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
+              { key: "pending", label: `Pending Dispatch (${pendingRows.length})`, icon: <Truck className="w-3.5 h-3.5" /> },
+              { key: "history", label: `History (${dispatchHistory.length})` },
+            ].map((tab) => (
+              <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-1.5 py-1.5 px-4 text-sm font-medium rounded-sm transition-all ${activeTab === tab.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
+                {tab.icon}{tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-md text-xs text-emerald-800 font-medium shrink-0">
+            <PackageCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{currentTabQtyLabel}:</span>
+            <span className="font-bold text-emerald-900 text-sm bg-white px-2 py-0.5 rounded border border-emerald-300">
+              {formatQty(currentTabQty)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1029,8 +1185,8 @@ export default function DispatchPlanningPage({ user }) {
                     <TableHead>Firm</TableHead>
                     <TableHead className="text-right">Products</TableHead>
                     <TableHead className="text-right">Total Qty</TableHead>
-                    <TableHead className="text-right">Dispatched</TableHead>
-                    <TableHead className="text-right">Pending</TableHead>
+                    <TableHead className="text-right">Dispatch Qty</TableHead>
+                    <TableHead className="text-right">Pending Qty</TableHead>
                     <TableHead>Stage</TableHead>
                     <TableHead>Progress</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -1038,7 +1194,7 @@ export default function DispatchPlanningPage({ user }) {
                 </TableHeader>
                 <TableBody>
                   {filteredDashboard.length === 0 ? (
-                    <TableRow><TableCell colSpan={11} className="text-center py-8 text-gray-500">No POs found.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={12} className="text-center py-8 text-gray-500">No POs found.</TableCell></TableRow>
                   ) : filteredDashboard.map((group) => {
                     const isExpanded = expandedPOs.has(group.poNumber)
                     return (
@@ -1082,7 +1238,7 @@ export default function DispatchPlanningPage({ user }) {
                         </TableRow>
                         {isExpanded && (
                           <TableRow>
-                            <TableCell colSpan={11} className="bg-slate-50/50 p-4 border-b border-gray-200">
+                            <TableCell colSpan={12} className="bg-slate-50/50 p-4 border-b border-gray-200">
                               <div className="space-y-3">
                                 {group.orders.map((order, idx) => {
                                   const meta = getStageMeta(group.orderStages[idx])
@@ -1195,6 +1351,17 @@ export default function DispatchPlanningPage({ user }) {
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                                         Allocated: {formatQty(row.allocatedQty ?? row.qtyToBeDispatched)}
                                       </span>
+                                      {activeTab === "history" ? (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                          Dispatch Qty: {formatQty(row.qtyToBeDispatched)}
+                                        </span>
+                                      ) : (
+                                        row.quantityDelivered > 0 && (
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                            Dispatch Qty: {formatQty(row.quantityDelivered)}
+                                          </span>
+                                        )
+                                      )}
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
                                         Pending: {formatQty(row.pendingQty != null ? row.pendingQty : Math.max(0, (row.quantity || 0) - (row.quantityDelivered || 0)))}
                                       </span>
@@ -1215,6 +1382,18 @@ export default function DispatchPlanningPage({ user }) {
                                       <span className="text-gray-500">DO Number</span>
                                       <p className="font-mono font-medium text-gray-800">{row.doNumber || row.deliveryOrderNo || "—"}</p>
                                     </div>
+                                    {activeTab === "history" && (
+                                      <div>
+                                        <span className="text-gray-500">Dispatch Qty</span>
+                                        <p className="font-medium text-green-700">{formatQty(row.qtyToBeDispatched)}</p>
+                                      </div>
+                                    )}
+                                    {activeTab === "pending" && row.quantityDelivered > 0 && (
+                                      <div>
+                                        <span className="text-gray-500">Dispatch Qty</span>
+                                        <p className="font-medium text-green-700">{formatQty(row.quantityDelivered)}</p>
+                                      </div>
+                                    )}
                                     {activeTab === "history" && (
                                       <div>
                                         <span className="text-gray-500">Dispatch Date</span>
