@@ -228,7 +228,7 @@ export default function MaterialReturnPage({ user }) {
       
       let receipts = [];
       if (poIds.length > 0 || doNumbers.length > 0) {
-        let orQuery = supabase.from("ORDER RECEIPT").select('id, "DO-Delivery Order No.", "Firm Name", "Party Names"');
+        let orQuery = supabase.from("ORDER RECEIPT").select('id, "DO-Delivery Order No.", "Firm Name", "Party Names", "Rate Of Material"');
         
         const orConditions = [];
         if (poIds.length > 0) orConditions.push(`id.in.(${poIds.join(",")})`);
@@ -315,6 +315,18 @@ export default function MaterialReturnPage({ user }) {
         const alreadyReturned = alreadyReturnedMap[prodName] || 0;
         const availableQty = Math.max(0, dispatchedQty - alreadyReturned);
 
+        // Pre-fill the rate from the original order (same lookup already used for firm/party
+        // above) so it's captured right here, alongside qty, instead of depending on a later
+        // stage that may never get actioned. Still editable in case the credit rate differs.
+        let matchedReceipt = null;
+        if (row.po_id) {
+          matchedReceipt = receipts.find((r) => r.id === row.po_id);
+        }
+        if (!matchedReceipt && row["Delivery Order No."]) {
+          matchedReceipt = receipts.find((r) => r["DO-Delivery Order No."] === row["Delivery Order No."]);
+        }
+        const originalRate = matchedReceipt?.["Rate Of Material"] || "";
+
         return {
           dispatchId: row.id,
           productName: prodName,
@@ -322,6 +334,7 @@ export default function MaterialReturnPage({ user }) {
           alreadyReturned,
           availableQty,
           returnQty: "",
+          rate: originalRate,
           doNumber: row["Delivery Order No."] || "",
           removed: availableQty === 0,
           reason: "",
@@ -467,6 +480,15 @@ export default function MaterialReturnPage({ user }) {
       });
       return;
     }
+    const invalidRate = toReturn.filter((l) => !parseFloat(l.rate) || parseFloat(l.rate) <= 0);
+    if (invalidRate.length > 0) {
+      toast({
+        variant: "destructive",
+        title: "Rate Required",
+        description: "Enter a valid rate (> 0) for each product being returned.",
+      });
+      return;
+    }
     const missing = toReturn.filter((l) => !l.reason);
     if (missing.length > 0) {
       toast({
@@ -519,6 +541,10 @@ export default function MaterialReturnPage({ user }) {
         Remarks: line.remarks || "",
         "Return No.": (baseNo + idx).toString().padStart(4, "0"),
         "Debit Note Copy": debitNoteUrls[idx] || "",
+        // Captured here (pre-filled from the original order, editable) instead of only at the
+        // later "Receive Return Material" step, so it's always available by the time this
+        // reaches Management Approval / Credit Note — even if that later step is never actioned.
+        "Rate Of Material": parseFloat(line.rate) || 0,
       }));
 
       const { error } = await supabase.from("Material Return").insert(inserts);
@@ -1026,6 +1052,9 @@ export default function MaterialReturnPage({ user }) {
                       <th className="text-right px-3 py-2 font-semibold text-gray-600">
                         Remaining
                       </th>
+                      <th className="text-right px-3 py-2 font-semibold text-gray-600">
+                        Rate (₹)
+                      </th>
                       <th className="text-left px-3 py-2 font-semibold text-gray-600">
                         D.O Number
                       </th>
@@ -1110,6 +1139,30 @@ export default function MaterialReturnPage({ user }) {
                             })()
                           ) : (
                             <span className="text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          {!line.removed ? (
+                            <Input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={line.rate}
+                              onChange={(e) =>
+                                setReturnProductLines((prev) => {
+                                  const next = [...prev];
+                                  next[i] = {
+                                    ...next[i],
+                                    rate: e.target.value,
+                                  };
+                                  return next;
+                                })
+                              }
+                              placeholder="Enter rate"
+                              className="h-8 text-xs w-24 text-right ml-auto"
+                            />
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-gray-600 text-xs">
