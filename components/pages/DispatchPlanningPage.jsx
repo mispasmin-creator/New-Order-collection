@@ -605,33 +605,17 @@ export default function DispatchPlanningPage({ user }) {
   }
 
   // ── D-Sr number generation ───────────────────────────────────────────────────
+  // Generated via an atomic DB counter (next_d_sr_number RPC) instead of scanning every
+  // existing "D-Sr Number" client-side and computing +1. That approach could hand out the
+  // same number to two dispatches created around the same time — the resulting duplicate
+  // D-Sr Number then made downstream pages (TC, Bilty Update) mismatch or silently drop data
+  // between two unrelated dispatch lines that happened to share it.
   const generateDSrNumbers = async (count) => {
-    // Scan every existing "D-Sr Number" rather than trusting the most-recently-inserted row:
-    // id order doesn't reliably track the numeric D-Sr sequence (a bad historical import left
-    // many low-id rows holding a high D-Sr value), and relying on just the last row silently
-    // reissued numbers that were already taken, producing duplicate D-Sr Numbers.
-    const { data } = await supabase.from("DISPATCH").select('"D-Sr Number"')
-    const usedNumbers = new Set()
-    let maxNum = 0
-    ;(data || []).forEach((row) => {
-      const val = row["D-Sr Number"]
-      if (!val) return
-      usedNumbers.add(val)
-      const match = val.match(/^D-(\d+)$/i)
-      if (match) {
-        const n = parseInt(match[1], 10)
-        if (n > maxNum) maxNum = n
-      }
-    })
     const results = []
-    let candidate = maxNum
-    while (results.length < count) {
-      candidate += 1
-      const dSr = `D-${String(candidate).padStart(2, "0")}`
-      if (!usedNumbers.has(dSr)) {
-        results.push(dSr)
-        usedNumbers.add(dSr)
-      }
+    for (let i = 0; i < count; i++) {
+      const { data, error } = await supabase.rpc("next_d_sr_number")
+      if (error) throw error
+      results.push(data)
     }
     return results
   }
