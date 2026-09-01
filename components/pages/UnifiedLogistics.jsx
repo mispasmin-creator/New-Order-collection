@@ -138,8 +138,12 @@ export default function UnifiedLogistics({ user }) {
         const party = (row["Party Name"] || "").toString().trim().toLowerCase()
 
         if (dSr) {
-          tcMap[dSr] = row["Trust Certificate Made"] || ""
-          extraMap[dSr] = {
+          // D-Sr Number is not guaranteed unique across DISPATCH (a data issue upstream can
+          // produce duplicates), so keying these maps on it alone can leak a sibling dispatch's
+          // LGST/TC/rate onto this one. Combining with Delivery Order No. disambiguates.
+          const dSrDoKey = `${dSr}|${doNo}`
+          tcMap[dSrDoKey] = row["Trust Certificate Made"] || ""
+          extraMap[dSrDoKey] = {
             lgstSrNumber: row["LGST-Sr Number"] || "",
             transportRatePerTon: row["Transport Rate @Per Matric Ton"] || "",
             fixedAmount: row["Fixed Amount"] || "",
@@ -307,6 +311,7 @@ export default function UnifiedLogistics({ user }) {
       })
 
       const dSrNumber = del["D-Sr Number"] || del["Losgistic no."] || ""
+      const dSrDoKey = `${dSrNumber}|${(del["Delivery Order No."] || "").toString().trim()}`
 
       return {
         ...del,
@@ -328,12 +333,12 @@ export default function UnifiedLogistics({ user }) {
         receiptCopy: receipt?.["Image Of Received Bill / Audio"],
         receiptId: receipt?.id,
         isReceiptDone: !!receipt?.["Actual"],
-        tcFileUrl: dSrNumber ? (dispatchTCMap[dSrNumber] || "") : "",
-        lgstSrNumber: dSrNumber ? (dispatchExtraMap[dSrNumber]?.lgstSrNumber || "") : "",
+        tcFileUrl: dSrNumber ? (dispatchTCMap[dSrDoKey] || "") : "",
+        lgstSrNumber: dSrNumber ? (dispatchExtraMap[dSrDoKey]?.lgstSrNumber || "") : "",
         truckQty: del["Quantity Delivered."] ?? "",
         truckNo: del["Vehicle Number."] || "",
         transporterRate: (() => {
-          const extra = dSrNumber ? dispatchExtraMap[dSrNumber] : null
+          const extra = dSrNumber ? dispatchExtraMap[dSrDoKey] : null
           if (!extra) return ""
           const perMt = Number(extra.transportRatePerTon) || 0
           const fixed = Number(extra.fixedAmount) || 0

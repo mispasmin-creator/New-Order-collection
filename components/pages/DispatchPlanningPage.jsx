@@ -167,6 +167,8 @@ export default function DispatchPlanningPage({ user }) {
     dateOfDispatch: "",
     testCertificateMade: "Yes",
   })
+  const [cancelGroup, setCancelGroup] = useState(null)        // PO group pending cancellation confirmation
+  const [cancelReason, setCancelReason] = useState("")
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -670,12 +672,26 @@ export default function DispatchPlanningPage({ user }) {
     setCommonForm({ typeOfTransporting: "", dateOfDispatch: "", testCertificateMade: "Yes", testCertificateFile: null })
   }
 
-  const handleCancelOrder = async (group) => {
-    if (!window.confirm(`Are you sure you want to cancel PO: ${group.poNumber}? This will mark all items as cancelled.`)) return
+  const handleCancelOrder = (group) => {
+    setCancelGroup(group)
+    setCancelReason("")
+  }
+
+  const handleCloseCancelModal = () => {
+    setCancelGroup(null)
+    setCancelReason("")
+  }
+
+  const handleConfirmCancel = async () => {
+    if (!cancelGroup) return
+    if (!cancelReason.trim()) {
+      toast({ title: "Reason required", description: "Please enter a reason for cancellation.", variant: "destructive" })
+      return
+    }
 
     try {
       setSubmitting(true)
-      const items = group.orders || group.rows || []
+      const items = cancelGroup.orders || cancelGroup.rows || []
       const poIds = [...new Set(items.map((o) => o.poId || o.id))].filter(Boolean)
 
       if (poIds.length === 0) {
@@ -686,10 +702,11 @@ export default function DispatchPlanningPage({ user }) {
       // Update ORDER RECEIPT
       const { error: orErr } = await supabase
         .from("ORDER RECEIPT")
-        .update({ 
+        .update({
           logistics_status: "Order Cancelled",
           order_cancelled_at: getISTTimestamp(),
-          order_cancelled_by: user?.Username || user?.username || "Unknown"
+          order_cancelled_by: user?.Username || user?.username || "Unknown",
+          order_cancelled_reason: cancelReason.trim(),
         })
         .in("id", poIds)
 
@@ -701,9 +718,10 @@ export default function DispatchPlanningPage({ user }) {
 
       toast({
         title: "Order Cancelled",
-        description: `PO ${group.poNumber} has been marked as cancelled.`,
+        description: `PO ${cancelGroup.poNumber} has been marked as cancelled.`,
         className: "bg-red-50 text-red-800 border-red-200"
       })
+      handleCloseCancelModal()
       fetchData()
     } catch (err) {
       console.error("Cancel error:", err)
@@ -1660,6 +1678,59 @@ export default function DispatchPlanningPage({ user }) {
                 {submitting
                   ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting...</>
                   : <><PackageCheck className="w-4 h-4 mr-2" />Dispatch {dispatchLines.filter((l) => l.included).length} Row{dispatchLines.filter((l) => l.included).length > 1 ? "s" : ""}</>
+                }
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CANCEL ORDER MODAL ───────────────────────────────────────────────── */}
+      {cancelGroup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="px-6 py-5 border-b flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <XCircle className="h-5 w-5 text-red-600" />
+                  Cancel Order
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  PO: {cancelGroup.poNumber} — {cancelGroup.partyName}
+                </p>
+              </div>
+              <button onClick={handleCloseCancelModal} disabled={submitting} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-3">
+              <p className="text-sm text-gray-600">
+                This will mark all items in this PO as cancelled. Please enter a reason.
+              </p>
+              <div className="space-y-2">
+                <Label className="text-sm">Reason for Cancellation <span className="text-red-500">*</span></Label>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  disabled={submitting}
+                  placeholder="Enter the reason for cancelling this order..."
+                  rows={4}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                />
+              </div>
+            </div>
+
+            <div className="border-t px-6 py-4 flex justify-end gap-3">
+              <Button variant="outline" onClick={handleCloseCancelModal} disabled={submitting}>Back</Button>
+              <Button
+                onClick={handleConfirmCancel}
+                variant="destructive"
+                disabled={submitting || !cancelReason.trim()}
+              >
+                {submitting
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Cancelling...</>
+                  : <><XCircle className="w-4 h-4 mr-2" />Confirm Cancellation</>
                 }
               </Button>
             </div>
