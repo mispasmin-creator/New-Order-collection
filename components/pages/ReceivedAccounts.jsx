@@ -112,6 +112,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
         const transformedOrders = data.map((row) => ({
           id: row.id,
           partyPONumber: row["PARTY PO NO (As Per Po Exact)"] || "N/A",
+          partyPODate: formatDate(row["Party PO Date"]),
           partyName: row["Party Names"] || "N/A",
           productName: row["Product Name"] || "N/A",
           quantity: row["Quantity"] || 0,
@@ -505,6 +506,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
                   <TableHead className="w-[120px]">Action</TableHead>
                   <TableHead>DO No.</TableHead>
                   <TableHead>PO Number</TableHead>
+                  <TableHead>Party PO Date</TableHead>
                   <TableHead>Party Name</TableHead>
                   <TableHead>Product</TableHead>
                 <TableHead>Qty</TableHead>
@@ -526,7 +528,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
             <TableBody>
               {displayOrders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={19} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={20} className="text-center py-8 text-gray-500">
                     No orders found
                   </TableCell>
                 </TableRow>
@@ -534,7 +536,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
                 groupedDisplayOrders.map((group) => (
                   <Fragment key={group.key}>
                     <TableRow className="bg-slate-50">
-                      <TableCell colSpan={19} className="px-4 py-3">
+                      <TableCell colSpan={20} className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           {activeTab === "pending" && (
                             <Button
@@ -570,6 +572,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
                       </TableCell>
                       <TableCell className="font-mono text-xs">{order.doNumber}</TableCell>
                       <TableCell className="text-sm font-medium">{order.partyPONumber}</TableCell>
+                      <TableCell className="text-sm">{order.partyPODate || "-"}</TableCell>
                       <TableCell className="text-sm">{order.partyName}</TableCell>
                       <TableCell className="text-sm">{order.productName}</TableCell>
                       <TableCell className="text-sm">{order.quantity}</TableCell>
@@ -635,6 +638,7 @@ export default function ReceivedInAccountsPage({ user, onNavigate }) {
               <div className="grid grid-cols-2 gap-2 text-sm text-gray-600">
                 <div>Qty: {order.quantity}</div>
                 <div>Rate: {order.rate}</div>
+                <div>PO Date: {order.partyPODate || "-"}</div>
                 <div>Transporter Type: {order.transport}</div>
                 <div>Agent: {order.agent}</div>
               </div>
