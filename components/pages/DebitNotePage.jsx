@@ -148,6 +148,20 @@ export default function DebitNotePage({ user }) {
         if (firms.size === 1) firmMapByDoOnly[doNo] = [...firms][0]
       })
 
+      // Fetch DISPATCH records as fallback for bill numbers
+      const { data: dispatchRows } = await supabase
+        .from('DISPATCH')
+        .select('"Delivery Order No.", "Bill Number"')
+        .not('Bill Number', 'is', null)
+
+      const dispatchBillMap = {}
+      dispatchRows?.forEach(r => {
+        const doNo = r['Delivery Order No.']
+        if (doNo && r['Bill Number'] && !dispatchBillMap[doNo]) {
+          dispatchBillMap[doNo] = r['Bill Number']
+        }
+      })
+
       const { data, error } = await supabase
         .from("Material Return")
         .select("*")
@@ -158,8 +172,10 @@ export default function DebitNotePage({ user }) {
       const mappedData = (data || [])
         .map(row => {
           const key = `${row["D.O Number"]}|${normalize(row["Party Name"])}`
+          const invoiceNo = row["Invoice Number"] || row["Bill Number"] || row["Invoice No"] || dispatchBillMap[row["D.O Number"]] || ""
           return {
             ...row,
+            "Invoice Number": invoiceNo,
             firmName: firmMap[key] || firmMapByDoOnly[row["D.O Number"]] || ""
           }
         })
@@ -641,6 +657,12 @@ export default function DebitNotePage({ user }) {
                 </div>
                 <p className="text-xs text-gray-600">{reasonConfig.description}</p>
                 <div className="grid grid-cols-2 gap-3 text-sm pt-1">
+                  <div className="col-span-2">
+                    <p className="text-xs text-gray-500">Invoice / Bill Number</p>
+                    <p className="font-semibold text-blue-700 font-mono">
+                      {selectedEntry["Invoice Number"] || selectedEntry["Bill Number"] || selectedEntry["Invoice No"] || selectedEntry["Bill No."] || "—"}
+                    </p>
+                  </div>
                   <div><p className="text-xs text-gray-500">Product</p><p className="font-semibold">{selectedEntry["Product Name"]}</p></div>
                   <div><p className="text-xs text-gray-500">Return Qty</p><p className="font-semibold">{selectedEntry["Qty Of Return Material"] || selectedEntry["Qty"]}</p></div>
                   <div><p className="text-xs text-gray-500">Rate</p><p className="font-semibold">{selectedEntry["Rate Of Material"] ? `₹${selectedEntry["Rate Of Material"]}` : "—"}</p></div>
