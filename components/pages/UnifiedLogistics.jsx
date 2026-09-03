@@ -22,6 +22,23 @@ import {
 import { exportToExcel } from "@/lib/exportUtils"
 import { format } from "date-fns"
 
+// Supabase/PostgREST caps a plain select() at 1000 rows. DELIVERY and DISPATCH have both
+// grown past that, so an unpaginated fetch silently drops rows off the end. Page through in
+// batches of 1000 so every row is actually considered.
+const fetchAllRows = async (buildQuery) => {
+  const pageSize = 1000
+  let from = 0
+  let all = []
+  while (true) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1)
+    if (error) throw error
+    all = all.concat(data || [])
+    if (!data || data.length < pageSize) break
+    from += pageSize
+  }
+  return all
+}
+
 export default function UnifiedLogistics({ user }) {
   const [deliveryData, setDeliveryData] = useState([])
   const [postDeliveryData, setPostDeliveryData] = useState([])
@@ -68,15 +85,14 @@ export default function UnifiedLogistics({ user }) {
       const doNumberFirms = {}
       const poIdFirmMap = new Map()
 
-      let orQuery = supabase
+      // Firm resolution below must see ALL firms' data, not just the current user's — a
+      // "Delivery Order No." that has been duplicated across firms (a known data issue) looks
+      // like it belongs to a single firm when viewed through a firm-restricted query, and gets
+      // mislabeled as the viewer's own firm as a result. The actual access restriction for
+      // non-admin users is applied after tagging, further below.
+      const { data: orRows } = await supabase
         .from('ORDER RECEIPT')
         .select('id, "DO-Delivery Order No.", "Firm Name", "Party Names"')
-
-      if (shouldFilter) {
-        orQuery = orQuery.in('Firm Name', userFirms)
-      }
-
-      const { data: orRows } = await orQuery
 
       orRows?.forEach(r => {
         if (r.id && r['Firm Name']) poIdFirmMap.set(r.id, r['Firm Name'])
@@ -105,34 +121,29 @@ export default function UnifiedLogistics({ user }) {
         }
       })
 
-      let deliveryQuery = supabase.from('DELIVERY').select('*').not('Planned 3', 'is', null)
-      if (shouldFilter && allowedDoNumbers.length > 0) deliveryQuery = deliveryQuery.in('"Delivery Order No."', allowedDoNumbers)
-
-      let postDeliveryQuery = supabase.from('POST DELIVERY').select('*')
-      if (shouldFilter && allowedDoNumbers.length > 0) postDeliveryQuery = postDeliveryQuery.in('"Order No."', allowedDoNumbers)
-
-      const [deliveryRes, postDeliveryRes, dispatchRes] = await Promise.all([
-        deliveryQuery,
-        postDeliveryQuery,
-        supabase.from('DISPATCH').select('"D-Sr Number", "Trust Certificate Made", "Delivery Order No.", "Party Name", po_id, "LGST-Sr Number", "Transport Rate @Per Matric Ton", "Fixed Amount", "Type Of Rate"')
+      const [deliveryData_, postDeliveryData_, dispatchData_] = await Promise.all([
+        fetchAllRows(() => supabase.from('DELIVERY').select('*').not('Planned 3', 'is', null)),
+        fetchAllRows(() => supabase.from('POST DELIVERY').select('*')),
+        fetchAllRows(() => supabase.from('DISPATCH').select('"D-Sr Number", "Trust Certificate Made", "Delivery Order No.", "Party Name", po_id, "LGST-Sr Number", "Transport Rate @Per Matric Ton", "Fixed Amount", "Type Of Rate"')),
       ])
-
-      if (deliveryRes.error) throw deliveryRes.error
-      if (postDeliveryRes.error) throw postDeliveryRes.error
 
       const tcMap = {}
       const extraMap = {}
       const dispatchFirmMapCombined = {}
       const dispatchFirmMapByDo = {}
 
-      dispatchRes.data?.forEach(row => {
+      dispatchData_.forEach(row => {
         const dSr = (row["D-Sr Number"] || "").toString().trim()
         const doNo = (row["Delivery Order No."] || "").toString().trim()
         const party = (row["Party Name"] || "").toString().trim().toLowerCase()
 
         if (dSr) {
-          tcMap[dSr] = row["Trust Certificate Made"] || ""
-          extraMap[dSr] = {
+          // D-Sr Number is not guaranteed unique across DISPATCH (a data issue upstream can
+          // produce duplicates), so keying these maps on it alone can leak a sibling dispatch's
+          // LGST/TC/rate onto this one. Combining with Delivery Order No. disambiguates.
+          const dSrDoKey = `${dSr}|${doNo}`
+          tcMap[dSrDoKey] = row["Trust Certificate Made"] || ""
+          extraMap[dSrDoKey] = {
             lgstSrNumber: row["LGST-Sr Number"] || "",
             transportRatePerTon: row["Transport Rate @Per Matric Ton"] || "",
             fixedAmount: row["Fixed Amount"] || "",
@@ -191,14 +202,20 @@ export default function UnifiedLogistics({ user }) {
         return ""
       }
 
-      const taggedDelivery = (deliveryRes.data || []).map(del => {
-        const poId = del.po_id || del["po_id"] || del["Order Receipt id"]
-        const dSr = del["D-Sr Number"] || del["Losgistic no."] || ""
-        return {
-          ...del,
-          firmName: resolveFirm(poId, del["Delivery Order No."], del["Party Name"], dSr)
-        }
-      })
+      // The actual firm access boundary for non-admin users: keep only rows whose correctly
+      // resolved firm is one of the user's own. Doing this after tagging (instead of via a
+      // "Delivery Order No. in [...]" query filter) is what prevents a DO number duplicated
+      // across firms from leaking another firm's shipment into this user's view.
+      const taggedDelivery = deliveryData_
+        .map(del => {
+          const poId = del.po_id || del["po_id"] || del["Order Receipt id"]
+          const dSr = del["D-Sr Number"] || del["Losgistic no."] || ""
+          return {
+            ...del,
+            firmName: resolveFirm(poId, del["Delivery Order No."], del["Party Name"], dSr)
+          }
+        })
+        .filter(del => !shouldFilter || userFirms.includes(del.firmName))
       setDeliveryData(taggedDelivery)
 
       const billToFirmMap = {}
@@ -208,17 +225,19 @@ export default function UnifiedLogistics({ user }) {
         }
       })
 
-      const taggedPostDelivery = (postDeliveryRes.data || []).map(pd => {
-        const poId = pd.po_id || pd["po_id"]
-        let firm = resolveFirm(poId, pd["Order No."], pd["Party Name"], "")
-        if (!firm && pd["Bill No."] && billToFirmMap[pd["Bill No."]]) {
-          firm = billToFirmMap[pd["Bill No."]]
-        }
-        return {
-          ...pd,
-          firmName: firm
-        }
-      })
+      const taggedPostDelivery = postDeliveryData_
+        .map(pd => {
+          const poId = pd.po_id || pd["po_id"]
+          let firm = resolveFirm(poId, pd["Order No."], pd["Party Name"], "")
+          if (!firm && pd["Bill No."] && billToFirmMap[pd["Bill No."]]) {
+            firm = billToFirmMap[pd["Bill No."]]
+          }
+          return {
+            ...pd,
+            firmName: firm
+          }
+        })
+        .filter(pd => !shouldFilter || userFirms.includes(pd.firmName))
       setPostDeliveryData(taggedPostDelivery)
 
       // Update notifications
@@ -292,6 +311,7 @@ export default function UnifiedLogistics({ user }) {
       })
 
       const dSrNumber = del["D-Sr Number"] || del["Losgistic no."] || ""
+      const dSrDoKey = `${dSrNumber}|${(del["Delivery Order No."] || "").toString().trim()}`
 
       return {
         ...del,
@@ -313,12 +333,12 @@ export default function UnifiedLogistics({ user }) {
         receiptCopy: receipt?.["Image Of Received Bill / Audio"],
         receiptId: receipt?.id,
         isReceiptDone: !!receipt?.["Actual"],
-        tcFileUrl: dSrNumber ? (dispatchTCMap[dSrNumber] || "") : "",
-        lgstSrNumber: dSrNumber ? (dispatchExtraMap[dSrNumber]?.lgstSrNumber || "") : "",
+        tcFileUrl: dSrNumber ? (dispatchTCMap[dSrDoKey] || "") : "",
+        lgstSrNumber: dSrNumber ? (dispatchExtraMap[dSrDoKey]?.lgstSrNumber || "") : "",
         truckQty: del["Quantity Delivered."] ?? "",
         truckNo: del["Vehicle Number."] || "",
         transporterRate: (() => {
-          const extra = dSrNumber ? dispatchExtraMap[dSrNumber] : null
+          const extra = dSrNumber ? dispatchExtraMap[dSrDoKey] : null
           if (!extra) return ""
           const perMt = Number(extra.transportRatePerTon) || 0
           const fixed = Number(extra.fixedAmount) || 0

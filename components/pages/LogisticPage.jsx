@@ -62,6 +62,10 @@ const formatDate = (value) => {
 }
 
 const getTransporterRateDisplay = (row) => {
+  // Direct Supply means the party collects the material themselves — no transporter is
+  // engaged, so a rate quoted earlier at the Arrange Logistics stage (for a different
+  // transport option) does not apply here and must not be shown.
+  if (row.typeOfTransporting === "Direct Supply") return "—"
   const perMt = Number(row.transportRatePerTon) || 0
   const fixed = Number(row.fixedAmount) || 0
   const splitRate = Number(row.plannedTransporterRate) || 0
@@ -295,32 +299,16 @@ export default function LogisticPage({ user }) {
     )
   }, [historyOrders])
 
-  // Used only at actual-submit time: scans every existing "LGST-Sr Number" in the DB (not just
-  // the loaded history list, which is a partial/possibly-stale snapshot) and skips any value
-  // already taken, so the number that actually gets written is guaranteed unused.
+  // Used only at actual-submit time: asks the database for the next number(s) via an atomic
+  // counter (next_lgst_number RPC), so concurrent submissions from different users can never
+  // be handed the same number. Reading the max from the client and computing +1 locally (the
+  // old approach) is not safe under concurrency and produced duplicate LGST numbers in production.
   const generateLGSTNumbersFresh = async (count) => {
-    const { data } = await supabase.from("DISPATCH").select('"LGST-Sr Number"')
-    const used = new Set()
-    let maxNumber = 0
-    ;(data || []).forEach((row) => {
-      const val = row["LGST-Sr Number"]
-      if (!val) return
-      used.add(val)
-      const match = val.match(/^LGST-(\d+)$/i)
-      if (match) {
-        const n = parseInt(match[1], 10)
-        if (n > maxNumber) maxNumber = n
-      }
-    })
     const results = []
-    let candidate = maxNumber
-    while (results.length < count) {
-      candidate += 1
-      const lgst = `LGST-${String(candidate).padStart(3, "0")}`
-      if (!used.has(lgst)) {
-        results.push(lgst)
-        used.add(lgst)
-      }
+    for (let i = 0; i < count; i++) {
+      const { data, error } = await supabase.rpc("next_lgst_number")
+      if (error) throw error
+      results.push(data)
     }
     return results
   }
