@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import {
   Loader2, Search, CheckCircle2, AlertCircle, FileText, ChevronDown, ChevronRight,
-  TrendingDown, TrendingUp, RefreshCw, Eye, Download, Building, User
+  TrendingDown, TrendingUp, RefreshCw, Eye, Download, Building, User, Pencil, Upload, X
 } from "lucide-react"
 import { exportToExcel } from "@/lib/exportUtils"
 import { getSignedUrl } from "@/lib/storageUtils"
@@ -107,6 +107,12 @@ export default function DebitNotePage({ user }) {
   const [amount, setAmount] = useState("")
   const [noteFile, setNoteFile] = useState(null)
   const [noteRemarks, setNoteRemarks] = useState("")
+
+  // Edit Note Copy state
+  const [editCopyEntry, setEditCopyEntry] = useState(null)
+  const [newCopyFile, setNewCopyFile] = useState(null)
+  const [newCopyPreview, setNewCopyPreview] = useState(null)
+  const [uploadingCopy, setUploadingCopy] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
@@ -328,7 +334,10 @@ export default function DebitNotePage({ user }) {
         "Debit Note Amount": Number(amount),
         "Debit Note Issued At": getISTTimestamp(),
       }
-      if (fileUrl) payload["Debit Note Copy"] = fileUrl
+      if (fileUrl) {
+        payload["Debit Note Copy"] = fileUrl
+        payload["Credit Note Copy"] = fileUrl
+      }
       if (noteRemarks.trim()) payload["Remarks"] = (selectedEntry["Remarks"] ? selectedEntry["Remarks"] + "\n" : "") + `[Debit/Credit Note] ${noteRemarks.trim()}`
 
       const { error } = await supabase
@@ -347,6 +356,90 @@ export default function DebitNotePage({ user }) {
       toast({ title: "Error", description: err.message, variant: "destructive" })
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleOpenEditCopy = (entry) => {
+    setEditCopyEntry(entry)
+    setNewCopyFile(null)
+    setNewCopyPreview(null)
+  }
+
+  const handleCloseEditCopy = () => {
+    if (uploadingCopy) return
+    setEditCopyEntry(null)
+    setNewCopyFile(null)
+    if (newCopyPreview) {
+      URL.revokeObjectURL(newCopyPreview)
+      setNewCopyPreview(null)
+    }
+  }
+
+  const handleCopyFileChange = (e) => {
+    const file = e.target.files?.[0] || null
+    setNewCopyFile(file)
+    if (file && file.type.startsWith("image/")) {
+      const previewUrl = URL.createObjectURL(file)
+      setNewCopyPreview(previewUrl)
+    } else {
+      setNewCopyPreview(null)
+    }
+  }
+
+  const handleSaveCopy = async () => {
+    if (!editCopyEntry || !newCopyFile) {
+      toast({ title: "Required", description: "Please select an image or document to upload.", variant: "destructive" })
+      return
+    }
+
+    try {
+      setUploadingCopy(true)
+      const ext = newCopyFile.name.split(".").pop()
+      const path = `material_return/${editCopyEntry.id}_note_copy_${Date.now()}.${ext}`
+
+      const { error: uploadErr } = await supabase.storage
+        .from("images")
+        .upload(path, newCopyFile, { cacheControl: "3600", upsert: false })
+      if (uploadErr) throw uploadErr
+
+      const { data: { publicUrl } } = supabase.storage.from("images").getPublicUrl(path)
+
+      const updatePayload = {
+        "Debit Note Copy": publicUrl,
+        "Credit Note Copy": publicUrl,
+      }
+
+      const { error: updateErr } = await supabase
+        .from("Material Return")
+        .update(updatePayload)
+        .eq("id", editCopyEntry.id)
+
+      if (updateErr) throw updateErr
+
+      toast({
+        title: "Updated",
+        description: `Note copy updated successfully for Return No. ${editCopyEntry["Return No."] || editCopyEntry.id}.`,
+      })
+
+      // Update local state immediately
+      setEntries((prev) =>
+        prev.map((item) =>
+          item.id === editCopyEntry.id ? { ...item, ...updatePayload } : item
+        )
+      )
+      setHistoryEntries((prev) =>
+        prev.map((item) =>
+          item.id === editCopyEntry.id ? { ...item, ...updatePayload } : item
+        )
+      )
+
+      handleCloseEditCopy()
+      fetchData()
+    } catch (err) {
+      console.error("Error updating note copy:", err)
+      toast({ title: "Error", description: err.message || "Failed to update note copy.", variant: "destructive" })
+    } finally {
+      setUploadingCopy(false)
     }
   }
 
@@ -486,6 +579,7 @@ export default function DebitNotePage({ user }) {
                     <TableHead>Type</TableHead>
                     <TableHead>Note No.</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-center">Note Copy</TableHead>
                   </>
                 )}
               </TableRow>
@@ -493,7 +587,7 @@ export default function DebitNotePage({ user }) {
             <TableBody>
               {displayList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-12 text-gray-500">
+                  <TableCell colSpan={activeTab === "pending" ? 7 : 10} className="text-center py-12 text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <FileText className="w-8 h-8 text-gray-300" />
                       <span>No {activeTab} records found</span>
@@ -549,6 +643,42 @@ export default function DebitNotePage({ user }) {
                           <TableCell className="text-right font-semibold text-sm">
                             {entry["Debit Note Amount"] ? fmt(entry["Debit Note Amount"]) : "—"}
                           </TableCell>
+                          <TableCell className="text-center">
+                            {entry["Debit Note Copy"] || entry["Credit Note Copy"] ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                                  title="View Document"
+                                  onClick={() => handleViewFile(entry["Debit Note Copy"] || entry["Credit Note Copy"])}
+                                >
+                                  <Eye className="w-3.5 h-3.5 mr-1" /> View
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-50"
+                                  title="Change Image"
+                                  onClick={() => handleOpenEditCopy(entry)}
+                                >
+                                  <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-xs text-purple-600 border-dashed border-purple-300 hover:bg-purple-50"
+                                onClick={() => handleOpenEditCopy(entry)}
+                              >
+                                <Upload className="w-3 h-3 mr-1" /> Upload
+                              </Button>
+                            )}
+                          </TableCell>
                         </>
                       )}
                     </TableRow>
@@ -600,12 +730,39 @@ export default function DebitNotePage({ user }) {
                             )}
                             {entry["Debit Note Number"] && <div><p className="text-gray-500 text-xs mb-0.5">Note Number</p><p className="font-mono font-medium">{entry["Debit Note Number"]}</p></div>}
                             {entry["Debit Note Amount"] && <div><p className="text-gray-500 text-xs mb-0.5">Amount</p><p className="font-bold text-purple-700">{fmt(entry["Debit Note Amount"])}</p></div>}
-                            {entry["Debit Note Copy"] && (
-                              <div>
-                                <p className="text-gray-500 text-xs mb-0.5">Note Copy</p>
-                                <a href={entry["Debit Note Copy"]} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">View Document</a>
-                              </div>
-                            )}
+                            <div>
+                              <p className="text-gray-500 text-xs mb-0.5">Note Copy</p>
+                              {entry["Debit Note Copy"] || entry["Credit Note Copy"] ? (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewFile(entry["Debit Note Copy"] || entry["Credit Note Copy"])}
+                                    className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1 font-medium"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" /> View Document
+                                  </button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-1.5 text-xs text-purple-600 hover:text-purple-800 hover:bg-purple-50 inline-flex items-center gap-1"
+                                    onClick={() => handleOpenEditCopy(entry)}
+                                  >
+                                    <Pencil className="w-3 h-3" /> Change Image
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-6 px-2 text-xs text-purple-600 border-dashed border-purple-300 hover:bg-purple-50 inline-flex items-center gap-1"
+                                  onClick={() => handleOpenEditCopy(entry)}
+                                >
+                                  <Upload className="w-3 h-3" /> Upload Note Copy
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -791,6 +948,118 @@ export default function DebitNotePage({ user }) {
               {submitting
                 ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Issuing...</>
                 : <><FileText className="w-4 h-4 mr-2" />Issue {docType || "Note"}</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Note Copy Dialog */}
+      <Dialog open={!!editCopyEntry} onOpenChange={(open) => !open && handleCloseEditCopy()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="w-5 h-5 text-purple-600" />
+              Edit Note Copy
+            </DialogTitle>
+            <DialogDescription>
+              Return No. <strong>{editCopyEntry?.["Return No."]}</strong> — {editCopyEntry?.["Party Name"]}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Current File Section */}
+            <div className="rounded-lg border bg-gray-50 p-3 space-y-2 text-xs">
+              <span className="font-semibold text-gray-700">Current Document:</span>
+              {editCopyEntry && (editCopyEntry["Debit Note Copy"] || editCopyEntry["Credit Note Copy"]) ? (
+                <div className="flex items-center justify-between bg-white p-2 rounded border">
+                  <span className="truncate max-w-[200px] text-gray-600 font-mono">
+                    {(editCopyEntry["Debit Note Copy"] || editCopyEntry["Credit Note Copy"]).split("/").pop()}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                    onClick={() => handleViewFile(editCopyEntry["Debit Note Copy"] || editCopyEntry["Credit Note Copy"])}
+                  >
+                    <Eye className="w-3.5 h-3.5 mr-1" /> View Current
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-gray-400 italic">No document currently uploaded</p>
+              )}
+            </div>
+
+            {/* New File Upload Input */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Select New Image / Document</Label>
+              <Input
+                type="file"
+                accept="image/*,.pdf"
+                onChange={handleCopyFileChange}
+                disabled={uploadingCopy}
+                className="h-10"
+              />
+              <p className="text-xs text-gray-500">Supported formats: JPG, PNG, WEBP, PDF</p>
+            </div>
+
+            {/* Live Preview if Image */}
+            {newCopyPreview && (
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-500">New Image Preview:</Label>
+                <div className="relative border rounded-lg overflow-hidden max-h-48 flex items-center justify-center bg-gray-100 p-2">
+                  <img
+                    src={newCopyPreview}
+                    alt="Preview"
+                    className="max-h-44 object-contain rounded"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Selected file confirmation */}
+            {newCopyFile && (
+              <div className="flex items-center justify-between text-xs text-green-700 bg-green-50 p-2 rounded border border-green-200">
+                <span className="truncate max-w-[260px]">✓ {newCopyFile.name} ({(newCopyFile.size / 1024).toFixed(1)} KB)</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 w-5 p-0 text-gray-400 hover:text-red-500"
+                  onClick={() => {
+                    setNewCopyFile(null)
+                    if (newCopyPreview) {
+                      URL.revokeObjectURL(newCopyPreview)
+                      setNewCopyPreview(null)
+                    }
+                  }}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseEditCopy} disabled={uploadingCopy}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveCopy}
+              disabled={uploadingCopy || !newCopyFile}
+              className="bg-purple-600 hover:bg-purple-700"
+            >
+              {uploadingCopy ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Save Note Copy
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
