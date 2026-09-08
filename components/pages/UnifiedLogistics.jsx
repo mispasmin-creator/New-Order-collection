@@ -680,6 +680,7 @@ export default function UnifiedLogistics({ user }) {
                 <TableHead className="w-8" />
                 <TableHead>Action</TableHead>
                 <TableHead>Invoice / Shipment</TableHead>
+                <TableHead>Bill Date</TableHead>
                 <TableHead>Firm Name</TableHead>
                 <TableHead>Party</TableHead>
                 <TableHead>Transporter Type</TableHead>
@@ -695,7 +696,7 @@ export default function UnifiedLogistics({ user }) {
             <TableBody>
               {groupedShipments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
+                  <TableCell colSpan={14} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
                 </TableRow>
               ) : (
                 groupedShipments.map((group, gi) => {
@@ -741,6 +742,7 @@ export default function UnifiedLogistics({ user }) {
                             )}
                           </div>
                         </TableCell>
+                        <TableCell className="text-sm text-gray-600">{formatDate(group.rows[0]?.billDate)}</TableCell>
                         <TableCell className="text-sm font-medium text-gray-700">{group.firmName || group.rows[0]?.firmName || "—"}</TableCell>
                         <TableCell className="text-sm font-medium">{group.partyName}</TableCell>
                         <TableCell className="text-sm text-gray-600">
@@ -796,6 +798,7 @@ export default function UnifiedLogistics({ user }) {
                           <TableCell />
                           <TableCell />
                           <TableCell className="py-2 text-xs text-gray-500 font-mono">{s.orderNo}</TableCell>
+                          <TableCell className="py-2 text-sm text-gray-600">{formatDate(s.billDate)}</TableCell>
                           <TableCell className="py-2 text-sm text-gray-700 font-medium">{s.firmName || "—"}</TableCell>
                           <TableCell className="py-2 text-sm text-gray-700">{s.productName}</TableCell>
                           <TableCell className="py-2 text-sm text-gray-600">{s.typeOfTransporting || "—"}</TableCell>
