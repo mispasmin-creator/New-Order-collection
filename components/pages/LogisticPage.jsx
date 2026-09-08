@@ -88,6 +88,7 @@ export default function LogisticPage({ user }) {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterFirm, setFilterFirm] = useState("all")
   const [filterParty, setFilterParty] = useState("all")
+  const [lockedTransportType, setLockedTransportType] = useState("") // Transporter Type as fixed at Dispatch Planning; locks the field here when set
   const [formData, setFormData] = useState({
     transporterName: "",
     truckNo: "",
@@ -319,6 +320,7 @@ export default function LogisticPage({ user }) {
     const sharedType = types.length === 1 ? types[0] : ""
     setSelectedGroup(group)
     setSelectedRowIds(new Set(group.rows.map((r) => r.id)))
+    setLockedTransportType(sharedType)
     setFormData({
       transporterName: firstRow.transporterName || "",
       truckNo: "",
@@ -349,6 +351,7 @@ export default function LogisticPage({ user }) {
   const handleClose = () => {
     setSelectedGroup(null)
     setSelectedRowIds(new Set())
+    setLockedTransportType("")
     setFormData({
       transporterName: "",
       truckNo: "",
@@ -833,7 +836,7 @@ export default function LogisticPage({ user }) {
                   <Select
                     value={formData.typeOfTransporting}
                     onValueChange={(value) => setFormData((prev) => ({ ...prev, typeOfTransporting: value }))}
-                    disabled={submitting}
+                    disabled={submitting || !!lockedTransportType}
                   >
                     <SelectTrigger className="h-10">
                       <SelectValue placeholder="Select Transporter Type" />
