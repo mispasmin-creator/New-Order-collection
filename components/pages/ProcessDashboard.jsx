@@ -163,26 +163,37 @@ export default function ProcessDashboard({ user }) {
       newCounts.invoice = dispatchRows.filter((d) => isFilled(d.Planned4) && !isFilled(d.Actual4)).length
 
       // TC: invoice issued, TC required, no matching DELIVERY row yet.
-      const deliveryDSrNumbers = new Set(deliveryRows.map((d) => d["D-Sr Number"]).filter(Boolean))
+      // D-Sr Number alone is not guaranteed unique across DELIVERY (a data issue upstream
+      // can produce duplicates, and the same D-Sr can legitimately carry more than one DO),
+      // so D-Sr Number + Delivery Order No. together are required to avoid a sibling row
+      // under a different DO being mistaken for this dispatch's own delivery.
+      const dsrDoKey = (dSr, doNo) => `${dSr}|${(doNo || "").toString().trim()}`
+      const deliveryDSrDoKeys = new Set(
+        deliveryRows.filter((d) => d["D-Sr Number"]).map((d) => dsrDoKey(d["D-Sr Number"], d["Delivery Order No."]))
+      )
       newCounts.tc = dispatchRows.filter((d) =>
         isFilled(d.Actual4) && d["TC Required"] === "Yes" &&
-        d["D-Sr Number"] && !deliveryDSrNumbers.has(d["D-Sr Number"])
+        d["D-Sr Number"] && !deliveryDSrDoKeys.has(dsrDoKey(d["D-Sr Number"], d["Delivery Order No."]))
       ).length
 
       // Fullkitting: invoice issued, not yet fullkitted, and delivery-ready
       // (ex-factory needs only a delivery row; others also need that row's Actual3 set).
-      const deliveryByDSr = new Map()
-      deliveryRows.forEach((d) => { if (d["D-Sr Number"]) deliveryByDSr.set(d["D-Sr Number"], d) })
+      const deliveryByDSrDo = new Map()
+      deliveryRows.forEach((d) => {
+        if (d["D-Sr Number"]) deliveryByDSrDo.set(dsrDoKey(d["D-Sr Number"], d["Delivery Order No."]), d)
+      })
       newCounts.fullkitting = dispatchRows.filter((d) => {
         if (isFilled(d["Fullkitting Actual"])) return false
         if (!isFilled(d.Actual4)) return false
         const type = (d["Type Of Transporting  "] || d["Type Of Transporting"] || "").toLowerCase().trim()
-        const delRow = d["D-Sr Number"] ? deliveryByDSr.get(d["D-Sr Number"]) : null
+        const delRow = d["D-Sr Number"] ? deliveryByDSrDo.get(dsrDoKey(d["D-Sr Number"], d["Delivery Order No."])) : null
         return type === "ex-factory" || type === "ex factory" ? !!delRow : !!(delRow && delRow.Actual3)
       }).length
 
       // Bilty Update: delivery planned (non ex-factory), no matching receipt yet.
-      // Firm-name is joined per row since Bill No. is not unique across firms.
+      // Firm-name is joined per row since Bill No. is not unique across firms — and Party
+      // Name is checked too since a shared/reused DO number can make two different parties
+      // under the same firm reuse the same Bill No.
       const firmMap = {}
       allOrders.forEach((o) => { if (o["DO-Delivery Order No."]) firmMap[o["DO-Delivery Order No."]] = o["Firm Name"] })
       const taggedPostDelivery = postDeliveryRows.map((pd) => ({ ...pd, firmName: firmMap[pd["Order No."]] || "" }))
@@ -190,8 +201,11 @@ export default function ProcessDashboard({ user }) {
         const type = (d["Type Of Transporting"] || "").toLowerCase().trim()
         if (type === "ex-factory" || type === "ex factory") return false
         const delFirm = firmMap[d["Delivery Order No."]] || ""
+        const delParty = (d["Party Name"] || "").trim().toLowerCase()
         const receipt = taggedPostDelivery.find((pd) =>
-          d["Bill No."] ? (pd["Bill No."] === d["Bill No."] && pd.firmName === delFirm) : (pd["Order No."] === d["Delivery Order No."])
+          d["Bill No."]
+            ? (pd["Bill No."] === d["Bill No."] && pd.firmName === delFirm && (pd["Party Name"] || "").trim().toLowerCase() === delParty)
+            : (pd["Order No."] === d["Delivery Order No."])
         )
         return !isFilled(receipt?.Actual)
       }).length

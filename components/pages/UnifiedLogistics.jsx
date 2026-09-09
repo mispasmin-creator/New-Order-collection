@@ -249,7 +249,9 @@ export default function UnifiedLogistics({ user }) {
         .map(del => {
           const receipt = taggedPostDelivery.find(pd => {
             if (del["Bill No."]) {
-              return pd["Bill No."] === del["Bill No."] && (pd.firmName === del.firmName || !pd.firmName || !del.firmName)
+              return pd["Bill No."] === del["Bill No."] &&
+                (pd.firmName === del.firmName || !pd.firmName || !del.firmName) &&
+                (pd["Party Name"] || "").trim().toLowerCase() === (del["Party Name"] || "").trim().toLowerCase()
             }
             return pd["Order No."] && pd["Order No."] === del["Delivery Order No."]
           })
@@ -301,11 +303,16 @@ export default function UnifiedLogistics({ user }) {
         return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
       })
       .map(del => {
-      // Find matching receipt by Bill No (scoped to the same firm) or DO No if Bill No is missing.
-      // Bill No. is not unique across firms, so matching by Bill No. alone can pull in another firm's receipt.
+      // Find matching receipt by Bill No (scoped to the same firm + party) or DO No if Bill No is missing.
+      // Bill No. is not unique across firms, so matching by Bill No. alone can pull in another firm's
+      // receipt — and it's not unique within a firm either (e.g. a shared/placeholder DO number can
+      // make two different parties under the same firm reuse the same Bill No.), so Party Name is
+      // checked too to avoid pulling in an unrelated party's receipt.
       const receipt = postDeliveryData.find(pd => {
         if (del["Bill No."]) {
-          return pd["Bill No."] === del["Bill No."] && pd.firmName === del.firmName
+          return pd["Bill No."] === del["Bill No."] &&
+            pd.firmName === del.firmName &&
+            (pd["Party Name"] || "").trim().toLowerCase() === (del["Party Name"] || "").trim().toLowerCase()
         }
         return pd["Order No."] && pd["Order No."] === del["Delivery Order No."]
       })

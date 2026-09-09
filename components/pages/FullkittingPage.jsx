@@ -181,20 +181,22 @@ export default function FullkittingPage({ user }) {
       const deliveryResult = dispatchNumbers.length
         ? await supabase
             .from("DELIVERY")
-            .select('"D-Sr Number", "Delivery Order No.", "Bilty No.", "Bilty Number.", "Bilty Copy", Actual3')
+            .select('"D-Sr Number", "Delivery Order No.", "Bill No.", "Bilty No.", "Bilty Number.", "Bilty Copy", Actual3')
             .in("D-Sr Number", dispatchNumbers)
         : { data: [], error: null }
       const { data: deliveryData, error: deliveryError } = deliveryResult
       if (deliveryError) throw deliveryError
 
       // D-Sr Number is not guaranteed unique across DELIVERY (a data issue upstream can
-      // produce duplicates), so keying this map on it alone can leak a sibling delivery's
-      // Bilty details onto the wrong dispatch row. Combining with Delivery Order No.
-      // disambiguates, matching the same fix already applied in UnifiedLogistics.jsx.
+      // produce duplicates) — and even D-Sr Number + Delivery Order No. together can still
+      // collide when two different bills/products were dispatched under the same D-Sr and
+      // DO (e.g. D-1024 + DO-374 covers both Bill 505 and Bill 515). Keying this map on
+      // D-Sr Number + Delivery Order No. + Bill No. together disambiguates those, matching
+      // the same fix already applied in UnifiedLogistics.jsx.
       const deliveryMap = new Map()
       ;(deliveryData || []).forEach((d) => {
         if (d["D-Sr Number"]) {
-          const key = `${d["D-Sr Number"]}|${(d["Delivery Order No."] || "").toString().trim()}`
+          const key = `${d["D-Sr Number"]}|${(d["Delivery Order No."] || "").toString().trim()}|${(d["Bill No."] || "").toString().trim()}`
           deliveryMap.set(key, d)
         }
       })
@@ -207,7 +209,7 @@ export default function FullkittingPage({ user }) {
         const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
         const typeOfTransportingLower = typeOfTransporting.toLowerCase().trim()
         const deliveryRow = row["D-Sr Number"]
-          ? deliveryMap.get(`${row["D-Sr Number"]}|${(row["Delivery Order No."] || "").toString().trim()}`)
+          ? deliveryMap.get(`${row["D-Sr Number"]}|${(row["Delivery Order No."] || "").toString().trim()}|${(row["Bill Number"] || "").toString().trim()}`)
           : null
         
         const isReadyForFullkitting = typeOfTransportingLower === "ex-factory" || typeOfTransportingLower === "ex factory"
@@ -524,11 +526,11 @@ export default function FullkittingPage({ user }) {
       if (error) throw error
 
       if (status === "Yes" && selectedRow.dSrNumber) {
-        // D-Sr Number is not guaranteed unique across DELIVERY (a data issue upstream can
-        // produce duplicates), so matching on it alone can overwrite an unrelated invoice's
-        // Bilty No. Scoping by Delivery Order No. too disambiguates, matching the same fix
-        // already applied to the read-side join above.
-        const { error: delError } = await supabase
+        // D-Sr Number + Delivery Order No. alone is not always unique either — two different
+        // bills can share both when dispatched under the same D-Sr and DO (e.g. D-1024 +
+        // DO-374 covering Bill 505 and Bill 515). Scoping by Bill No. too disambiguates,
+        // matching the same fix already applied to the read-side join above.
+        let delQuery = supabase
           .from("DELIVERY")
           .update({
             "Bilty No.": form.biltyNo.trim() || null,
@@ -536,6 +538,10 @@ export default function FullkittingPage({ user }) {
           })
           .eq("D-Sr Number", selectedRow.dSrNumber)
           .eq("Delivery Order No.", selectedRow.deliveryOrderNo || "")
+        if (selectedRow.billNumber) {
+          delQuery = delQuery.eq("Bill No.", selectedRow.billNumber)
+        }
+        const { error: delError } = await delQuery
         if (delError) {
           console.error("Error updating DELIVERY Bilty No:", delError)
         }

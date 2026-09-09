@@ -702,10 +702,12 @@ export default function MakeInvoicePage({ user }) {
 
       // Update DELIVERY if exists
       if (adminEditBillOrder.dSrNumber) {
-        // D-Sr Number is not guaranteed unique across DELIVERY/DISPATCH (a data issue
-        // upstream can produce duplicates), so matching on it alone can overwrite an
-        // unrelated invoice's Bill No / Bilty Copy. Scoping by Delivery Order No. too
-        // disambiguates, matching the same fix already applied elsewhere for this issue.
+        // Neither D-Sr Number, Delivery Order No., nor Bill No. is guaranteed unique on its
+        // own across DELIVERY (a data issue upstream can produce duplicates, and the same
+        // D-Sr + DO combo can legitimately carry more than one bill/product). Matching on
+        // any single one of these can overwrite an unrelated invoice's Bill No / Bilty Copy,
+        // so all three (D-Sr Number + Delivery Order No. + the row's own original Bill No.)
+        // are required together to scope this update to the exact row being edited.
         let delQuery = supabase
           .from("DELIVERY")
           .update({
@@ -716,18 +718,31 @@ export default function MakeInvoicePage({ user }) {
         if (adminEditBillOrder.deliveryOrderNo) {
           delQuery = delQuery.eq("Delivery Order No.", adminEditBillOrder.deliveryOrderNo);
         }
+        if (adminEditBillOrder.billNumber) {
+          delQuery = delQuery.eq("Bill No.", adminEditBillOrder.billNumber);
+        }
         await delQuery;
       }
 
       // Update POST DELIVERY if exists
       if (adminEditBillOrder.deliveryOrderNo) {
-        await supabase
+        // Same reasoning as above: Order No. (Delivery Order No.) alone can be shared by
+        // many unrelated invoices/parties, so the row's own original Bill No. and Party
+        // Name are also required to scope this update to the exact invoice being edited.
+        let postDelQuery = supabase
           .from("POST DELIVERY")
           .update({
             "Bill No.": adminEditBillNo,
             "Copy Of Bill": newBillCopyUrl,
           })
           .eq("Order No.", adminEditBillOrder.deliveryOrderNo);
+        if (adminEditBillOrder.billNumber) {
+          postDelQuery = postDelQuery.eq("Bill No.", adminEditBillOrder.billNumber);
+        }
+        if (adminEditBillOrder.partyName) {
+          postDelQuery = postDelQuery.eq("Party Name", adminEditBillOrder.partyName);
+        }
+        await postDelQuery;
       }
 
       toast({
