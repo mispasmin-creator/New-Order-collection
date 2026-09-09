@@ -702,13 +702,21 @@ export default function MakeInvoicePage({ user }) {
 
       // Update DELIVERY if exists
       if (adminEditBillOrder.dSrNumber) {
-        await supabase
+        // D-Sr Number is not guaranteed unique across DELIVERY/DISPATCH (a data issue
+        // upstream can produce duplicates), so matching on it alone can overwrite an
+        // unrelated invoice's Bill No / Bilty Copy. Scoping by Delivery Order No. too
+        // disambiguates, matching the same fix already applied elsewhere for this issue.
+        let delQuery = supabase
           .from("DELIVERY")
           .update({
             "Bill No.": adminEditBillNo,
             "Bilty Copy": newBillCopyUrl,
           })
           .eq("D-Sr Number", adminEditBillOrder.dSrNumber);
+        if (adminEditBillOrder.deliveryOrderNo) {
+          delQuery = delQuery.eq("Delivery Order No.", adminEditBillOrder.deliveryOrderNo);
+        }
+        await delQuery;
       }
 
       // Update POST DELIVERY if exists

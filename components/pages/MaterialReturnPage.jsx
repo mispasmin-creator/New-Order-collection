@@ -326,10 +326,12 @@ export default function MaterialReturnPage({ user }) {
           matchedReceipt = receipts.find((r) => r["DO-Delivery Order No."] === row["Delivery Order No."]);
         }
         const originalRate = matchedReceipt?.["Rate Of Material"] || "";
+        const firmName = matchedReceipt?.["Firm Name"] || "";
 
         return {
           dispatchId: row.id,
           productName: prodName,
+          firmName,
           originalQty: dispatchedQty,
           alreadyReturned,
           availableQty,
@@ -419,14 +421,19 @@ export default function MaterialReturnPage({ user }) {
         userFirms && !userFirms.includes("all") && userFirms.length > 0;
 
       let allowedDoNumbers = null;
+      const doFirmMap = {};
       if (shouldFilter) {
         const { data: orRows } = await supabase
           .from("ORDER RECEIPT")
-          .select('id, "DO-Delivery Order No."')
+          .select('id, "DO-Delivery Order No.", "Firm Name"')
           .in("Firm Name", userFirms);
         allowedDoNumbers = (orRows || [])
           .map((r) => r["DO-Delivery Order No."])
           .filter(Boolean);
+        (orRows || []).forEach((r) => {
+          if (r["DO-Delivery Order No."])
+            doFirmMap[r["DO-Delivery Order No."]] = r["Firm Name"];
+        });
       }
 
       let returnQuery = supabase
@@ -438,7 +445,33 @@ export default function MaterialReturnPage({ user }) {
       const { data, error } = await returnQuery;
 
       if (error) throw error;
-      setReturnEntries(data || []);
+
+      let entries = data || [];
+
+      // Material Return has no Firm Name column of its own — resolve it via D.O Number
+      // against ORDER RECEIPT so the Firm Name column can be shown next to Product.
+      if (!shouldFilter) {
+        const doNumbers = [
+          ...new Set(entries.map((e) => e["D.O Number"]).filter(Boolean)),
+        ];
+        if (doNumbers.length > 0) {
+          const { data: orRows } = await supabase
+            .from("ORDER RECEIPT")
+            .select('"DO-Delivery Order No.", "Firm Name"')
+            .in("DO-Delivery Order No.", doNumbers);
+          (orRows || []).forEach((r) => {
+            if (r["DO-Delivery Order No."])
+              doFirmMap[r["DO-Delivery Order No."]] = r["Firm Name"];
+          });
+        }
+      }
+
+      entries = entries.map((e) => ({
+        ...e,
+        firmName: doFirmMap[e["D.O Number"]] || "",
+      }));
+
+      setReturnEntries(entries);
     } catch (error) {
       console.error("Error fetching material return data:", error);
       toast({
@@ -1037,6 +1070,9 @@ export default function MaterialReturnPage({ user }) {
                       <th className="text-left px-3 py-2 font-semibold text-gray-600">
                         Product
                       </th>
+                      <th className="text-left px-3 py-2 font-semibold text-gray-600">
+                        Firm Name
+                      </th>
                       <th className="text-right px-3 py-2 font-semibold text-gray-600">
                         Total Qty
                       </th>
@@ -1080,6 +1116,9 @@ export default function MaterialReturnPage({ user }) {
                       >
                         <td className="px-3 py-2 font-medium text-gray-800">
                           {line.productName || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 text-xs">
+                          {line.firmName || "—"}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-500">
                           {line.originalQty}
@@ -1447,6 +1486,7 @@ export default function MaterialReturnPage({ user }) {
                 <TableHead>Return No.</TableHead>
                 <TableHead>Party Name</TableHead>
                 <TableHead>Product</TableHead>
+                <TableHead>Firm Name</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead className="w-[60px]">Details</TableHead>
               </TableRow>
@@ -1455,7 +1495,7 @@ export default function MaterialReturnPage({ user }) {
               {filteredList.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeLogisticSubTab === "pending" ? 6 : 5}
+                    colSpan={activeLogisticSubTab === "pending" ? 7 : 6}
                     className="text-center py-10 text-gray-500"
                   >
                     No records found
@@ -1483,6 +1523,7 @@ export default function MaterialReturnPage({ user }) {
                         {entry["Party Name"]}
                       </TableCell>
                       <TableCell>{entry["Product Name"]}</TableCell>
+                      <TableCell>{entry.firmName || "—"}</TableCell>
                       <TableCell className="font-bold">
                         {entry["Qty"]}
                       </TableCell>
@@ -1504,7 +1545,7 @@ export default function MaterialReturnPage({ user }) {
                     {expandedRows[entry.id] && (
                       <TableRow>
                         <TableCell
-                          colSpan={activeLogisticSubTab === "pending" ? 6 : 5}
+                          colSpan={activeLogisticSubTab === "pending" ? 7 : 6}
                           className="p-0 bg-gray-50/40"
                         >
                           <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm border-t">
@@ -1780,6 +1821,7 @@ export default function MaterialReturnPage({ user }) {
                 <TableHead>Return No.</TableHead>
                 <TableHead>Party Name</TableHead>
                 <TableHead>Product</TableHead>
+                <TableHead>Firm Name</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead className="w-[60px]">Details</TableHead>
               </TableRow>
@@ -1788,7 +1830,7 @@ export default function MaterialReturnPage({ user }) {
               {filteredList.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeReceivedSubTab === "pending" ? 6 : 5}
+                    colSpan={activeReceivedSubTab === "pending" ? 7 : 6}
                     className="text-center py-10 text-gray-500"
                   >
                     No records found
@@ -1816,6 +1858,7 @@ export default function MaterialReturnPage({ user }) {
                         {entry["Party Name"]}
                       </TableCell>
                       <TableCell>{entry["Product Name"]}</TableCell>
+                      <TableCell>{entry.firmName || "—"}</TableCell>
                       <TableCell className="font-bold">
                         {entry["Qty"]}
                       </TableCell>
@@ -1837,7 +1880,7 @@ export default function MaterialReturnPage({ user }) {
                     {expandedRows[entry.id] && (
                       <TableRow>
                         <TableCell
-                          colSpan={activeReceivedSubTab === "pending" ? 6 : 5}
+                          colSpan={activeReceivedSubTab === "pending" ? 7 : 6}
                           className="p-0 bg-gray-50/40"
                         >
                           <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm border-t">
@@ -2167,6 +2210,7 @@ export default function MaterialReturnPage({ user }) {
                 <TableHead>Return No.</TableHead>
                 <TableHead>Party Name</TableHead>
                 <TableHead>Product</TableHead>
+                <TableHead>Firm Name</TableHead>
                 <TableHead className="w-[60px]">Details</TableHead>
               </TableRow>
             </TableHeader>
@@ -2174,7 +2218,7 @@ export default function MaterialReturnPage({ user }) {
               {filteredList.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeIssueSubTab === "pending" ? 5 : 4}
+                    colSpan={activeIssueSubTab === "pending" ? 6 : 5}
                     className="text-center py-10 text-gray-500"
                   >
                     No records found
@@ -2202,6 +2246,7 @@ export default function MaterialReturnPage({ user }) {
                         {entry["Party Name"]}
                       </TableCell>
                       <TableCell>{entry["Product Name"]}</TableCell>
+                      <TableCell>{entry.firmName || "—"}</TableCell>
                       <TableCell>
                         <Button
                           variant="ghost"
@@ -2220,7 +2265,7 @@ export default function MaterialReturnPage({ user }) {
                     {expandedRows[entry.id] && (
                       <TableRow>
                         <TableCell
-                          colSpan={activeIssueSubTab === "pending" ? 5 : 4}
+                          colSpan={activeIssueSubTab === "pending" ? 6 : 5}
                           className="p-0 bg-gray-50/40"
                         >
                           <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm border-t">
@@ -2582,6 +2627,7 @@ export default function MaterialReturnPage({ user }) {
                 <TableHead>Return No.</TableHead>
                 <TableHead>Party Name</TableHead>
                 <TableHead>Product</TableHead>
+                <TableHead>Firm Name</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead className="w-[60px]">Details</TableHead>
               </TableRow>
@@ -2590,7 +2636,7 @@ export default function MaterialReturnPage({ user }) {
               {filteredList.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeManagementSubTab === "pending" ? 6 : 5}
+                    colSpan={activeManagementSubTab === "pending" ? 7 : 6}
                     className="text-center py-10 text-gray-500"
                   >
                     No records found
@@ -2618,6 +2664,7 @@ export default function MaterialReturnPage({ user }) {
                         {entry["Party Name"]}
                       </TableCell>
                       <TableCell>{entry["Product Name"]}</TableCell>
+                      <TableCell>{entry.firmName || "—"}</TableCell>
                       <TableCell className="font-bold">
                         {entry["Qty"]}
                       </TableCell>
@@ -2639,7 +2686,7 @@ export default function MaterialReturnPage({ user }) {
                     {expandedRows[entry.id] && (
                       <TableRow>
                         <TableCell
-                          colSpan={activeManagementSubTab === "pending" ? 6 : 5}
+                          colSpan={activeManagementSubTab === "pending" ? 7 : 6}
                           className="p-0 bg-gray-50/40"
                         >
                           <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm border-t">
@@ -3071,6 +3118,7 @@ export default function MaterialReturnPage({ user }) {
                 <TableHead>Return No.</TableHead>
                 <TableHead>Party Name</TableHead>
                 <TableHead>Product</TableHead>
+                <TableHead>Firm Name</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead className="w-[60px]">Details</TableHead>
               </TableRow>
@@ -3079,7 +3127,7 @@ export default function MaterialReturnPage({ user }) {
               {filteredList.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={activeCrmSubTab === "pending" ? 6 : 5}
+                    colSpan={activeCrmSubTab === "pending" ? 7 : 6}
                     className="text-center py-10 text-gray-500"
                   >
                     No records found
@@ -3107,6 +3155,7 @@ export default function MaterialReturnPage({ user }) {
                         {entry["Party Name"]}
                       </TableCell>
                       <TableCell>{entry["Product Name"]}</TableCell>
+                      <TableCell>{entry.firmName || "—"}</TableCell>
                       <TableCell className="font-bold">
                         {entry["Qty"]}
                       </TableCell>
@@ -3128,7 +3177,7 @@ export default function MaterialReturnPage({ user }) {
                     {expandedRows[entry.id] && (
                       <TableRow>
                         <TableCell
-                          colSpan={activeCrmSubTab === "pending" ? 6 : 5}
+                          colSpan={activeCrmSubTab === "pending" ? 7 : 6}
                           className="p-0 bg-gray-50/40"
                         >
                           <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm border-t">
