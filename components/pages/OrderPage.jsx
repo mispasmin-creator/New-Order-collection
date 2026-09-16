@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import OrderForm from "../forms/OrderForm"
 import { useNotification } from "@/components/providers/NotificationProvider"
-import { 
-  Search, Loader2, Upload, FileText, 
+import {
+  Search, Loader2, Upload, FileText,
   CheckCircle2, Clock, Truck, Eye, ArrowRight,
-  PackageCheck, Filter, ChevronDown, ChevronRight, Download, Building, User, Plus, RefreshCw, X, TrendingUp, CheckCircle
+  PackageCheck, Filter, ChevronDown, ChevronRight, Download, Building, User, Plus, RefreshCw, X, TrendingUp, CheckCircle, XCircle
 } from "lucide-react"
+import { getISTTimestamp } from "@/lib/dateUtils"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -41,6 +42,7 @@ const COLUMN_CONFIG = [
   { id: "transport", label: "Transporter Type" },
   { id: "quantity", label: "Qty" },
   { id: "dispatched", label: "Dispatched" },
+  { id: "cancelledQty", label: "Cancelled Qty" },
   { id: "pendingQty", label: "Pending Qty" },
   { id: "rate", label: "Rate" },
   { id: "totalValue", label: "Total Value" },
@@ -73,6 +75,7 @@ export default function OrderPage({ user }) {
       transport: true,
       quantity: true,
       dispatched: true,
+      cancelledQty: true,
       pendingQty: true,
       rate: true,
       totalValue: true,
@@ -108,6 +111,10 @@ export default function OrderPage({ user }) {
   const [showDetailModal, setShowDetailModal] = useState(false)
   const [expandedPOs, setExpandedPOs] = useState(new Set())
   const [uploadingPO, setUploadingPO] = useState(false)
+  const [cancelOrderTarget, setCancelOrderTarget] = useState(null)
+  const [cancelReason, setCancelReason] = useState("")
+  const [cancelQty, setCancelQty] = useState("")
+  const [cancelSubmitting, setCancelSubmitting] = useState(false)
 
   const togglePO = (poNumber) => {
     const newExpanded = new Set(expandedPOs)
@@ -224,9 +231,10 @@ export default function OrderPage({ user }) {
                   (row["logistics_status"] === "Approved" || row["logistics_status"] === "Pending Arrangement" || row["Actual 1"] || row["Actual 2"] || row["Actual 3"]) ? "Pending" :
                   "New Order",
           delivered: parseFloat(row["Delivered"]) || 0,
+          cancelledQty: parseFloat(row["Cancelled Qty"]) || 0,
           pendingQty: row["Pending Qty"] !== null && row["Pending Qty"] !== undefined && row["Pending Qty"] !== ""
             ? Math.max(0, parseFloat(row["Pending Qty"]) || 0)
-            : Math.max(0, (parseFloat(row["Quantity"]) || 0) - (parseFloat(row["Delivered"]) || 0)),
+            : Math.max(0, (parseFloat(row["Quantity"]) || 0) - (parseFloat(row["Delivered"]) || 0) - (parseFloat(row["Cancelled Qty"]) || 0)),
           materialReturn: row["Material Return"],
           completeDate: formatDate(row["Complete Date"]),
           crmCustomer: row["Crm For The Customer"],
@@ -491,6 +499,7 @@ export default function OrderPage({ user }) {
           items: [],
           totalQuantity: 0,
           totalDelivered: 0,
+          totalCancelledQty: 0,
           totalPendingQty: 0,
           totalValue: 0,
           date: order.partyPODate,
@@ -502,6 +511,7 @@ export default function OrderPage({ user }) {
       groups[po].items.push(order)
       groups[po].totalQuantity += (order.quantity || 0)
       groups[po].totalDelivered += (order.delivered || 0)
+      groups[po].totalCancelledQty += (order.cancelledQty || 0)
       groups[po].totalPendingQty += (order.pendingQty || 0)
       groups[po].totalValue += (order.totalValue || 0)
       if (order.productName) groups[po].products.add(order.productName)
@@ -556,6 +566,109 @@ export default function OrderPage({ user }) {
   const viewOrderDetails = (order) => {
     setSelectedOrder(order)
     setShowDetailModal(true)
+  }
+
+  // Cancel order — lets the user cancel the item's remaining (not-yet-dispatched) quantity,
+  // fully or partially. Does not delete the order row.
+  const handleOpenCancelOrder = (order) => {
+    setCancelOrderTarget(order)
+    setCancelReason("")
+    // Default to cancelling everything still pending; user can lower it for a partial cancel.
+    setCancelQty(order.pendingQty > 0 ? String(order.pendingQty) : "")
+  }
+
+  const handleCloseCancelOrder = () => {
+    setCancelOrderTarget(null)
+    setCancelReason("")
+    setCancelQty("")
+  }
+
+  const handleConfirmCancelOrder = async () => {
+    if (!cancelOrderTarget) return
+    if (!cancelReason.trim()) {
+      toast({ variant: "destructive", title: "Reason required", description: "Please enter a reason for cancellation." })
+      return
+    }
+    const qtyToCancel = parseFloat(cancelQty)
+    if (!qtyToCancel || qtyToCancel <= 0) {
+      toast({ variant: "destructive", title: "Quantity required", description: "Enter how much quantity to cancel." })
+      return
+    }
+
+    try {
+      setCancelSubmitting(true)
+
+      // Re-read the latest Quantity/Delivered/Pending Qty/Cancelled Qty right before writing,
+      // same safety check Dispatch Planning uses, so this can't cancel more than what's
+      // actually still pending if something changed since the modal was opened.
+      const { data: latestOrder, error: fetchErr } = await supabase
+        .from("ORDER RECEIPT")
+        .select('id, "Quantity", "Delivered", "Pending Qty", "Cancelled Qty"')
+        .eq("id", cancelOrderTarget.id)
+        .single()
+      if (fetchErr) throw fetchErr
+
+      const latestQuantity = parseFloat(latestOrder?.Quantity) || 0
+      const latestDelivered = parseFloat(latestOrder?.Delivered) || 0
+      const latestCancelledQty = parseFloat(latestOrder?.["Cancelled Qty"]) || 0
+      const latestPending = latestOrder?.["Pending Qty"] !== null && latestOrder?.["Pending Qty"] !== undefined && latestOrder?.["Pending Qty"] !== ""
+        ? Math.max(0, parseFloat(latestOrder["Pending Qty"]) || 0)
+        : Math.max(0, latestQuantity - latestDelivered - latestCancelledQty)
+
+      if (qtyToCancel > latestPending + 0.0001) {
+        toast({ variant: "destructive", title: "Too much quantity", description: `Only ${latestPending} is still pending for this item.` })
+        return
+      }
+
+      // Quantity (the original order commitment) is left untouched — only Pending Qty goes
+      // down and Cancelled Qty goes up, so Dispatched vs Cancelled stay distinguishable
+      // instead of the cancelled portion silently looking like it was dispatched.
+      const newPendingQty = Math.max(0, latestPending - qtyToCancel)
+      const newCancelledQty = latestCancelledQty + qtyToCancel
+      const isFullyCancelled = newPendingQty <= 0.0001
+
+      const updatePayload = {
+        "Pending Qty": newPendingQty,
+        "Cancelled Qty": newCancelledQty,
+        order_cancelled_at: getISTTimestamp(),
+        order_cancelled_by: user?.Username || user?.username || "Unknown",
+        order_cancelled_reason: cancelReason.trim(),
+      }
+      if (isFullyCancelled) {
+        updatePayload.logistics_status = "Order Cancelled"
+      }
+
+      const { error } = await supabase
+        .from("ORDER RECEIPT")
+        .update(updatePayload)
+        .eq("id", cancelOrderTarget.id)
+
+      if (error) throw error
+
+      // Only block this PO's logistics plans/splits once nothing is left pending for it —
+      // a partial cancel should leave the remaining quantity free to keep moving.
+      if (isFullyCancelled) {
+        await supabase.from("po_logistics_plans").update({ status: "Rejected" }).eq("po_id", cancelOrderTarget.id)
+        await supabase.from("po_logistics_splits").update({ status: "Rejected" }).eq("po_id", cancelOrderTarget.id)
+      }
+
+      toast({
+        title: isFullyCancelled ? "Order Cancelled" : "Quantity Cancelled",
+        description: isFullyCancelled
+          ? `${cancelOrderTarget.doNumber || "Order"} has been marked as cancelled.`
+          : `${qtyToCancel} quantity cancelled for ${cancelOrderTarget.doNumber || "this order"}. ${newPendingQty} still pending.`,
+        className: "bg-red-50 text-red-800 border-red-200",
+      })
+
+      handleCloseCancelOrder()
+      setShowDetailModal(false)
+      await fetchOrders()
+    } catch (error) {
+      console.error("Error cancelling order:", error)
+      toast({ variant: "destructive", title: "Error", description: error.message })
+    } finally {
+      setCancelSubmitting(false)
+    }
   }
 
   // Handle form submission success
@@ -873,6 +986,7 @@ export default function OrderPage({ user }) {
                   {visibleColumns.transport && <TableHead className="font-semibold text-gray-900">Transporter Type</TableHead>}
                   {visibleColumns.quantity && <TableHead className="font-semibold text-gray-900 text-right">Qty</TableHead>}
                   {visibleColumns.dispatched && <TableHead className="font-semibold text-gray-900 text-right">Dispatched</TableHead>}
+                  {visibleColumns.cancelledQty && <TableHead className="font-semibold text-gray-900 text-right">Cancelled Qty</TableHead>}
                   {visibleColumns.pendingQty && <TableHead className="font-semibold text-gray-900 text-right">Pending Qty</TableHead>}
                   {visibleColumns.rate && <TableHead className="font-semibold text-gray-900 text-right">Rate</TableHead>}
                   {/* {visibleColumns.totalValue && <TableHead className="font-semibold text-gray-900 text-right">Basic Value</TableHead>} */}
@@ -926,6 +1040,11 @@ export default function OrderPage({ user }) {
                         {visibleColumns.dispatched && (
                           <TableCell className="text-right font-semibold text-gray-700">
                             {group.totalDelivered.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                          </TableCell>
+                        )}
+                        {visibleColumns.cancelledQty && (
+                          <TableCell className="text-right font-semibold text-red-600">
+                            {group.totalCancelledQty > 0 ? group.totalCancelledQty.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 }) : "-"}
                           </TableCell>
                         )}
                         {visibleColumns.pendingQty && (
@@ -999,6 +1118,11 @@ export default function OrderPage({ user }) {
                           {visibleColumns.dispatched && (
                             <TableCell className="text-right text-gray-600">
                               {order.delivered || "0"}
+                            </TableCell>
+                          )}
+                          {visibleColumns.cancelledQty && (
+                            <TableCell className="text-right font-medium text-red-600">
+                              {order.cancelledQty || "-"}
                             </TableCell>
                           )}
                           {visibleColumns.pendingQty && (
@@ -1255,13 +1379,99 @@ export default function OrderPage({ user }) {
                     </Badge>
                   </div>
                   <DetailField label="Order Date" value={formatDate(selectedOrder.timestamp)} />
+                  <DetailField label="Cancelled Qty" value={selectedOrder.cancelledQty} />
                   <DetailField label="Planned Dispatch (P1)" value={selectedOrder.planned1} />
                   <DetailField label="Actual Dispatch (A1)" value={selectedOrder.actual1} />
                   <DetailField label="Planned Delivery (P2)" value={selectedOrder.planned2} />
                   <DetailField label="Actual Delivery (A2)" value={selectedOrder.actual2} />
                 </div>
+                {selectedOrder.status !== "Cancelled" && selectedOrder.status !== "Completed" && selectedOrder.pendingQty > 0 && (
+                  <div className="mt-5 pt-4 border-t flex justify-end">
+                    <Button
+                      variant="outline"
+                      className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                      onClick={() => handleOpenCancelOrder(selectedOrder)}
+                    >
+                      <XCircle className="w-4 h-4 mr-2" />
+                      Cancel Order
+                    </Button>
+                  </div>
+                )}
               </section>
 
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Cancel Order Modal */}
+      {cancelOrderTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <Card className="w-full max-w-md shadow-2xl">
+            <CardHeader className="flex flex-row items-start justify-between border-b">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <XCircle className="h-5 w-5 text-red-600" />
+                  Cancel Order
+                </CardTitle>
+                <p className="text-sm text-gray-500 mt-1">
+                  DO: {cancelOrderTarget.doNumber} — {cancelOrderTarget.partyName}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCloseCancelOrder} disabled={cancelSubmitting}>
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              <div className="bg-gray-50 border rounded-md p-3 text-sm space-y-1">
+                <p className="font-medium text-gray-900">{cancelOrderTarget.productName || "Item"}</p>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>Total Qty: <span className="font-medium text-gray-700">{cancelOrderTarget.quantity}</span></span>
+                  <span>Dispatched: <span className="font-medium text-gray-700">{cancelOrderTarget.delivered}</span></span>
+                  <span>Cancelled: <span className="font-medium text-red-600">{cancelOrderTarget.cancelledQty}</span></span>
+                  <span>Pending: <span className="font-medium text-amber-600">{cancelOrderTarget.pendingQty}</span></span>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600">
+                Enter how much of the pending quantity to cancel — the full pending amount, or only part of it — along with a reason.
+              </p>
+              <div className="space-y-2">
+                <Label>Quantity to Cancel <span className="text-red-500">*</span></Label>
+                <Input
+                  type="number"
+                  min="0.001"
+                  max={cancelOrderTarget.pendingQty}
+                  step="any"
+                  value={cancelQty}
+                  onChange={(e) => setCancelQty(e.target.value)}
+                  disabled={cancelSubmitting}
+                  placeholder={`Up to ${cancelOrderTarget.pendingQty}`}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Reason for Cancellation <span className="text-red-500">*</span></Label>
+                <textarea
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  disabled={cancelSubmitting}
+                  placeholder="Enter the reason for cancelling this quantity..."
+                  rows={4}
+                  className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="outline" onClick={handleCloseCancelOrder} disabled={cancelSubmitting}>Back</Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleConfirmCancelOrder}
+                  disabled={cancelSubmitting || !cancelReason.trim() || !cancelQty || parseFloat(cancelQty) <= 0 || parseFloat(cancelQty) > cancelOrderTarget.pendingQty}
+                >
+                  {cancelSubmitting
+                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Cancelling...</>
+                    : <><XCircle className="w-4 h-4 mr-2" />Confirm Cancellation</>
+                  }
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

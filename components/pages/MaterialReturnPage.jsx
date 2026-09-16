@@ -500,20 +500,33 @@ export default function MaterialReturnPage({ user }) {
       });
       return;
     }
+    // A blank or 0 Return Qty means "nothing to return for this product" — allowed, and
+    // the row is simply left out of submission below rather than treated as invalid.
     const invalidQty = toReturn.filter((l) => {
+      if (l.returnQty === "" || l.returnQty === null || l.returnQty === undefined) return false;
       const rq = parseFloat(l.returnQty);
-      return !rq || rq <= 0 || rq > l.availableQty;
+      if (isNaN(rq) || rq === 0) return false;
+      return rq < 0 || rq > l.availableQty;
     });
     if (invalidQty.length > 0) {
       toast({
         variant: "destructive",
         title: "Invalid Quantity",
         description:
-          "Enter a valid return quantity (must be > 0 and ≤ original qty) for each product.",
+          "Enter a valid return quantity (must be ≥ 0 and ≤ original qty) for each product.",
       });
       return;
     }
-    const invalidRate = toReturn.filter((l) => !parseFloat(l.rate) || parseFloat(l.rate) <= 0);
+    const linesToSubmit = toReturn.filter((l) => (parseFloat(l.returnQty) || 0) > 0);
+    if (linesToSubmit.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "No Quantity Entered",
+        description: "Enter a return quantity greater than 0 for at least one product.",
+      });
+      return;
+    }
+    const invalidRate = linesToSubmit.filter((l) => !parseFloat(l.rate) || parseFloat(l.rate) <= 0);
     if (invalidRate.length > 0) {
       toast({
         variant: "destructive",
@@ -522,7 +535,7 @@ export default function MaterialReturnPage({ user }) {
       });
       return;
     }
-    const missing = toReturn.filter((l) => !l.reason);
+    const missing = linesToSubmit.filter((l) => !l.reason);
     if (missing.length > 0) {
       toast({
         variant: "destructive",
@@ -531,7 +544,7 @@ export default function MaterialReturnPage({ user }) {
       });
       return;
     }
-    const missingNote = toReturn.filter((l) => !l.debitNoteFile);
+    const missingNote = linesToSubmit.filter((l) => !l.debitNoteFile);
     if (missingNote.length > 0) {
       toast({
         variant: "destructive",
@@ -548,7 +561,7 @@ export default function MaterialReturnPage({ user }) {
 
       // Upload debit note files per row
       const debitNoteUrls = await Promise.all(
-        toReturn.map(async (line) => {
+        linesToSubmit.map(async (line) => {
           const file = line.debitNoteFile;
           const ext = file.name.split(".").pop();
           const path = `material_return/debit_note_${line.dispatchId}_${Date.now()}.${ext}`;
@@ -563,7 +576,7 @@ export default function MaterialReturnPage({ user }) {
 
       // Build base return number and increment per row
       const baseNo = parseInt(formData.returnNo) || 1;
-      const inserts = toReturn.map((line, idx) => ({
+      const inserts = linesToSubmit.map((line, idx) => ({
         "Time Stamp": timestamp,
         "Invoice Number": invoiceLookupNo.trim(),
         "D.O Number": line.doNumber,
@@ -1135,7 +1148,7 @@ export default function MaterialReturnPage({ user }) {
                           {!line.removed ? (
                             <Input
                               type="number"
-                              min="0.01"
+                              min="0"
                               max={line.availableQty}
                               step="any"
                               value={line.returnQty}
