@@ -1,1 +1,0 @@
-const { createClient } = require('@supabase/supabase-js'); const supabase = createClient('process.env.NEXT_PUBLIC_SUPABASE_PROJECT_URL', 'process.env.process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY'); supabase.from('ORDER RECEIPT').select('*').limit(10).then(({data, error}) => { if (error) console.error(error); else console.log(data.map(d => ({ A: d['Alumina%'], I: d['Iron%'] }))); });

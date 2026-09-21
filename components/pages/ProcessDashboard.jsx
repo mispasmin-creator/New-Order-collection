@@ -41,6 +41,7 @@ const STAGE_META = {
   tc: { label: "TC", route: "/tc", icon: FileCheck2 },
   fullkitting: { label: "Fullkitting", route: "/fullkitting", icon: PackageCheck },
   biltyUpdate: { label: "Bilty Update", route: "/logistics-fulfillment", icon: PackageCheck },
+  materialReceipt: { label: "Material Receipt", route: "/material-receipt", icon: PackageCheck },
   materialReturn: { label: "Material Return", route: "/material-return", icon: RotateCcw },
   returnOfMaterial: { label: "Return of Material", route: "/return-of-material", icon: RotateCcw },
   managementApproval: { label: "Management Approval", route: "/management-approval", icon: ShieldCheck },
@@ -53,7 +54,7 @@ const STAGE_META = {
 const STAGE_GROUPS = [
   { title: "Order Processing", stages: ["order", "checkPO", "receivedAccounts", "checkDelivery"] },
   { title: "Logistics", stages: ["arrangeLogistics", "logisticsApproval", "dispatchPlanning", "accountsApproval", "logistic", "loadMaterial"] },
-  { title: "Dispatch & Delivery", stages: ["wetmanEntry", "invoice", "tc", "fullkitting", "biltyUpdate"] },
+  { title: "Dispatch & Delivery", stages: ["wetmanEntry", "invoice", "tc", "fullkitting", "biltyUpdate", "materialReceipt"] },
   { title: "Returns & Approvals", stages: ["materialReturn", "returnOfMaterial", "managementApproval", "debitNote"] },
   { title: "Finance", stages: ["retention", "makePI", "receivedPIPayment"] },
 ]
@@ -197,7 +198,8 @@ export default function ProcessDashboard({ user }) {
       const firmMap = {}
       allOrders.forEach((o) => { if (o["DO-Delivery Order No."]) firmMap[o["DO-Delivery Order No."]] = o["Firm Name"] })
       const taggedPostDelivery = postDeliveryRows.map((pd) => ({ ...pd, firmName: firmMap[pd["Order No."]] || "" }))
-      newCounts.biltyUpdate = deliveryRows.filter((d) => {
+      // Bilty Update = bilty not done yet; Material Receipt = bilty done (Actual3), receipt not done.
+      const pendingDeliveryRows = deliveryRows.filter((d) => {
         const type = (d["Type Of Transporting"] || "").toLowerCase().trim()
         if (type === "ex-factory" || type === "ex factory") return false
         const delFirm = firmMap[d["Delivery Order No."]] || ""
@@ -208,7 +210,9 @@ export default function ProcessDashboard({ user }) {
             : (pd["Order No."] === d["Delivery Order No."])
         )
         return !isFilled(receipt?.Actual)
-      }).length
+      })
+      newCounts.biltyUpdate = pendingDeliveryRows.filter((d) => !isFilled(d.Actual3)).length
+      newCounts.materialReceipt = pendingDeliveryRows.filter((d) => isFilled(d.Actual3)).length
 
       // Material Return sub-stages (all scoped to the same "Material Return" table).
       newCounts.materialReturn = returnRows.filter((r) => isFilled(r.Planned) && !isFilled(r.Actual)).length

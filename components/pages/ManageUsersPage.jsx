@@ -37,6 +37,7 @@ const ALL_PAGES = [
   "Fullkitting",
   "TC",
   "Bilty Update",
+  "Material Receipt",
   "Material Return",
   "Management Approval",
   "Debit Note",

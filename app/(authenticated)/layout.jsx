@@ -32,6 +32,7 @@ export default function AuthenticatedLayout({ children }) {
         "/tc": "TC",
         "/wetman-entry": "Wetman Entry",
         "/logistics-fulfillment": "Bilty Update",
+        "/material-receipt": "Material Receipt",
         "/material-return": "Material Return",
         "/management-approval": "Management Approval",
         "/debit-note": "Debit Note",

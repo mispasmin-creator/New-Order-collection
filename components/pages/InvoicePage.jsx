@@ -1365,6 +1365,24 @@ export default function MakeInvoicePage({ user }) {
                         Address: {selectedGroup.rows[0].address}
                       </p>
                     )}
+                    {selectedGroup.rows[0]?.planned4 && (
+                      <p className="text-gray-500 text-xs">
+                        Received from Weighment Entry:{" "}
+                        {(() => {
+                          const d = new Date(selectedGroup.rows[0].planned4);
+                          if (isNaN(d)) return selectedGroup.rows[0].planned4;
+                          return `${d.toLocaleDateString("en-IN", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                          })} ${d.toLocaleTimeString("en-IN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            hour12: true,
+                          })}`;
+                        })()}
+                      </p>
+                    )}
                     {selectedGroup.rows[0]?.uploadSO && (
                       <a
                         href={selectedGroup.rows[0].uploadSO}

@@ -39,7 +39,14 @@ const fetchAllRows = async (buildQuery) => {
   return all
 }
 
-export default function UnifiedLogistics({ user }) {
+// mode = "bilty"   → Bilty Update page   (bilty no. + copy)
+// mode = "receipt" → Material Receipt page (receipt date + GRN + arrival proof), only for shipments whose bilty is done
+export default function UnifiedLogistics({ user, mode = "bilty" }) {
+  const isReceiptMode = mode === "receipt"
+  const pageTitle = isReceiptMode ? "Material Receipt" : "Bilty Update"
+  const isStageDone = (s) => isReceiptMode ? s.isReceiptDone : (s.isBiltyDone || s.isReceiptDone)
+  const isStagePending = (s) => isReceiptMode ? (s.isBiltyDone && !s.isReceiptDone) : !isStageDone(s)
+
   const [deliveryData, setDeliveryData] = useState([])
   const [postDeliveryData, setPostDeliveryData] = useState([])
   const [dispatchTCMap, setDispatchTCMap] = useState({})
@@ -257,10 +264,11 @@ export default function UnifiedLogistics({ user }) {
           })
           return {
             billNo: del["Bill No."],
+            isBiltyDone: !!del.Actual3,
             isReceiptDone: !!receipt?.["Actual"]
           }
         })
-        .filter(s => !s.isReceiptDone)
+        .filter(s => isStagePending(s))
 
       const invoiceSet = new Set()
       let strayCount = 0
@@ -273,8 +281,12 @@ export default function UnifiedLogistics({ user }) {
       })
       const pendingGroupedCount = invoiceSet.size + strayCount
 
-      updateCount?.("Bilty Update", pendingGroupedCount)
-      updateCount?.("Bilty Entry", pendingGroupedCount)
+      if (isReceiptMode) {
+        updateCount?.("Material Receipt", pendingGroupedCount)
+      } else {
+        updateCount?.("Bilty Update", pendingGroupedCount)
+        updateCount?.("Bilty Entry", pendingGroupedCount)
+      }
 
     } catch (error) {
       console.error("Error fetching logistics data:", error)
@@ -333,6 +345,7 @@ export default function UnifiedLogistics({ user }) {
         biltyCopy: del["Bilty Copy"],
         isBiltyDone: !!del.Actual3,
         receiptActual: receipt?.["Actual"],
+        receiptPlanned: receipt?.["Planned"],
         amount: receipt?.["Total Bill Amount"] || 0,
         billDate: del["Bill Date"] || receipt?.["Bill Date"],
         plannedDate: del["Planned 3"] || receipt?.["Planned"],
@@ -359,7 +372,7 @@ export default function UnifiedLogistics({ user }) {
 
   // Grouped counts for cards
   const pendingGroupedCount = useMemo(() => {
-    const pendingList = shipments.filter(s => !s.isReceiptDone)
+    const pendingList = shipments.filter(s => isStagePending(s))
     const invoiceSet = new Set()
     let strayCount = 0
     pendingList.forEach(s => {
@@ -373,7 +386,7 @@ export default function UnifiedLogistics({ user }) {
   }, [shipments])
 
   const completedGroupedCount = useMemo(() => {
-    const completedList = shipments.filter(s => s.isReceiptDone)
+    const completedList = shipments.filter(s => isStageDone(s))
     const invoiceSet = new Set()
     let strayCount = 0
     completedList.forEach(s => {
@@ -403,11 +416,34 @@ export default function UnifiedLogistics({ user }) {
     } catch (e) { return dateStr }
   }
 
+  // Material Receipt delay: History = receipt Actual − Planned (bilty Actual3),
+  // Pending = now − bilty Actual3 (time the shipment has been waiting for receipt)
+  // Timestamps are stored as IST wall-clock strings (no timezone). Both sides are read as the
+  // same wall-clock scale ("now" is converted to IST wall-clock too), so the result does not
+  // depend on the viewer's browser timezone or on Safari's date-string parsing.
+  const parseWallClock = (v) => {
+    if (!v) return NaN
+    const str = String(v).trim().replace(" ", "T").replace(/(\.\d{3})\d+/, "$1")
+    return Date.parse(/(Z|[+-]\d{2}:?\d{2})$/i.test(str) ? str : `${str}Z`)
+  }
+  const getReceiptDelay = (s) => {
+    const from = parseWallClock(s.receiptPlanned && s.isReceiptDone ? s.receiptPlanned : s.Actual3)
+    const to = s.isReceiptDone ? parseWallClock(s.receiptActual) : Date.now() + 5.5 * 60 * 60 * 1000
+    if (isNaN(from) || isNaN(to)) return "—"
+    const mins = Math.max(0, Math.round((to - from) / 60000))
+    const d = Math.floor(mins / 1440)
+    const h = Math.floor((mins % 1440) / 60)
+    const m = mins % 60
+    if (d > 0) return `${d}d ${h}h`
+    if (h > 0) return `${h}h ${m}m`
+    return `${m}m`
+  }
+
   // Filtering logic — Pending = receipt not done, History = both done
   const filteredShipments = useMemo(() => {
     let list = activeTab === "pending"
-      ? shipments.filter(s => !s.isReceiptDone)
-      : shipments.filter(s => s.isReceiptDone)
+      ? shipments.filter(s => isStagePending(s))
+      : shipments.filter(s => isStageDone(s))
 
     if (filterFirm !== "all") {
       list = list.filter(s => s.firmName === filterFirm)
@@ -425,16 +461,16 @@ export default function UnifiedLogistics({ user }) {
 
   const firmOptions = useMemo(() => {
     const list = activeTab === "pending"
-      ? shipments.filter(s => !s.isReceiptDone)
-      : shipments.filter(s => s.isReceiptDone)
+      ? shipments.filter(s => isStagePending(s))
+      : shipments.filter(s => isStageDone(s))
     const firms = [...new Set(list.map(s => s.firmName).filter(Boolean))]
     return ["all", ...firms]
   }, [shipments, activeTab])
 
   const partyOptions = useMemo(() => {
     const list = activeTab === "pending"
-      ? shipments.filter(s => !s.isReceiptDone)
-      : shipments.filter(s => s.isReceiptDone)
+      ? shipments.filter(s => isStagePending(s))
+      : shipments.filter(s => isStageDone(s))
     const parties = [...new Set(list.map(s => s.partyName).filter(Boolean))]
     return ["all", ...parties]
   }, [shipments, activeTab])
@@ -483,23 +519,26 @@ export default function UnifiedLogistics({ user }) {
   }
 
   const handleExport = () => {
-    exportToExcel(filteredShipments, `BiltyUpdate_${activeTab}`)
+    exportToExcel(filteredShipments, `${isReceiptMode ? "MaterialReceipt" : "BiltyUpdate"}_${activeTab}`)
   }
 
   // Single submit: Documentation + Receipt in one go (handles group of rows)
   const handleCombinedSubmit = async () => {
-    if (!combinedForm.biltyNo.trim()) {
-      toast({ variant: "destructive", title: "Validation", description: "Bilty number is required." }); return
-    }
-    const existingBiltyCopy = selectedGroup?.rows?.[0]?.biltyCopy
-    if (!combinedForm.biltyCopy && !existingBiltyCopy) {
-      toast({ variant: "destructive", title: "Validation", description: "Bilty copy is required." }); return
-    }
-    if (!combinedForm.materialReceivedDate) {
-      toast({ variant: "destructive", title: "Validation", description: "Receipt date is required." }); return
-    }
-    if (!combinedForm.grnNumber.trim()) {
-      toast({ variant: "destructive", title: "Validation", description: "GRN number is required." }); return
+    if (!isReceiptMode) {
+      if (!combinedForm.biltyNo.trim()) {
+        toast({ variant: "destructive", title: "Validation", description: "Bilty number is required." }); return
+      }
+      const existingBiltyCopy = selectedGroup?.rows?.[0]?.biltyCopy
+      if (!combinedForm.biltyCopy && !existingBiltyCopy) {
+        toast({ variant: "destructive", title: "Validation", description: "Bilty copy is required." }); return
+      }
+    } else {
+      if (!combinedForm.materialReceivedDate) {
+        toast({ variant: "destructive", title: "Validation", description: "Receipt date is required." }); return
+      }
+      if (!combinedForm.grnNumber.trim()) {
+        toast({ variant: "destructive", title: "Validation", description: "GRN number is required." }); return
+      }
     }
 
     const rows = selectedGroup.rows
@@ -509,7 +548,7 @@ export default function UnifiedLogistics({ user }) {
 
       // Upload bilty copy once for the whole group
       let biltyUrl = rows[0]?.biltyCopy || ""
-      if (combinedForm.biltyCopy) {
+      if (!isReceiptMode && combinedForm.biltyCopy) {
         const path = `bilty/invoice_${(selectedGroup.billNo || rows[0]?.id).toString().replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${combinedForm.biltyCopy.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
         const { error: upErr } = await supabase.storage.from('images').upload(path, combinedForm.biltyCopy)
         if (upErr) throw upErr
@@ -518,14 +557,15 @@ export default function UnifiedLogistics({ user }) {
 
       // Upload receipt copy once for the whole group
       let receiptUrl = rows[0]?.receiptCopy || ""
-      if (combinedForm.receiptFile) {
+      if (isReceiptMode && combinedForm.receiptFile) {
         const path = `material_receipt/invoice_${(selectedGroup.billNo || rows[0]?.id).toString().replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${combinedForm.receiptFile.name.replace(/[^a-zA-Z0-9.]/g, '_')}`
         const { error: upErr } = await supabase.storage.from('images').upload(path, combinedForm.receiptFile)
         if (upErr) throw upErr
         receiptUrl = supabase.storage.from('images').getPublicUrl(path).data.publicUrl
       }
 
-      // 1. Update all DELIVERY rows in the group
+      if (!isReceiptMode) {
+      // Bilty Update page: update all DELIVERY rows in the group
       await Promise.all(rows.map(row => {
         const delPayload = { "Bilty No.": combinedForm.biltyNo, "Bilty Copy": biltyUrl }
         if (!row.Actual3) delPayload["Actual3"] = now
@@ -541,8 +581,8 @@ export default function UnifiedLogistics({ user }) {
           .update({ "Bilty No.": combinedForm.biltyNo, "Bilty Copy": biltyUrl })
           .in('D-Sr Number', dSrNumbers)
       }
-
-      // 2. Upsert POST DELIVERY for each row
+      } else {
+      // Material Receipt page: upsert POST DELIVERY for each row
       await Promise.all(rows.map(row => {
         const receiptPayload = {
           "Order No.": row.orderNo,
@@ -551,19 +591,25 @@ export default function UnifiedLogistics({ user }) {
           "Bill Date": row.billDate,
           "Total Bill Amount": row.amount || 0,
           "Actual": now,
-          "Planned": now,
+          "Planned": row.Actual3 || now,
           "Material Received Date": combinedForm.materialReceivedDate,
           "Grn Number": combinedForm.grnNumber,
           "Image Of Received Bill / Audio": receiptUrl,
         }
         if (row.receiptId) {
+          // Admin edit of an already-completed receipt must not overwrite its original Planned/Actual
+          if (row.isReceiptDone) {
+            delete receiptPayload["Actual"]
+            delete receiptPayload["Planned"]
+          }
           return supabase.from('POST DELIVERY').update(receiptPayload).eq('id', row.receiptId)
         } else {
           return supabase.from('POST DELIVERY').insert([receiptPayload])
         }
       }))
+      }
 
-      toast({ title: "Submitted", description: `Documentation and receipt recorded for ${rows.length} row${rows.length > 1 ? "s" : ""}.` })
+      toast({ title: "Submitted", description: `${isReceiptMode ? "Material receipt" : "Bilty details"} recorded for ${rows.length} row${rows.length > 1 ? "s" : ""}.` })
       closeModal()
       fetchEverything()
       window.dispatchEvent(new Event('refresh-sidebar-counts'))
@@ -591,8 +637,12 @@ export default function UnifiedLogistics({ user }) {
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Bilty Update</h1>
-          <p className="text-gray-600">Monitor and manage shipments from dispatch to receipt</p>
+          <h1 className="text-2xl font-bold text-gray-900">{pageTitle}</h1>
+          <p className="text-gray-600">
+            {isReceiptMode
+              ? "Record material receipt for shipments whose bilty is updated"
+              : "Monitor and manage shipments from dispatch to receipt"}
+          </p>
         </div>
       </div>
 
@@ -698,19 +748,20 @@ export default function UnifiedLogistics({ user }) {
                 <TableHead>Truck Qty</TableHead>
                 <TableHead>Transporter Rate</TableHead>
                 <TableHead>Truck No</TableHead>
+                {isReceiptMode && <TableHead>Delay</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {groupedShipments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={14} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
+                  <TableCell colSpan={isReceiptMode ? 15 : 14} className="h-32 text-center text-gray-500">No shipments found for this tab.</TableCell>
                 </TableRow>
               ) : (
                 groupedShipments.map((group, gi) => {
                   const groupKey = group.billNo ? `${group.firmName || ""}::${group.billNo}` : `stray-${gi}`
                   const isExpanded = !!expandedGroups[groupKey]
                   const isStray = group.stray
-                  const allDone = group.rows.every(r => r.isReceiptDone)
+                  const allDone = group.rows.every(r => isStageDone(r))
                   const biltyDone = group.rows.every(r => r.isBiltyDone)
 
                   return (
@@ -764,7 +815,7 @@ export default function UnifiedLogistics({ user }) {
                               <CheckCircle2 className="w-4 h-4 text-green-500" />
                               <span className="text-xs font-medium text-green-700">{group.rows[0]?.biltyNo}</span>
                               {group.rows[0]?.biltyCopy && <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleViewFile(group.rows[0].biltyCopy)}><Eye className="h-3 w-3" /></Button>}
-                              {user?.role === "ADMIN" && (
+                              {user?.role === "ADMIN" && !isReceiptMode && (
                                 <Button variant="ghost" size="icon" className="h-6 w-6 text-amber-600 hover:text-amber-800" title="Edit Bilty" onClick={(e) => { e.stopPropagation(); openModal(group); }}>
                                   <Pencil className="h-3 w-3" />
                                 </Button>
@@ -797,6 +848,9 @@ export default function UnifiedLogistics({ user }) {
                         <TableCell className="text-sm text-gray-600">
                           {[...new Set(group.rows.map(r => r.truckNo).filter(Boolean))].join(", ") || "—"}
                         </TableCell>
+                        {isReceiptMode && (
+                          <TableCell className="text-sm font-medium text-gray-700">{getReceiptDelay(group.rows[0])}</TableCell>
+                        )}
                       </TableRow>
 
                       {/* Expanded product rows (only for invoice groups) */}
@@ -830,6 +884,9 @@ export default function UnifiedLogistics({ user }) {
                           <TableCell className="py-2 text-sm text-gray-600">{s.truckQty || "—"}</TableCell>
                           <TableCell className="py-2 text-sm text-gray-600">{s.transporterRate || "—"}</TableCell>
                           <TableCell className="py-2 text-sm text-gray-600">{s.truckNo || "—"}</TableCell>
+                          {isReceiptMode && (
+                            <TableCell className="py-2 text-sm text-gray-600">{getReceiptDelay(s)}</TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </Fragment>
@@ -846,7 +903,7 @@ export default function UnifiedLogistics({ user }) {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-lg shadow-2xl max-h-[92vh] flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50 rounded-t-xl shrink-0">
-              <CardTitle className="text-lg">Fill Shipment Details</CardTitle>
+              <CardTitle className="text-lg">{isReceiptMode ? "Material Receipt" : "Bilty Update"}</CardTitle>
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={closeModal} disabled={submitting}><X className="h-4 w-4" /></Button>
             </CardHeader>
             <CardContent className="p-6 space-y-6 overflow-y-auto flex-1">
@@ -888,7 +945,8 @@ export default function UnifiedLogistics({ user }) {
                 </table>
               </div>
 
-              {/* Section 1: Documentation */}
+              {/* Bilty Update page: Documentation */}
+              {!isReceiptMode && (
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                   <span className="w-1 h-4 bg-amber-500 rounded-full" />Bilty Documentation
@@ -914,8 +972,10 @@ export default function UnifiedLogistics({ user }) {
                   {combinedForm.biltyCopy && <p className="text-xs text-green-600">✓ {combinedForm.biltyCopy.name}</p>}
                 </div>
               </div>
+              )}
 
-              {/* Section 2: Receipt */}
+              {/* Material Receipt page: Receipt */}
+              {isReceiptMode && (
               <div className="space-y-4">
                 <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                   <span className="w-1 h-4 bg-blue-500 rounded-full" />Material Receipt
@@ -961,6 +1021,7 @@ export default function UnifiedLogistics({ user }) {
                   </div>
                 </div>
               </div>
+              )}
             </CardContent>
 
             <div className="flex gap-3 border-t p-4 shrink-0">
@@ -970,13 +1031,14 @@ export default function UnifiedLogistics({ user }) {
                 onClick={handleCombinedSubmit}
                 disabled={
                   submitting ||
-                  !combinedForm.biltyNo.trim() ||
-                  (!combinedForm.biltyCopy && !selectedGroup?.rows?.[0]?.biltyCopy) ||
-                  !combinedForm.materialReceivedDate ||
-                  !combinedForm.grnNumber.trim()
+                  (!isReceiptMode
+                    ? (!combinedForm.biltyNo.trim() ||
+                       (!combinedForm.biltyCopy && !selectedGroup?.rows?.[0]?.biltyCopy))
+                    : (!combinedForm.materialReceivedDate ||
+                       !combinedForm.grnNumber.trim()))
                 }
               >
-                {submitting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Submitting...</> : "Submit All Details"}
+                {submitting ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Submitting...</> : isReceiptMode ? "Submit Receipt" : "Submit Bilty"}
               </Button>
             </div>
           </Card>

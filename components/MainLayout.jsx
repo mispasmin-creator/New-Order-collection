@@ -88,7 +88,8 @@ export default function MainLayout({ user, onLogout, orders, updateOrders }) {
       case "CRM":
         return <Crm {...pageProps} />
       case "MATERIAL RECEIPT":
-        return <UnifiedLogistics {...pageProps} />
+      case "Material Receipt":
+        return <UnifiedLogistics {...pageProps} mode="receipt" />
       case "Bilty Update":
         return <UnifiedLogistics {...pageProps} />
       case "Material Return":
