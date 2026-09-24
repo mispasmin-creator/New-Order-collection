@@ -259,6 +259,25 @@ export default function MakeInvoicePage({ user }) {
     }
   };
 
+  const formatDateTime = (s) => {
+    if (!s || s === " ") return "N/A";
+    try {
+      const d = new Date(s);
+      if (isNaN(d)) return s;
+      return `${d.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })} ${d.toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      })}`;
+    } catch {
+      return s;
+    }
+  };
+
   const fmt = (val) => {
     const n = Number(val);
     if (!val || isNaN(n)) return "—";
@@ -367,6 +386,7 @@ export default function MakeInvoicePage({ user }) {
         typeOfTransporting: row.typeOfTransporting,
         biltyNo: row.biltyNo,
         dSrNumber: row.dSrNumber,
+        planned4: row.planned4,
       })),
     );
     setCommonInvoiceNo("");
@@ -1365,24 +1385,6 @@ export default function MakeInvoicePage({ user }) {
                         Address: {selectedGroup.rows[0].address}
                       </p>
                     )}
-                    {selectedGroup.rows[0]?.planned4 && (
-                      <p className="text-gray-500 text-xs">
-                        Received from Weighment Entry:{" "}
-                        {(() => {
-                          const d = new Date(selectedGroup.rows[0].planned4);
-                          if (isNaN(d)) return selectedGroup.rows[0].planned4;
-                          return `${d.toLocaleDateString("en-IN", {
-                            day: "2-digit",
-                            month: "2-digit",
-                            year: "numeric",
-                          })} ${d.toLocaleTimeString("en-IN", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            hour12: true,
-                          })}`;
-                        })()}
-                      </p>
-                    )}
                     {selectedGroup.rows[0]?.uploadSO && (
                       <a
                         href={selectedGroup.rows[0].uploadSO}
@@ -1579,6 +1581,9 @@ export default function MakeInvoicePage({ user }) {
                         <th className="text-left px-3 py-2 font-semibold text-gray-600">
                           Product
                         </th>
+                        <th className="text-left px-3 py-2 font-semibold text-gray-600 min-w-[120px]">
+                          Weighment Entry
+                        </th>
                         <th className="text-right px-3 py-2 font-semibold text-gray-600">
                           Qty
                         </th>
@@ -1646,6 +1651,9 @@ export default function MakeInvoicePage({ user }) {
                                 {line.deliveryOrderNo}
                               </span>
                             </div>
+                          </td>
+                          <td className="px-3 py-2 text-left text-gray-700 text-[10px]">
+                            {line.planned4 ? formatDateTime(line.planned4) : "N/A"}
                           </td>
                           <td className="px-3 py-2 text-right text-gray-700 font-bold">
                             {line.qty}
@@ -1725,7 +1733,7 @@ export default function MakeInvoicePage({ user }) {
                     <tfoot className="bg-gray-50 border-t-2 border-gray-200 text-[10px] font-bold">
                       <tr>
                         <td
-                          colSpan={hasFreightAmount ? 6 : 5}
+                          colSpan={hasFreightAmount ? 7 : 6}
                           className="px-3 py-2 text-right text-gray-700"
                         >
                           Grand Total (Selected)
