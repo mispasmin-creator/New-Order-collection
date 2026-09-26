@@ -41,11 +41,18 @@ const fetchAllRows = async (buildQuery) => {
 
 // mode = "bilty"   → Bilty Update page   (bilty no. + copy)
 // mode = "receipt" → Material Receipt page (receipt date + GRN + arrival proof), only for shipments whose bilty is done
+// "Owned Truck" and "Direct Supply" never need a bilty (there's no transporter to issue one), so those
+// shipments skip the Bilty Update page entirely and go straight into Material Receipt's Pending list.
+const NO_BILTY_TYPES = new Set(["owned truck", "direct supply"])
+const normalizeType = (t) => (t || "").toLowerCase().trim()
+const isExFactoryType = (t) => normalizeType(t) === "ex-factory" || normalizeType(t) === "ex factory"
+const skipsBiltyType = (t) => NO_BILTY_TYPES.has(normalizeType(t))
+
 export default function UnifiedLogistics({ user, mode = "bilty" }) {
   const isReceiptMode = mode === "receipt"
   const pageTitle = isReceiptMode ? "Material Receipt" : "Bilty Update"
   const isStageDone = (s) => isReceiptMode ? s.isReceiptDone : (s.isBiltyDone || s.isReceiptDone)
-  const isStagePending = (s) => isReceiptMode ? (s.isBiltyDone && !s.isReceiptDone) : !isStageDone(s)
+  const isStagePending = (s) => isReceiptMode ? ((s.isBiltyDone || s.skipsBiltyStep) && !s.isReceiptDone) : !isStageDone(s)
 
   const [deliveryData, setDeliveryData] = useState([])
   const [postDeliveryData, setPostDeliveryData] = useState([])
@@ -251,7 +258,9 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
       const activePendingShipments = taggedDelivery
         .filter(del => {
           const type = del["Type Of Transporting"] || "";
-          return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
+          if (isExFactoryType(type)) return false
+          if (!isReceiptMode && skipsBiltyType(type)) return false
+          return true
         })
         .map(del => {
           const receipt = taggedPostDelivery.find(pd => {
@@ -265,6 +274,7 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
           return {
             billNo: del["Bill No."],
             isBiltyDone: !!del.Actual3,
+            skipsBiltyStep: skipsBiltyType(del["Type Of Transporting"]),
             isReceiptDone: !!receipt?.["Actual"]
           }
         })
@@ -312,7 +322,10 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
     return deliveryData
       .filter(del => {
         const type = del["Type Of Transporting"] || "";
-        return type.toLowerCase().trim() !== "ex-factory" && type.toLowerCase().trim() !== "ex factory";
+        if (isExFactoryType(type)) return false
+        // Owned Truck / Direct Supply skip Bilty Update entirely and go straight to Material Receipt.
+        if (!isReceiptMode && skipsBiltyType(type)) return false
+        return true
       })
       .map(del => {
       // Find matching receipt by Bill No (scoped to the same firm + party) or DO No if Bill No is missing.
@@ -344,6 +357,7 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
         biltyNo: del["Bilty No."],
         biltyCopy: del["Bilty Copy"],
         isBiltyDone: !!del.Actual3,
+        skipsBiltyStep: skipsBiltyType(del["Type Of Transporting"]),
         receiptActual: receipt?.["Actual"],
         receiptPlanned: receipt?.["Planned"],
         amount: receipt?.["Total Bill Amount"] || 0,
@@ -763,6 +777,7 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
                   const isStray = group.stray
                   const allDone = group.rows.every(r => isStageDone(r))
                   const biltyDone = group.rows.every(r => r.isBiltyDone)
+                  const biltySkipped = group.rows.every(r => r.skipsBiltyStep)
 
                   return (
                     <Fragment key={`group-${groupKey}`}>
@@ -821,6 +836,8 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
                                 </Button>
                               )}
                             </div>
+                          ) : biltySkipped ? (
+                            <span className="text-xs font-medium text-gray-400">Not Required</span>
                           ) : (
                             <span className="text-xs font-medium text-amber-600">Pending</span>
                           )}
@@ -867,6 +884,8 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
                           <TableCell className="py-2">
                             {s.isBiltyDone ? (
                               <span className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{s.biltyNo}</span>
+                            ) : s.skipsBiltyStep ? (
+                              <span className="text-xs text-gray-400">Not Required</span>
                             ) : (
                               <span className="text-xs text-amber-500">Pending</span>
                             )}
