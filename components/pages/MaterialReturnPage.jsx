@@ -1254,6 +1254,9 @@ export default function MaterialReturnPage({ user }) {
                                 <SelectItem value="Material Reject">
                                   Material Reject
                                 </SelectItem>
+                                <SelectItem value="Material Reject">
+                                  Rate Difference
+                                </SelectItem>
                                 <SelectItem value="Other">Other</SelectItem>
                               </SelectContent>
                             </Select>
