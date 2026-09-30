@@ -34,6 +34,7 @@ const ALL_PAGES = [
   "Load Material",
   "Wetman Entry",
   "Invoice",
+  "Sale Form 3",
   "Fullkitting",
   "TC",
   "Bilty Update",

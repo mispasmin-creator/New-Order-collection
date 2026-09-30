@@ -569,9 +569,10 @@ export default function AnalyticsDashboard({ user }) {
           label: "View",
           onClick: () => {
             const alertModal = document.createElement('div');
-            alertModal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            alertModal.className = 'fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center duration-200 animate-in fade-in-0';
+            alertModal.onclick = (e) => { if (e.target === alertModal) alertModal.remove(); };
             alertModal.innerHTML = `
-              <div class="bg-white rounded-lg p-6 max-w-lg w-full mx-4">
+              <div class="bg-white rounded-lg p-6 max-w-lg w-full mx-4 shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 ease-out">
                 <h3 class="text-lg font-semibold mb-4">Dashboard Alerts</h3>
                 <div class="space-y-3 max-h-96 overflow-y-auto">
                   ${alerts.map(alert => `

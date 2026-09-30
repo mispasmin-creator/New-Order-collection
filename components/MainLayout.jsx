@@ -11,6 +11,7 @@ import LogisticPage from "./pages/LogisticPage"
 import TestReportPage from "./pages/TestReportPage"
 import InvoicePage from "./pages/InvoicePage"
 import FullkittingPage from "./pages/FullkittingPage"
+import SaleForm3Page from "./pages/SaleForm3Page"
 import TCPage from "./pages/TCPage"
 import WetmanEntryPage from "./pages/WetmanEntryPage"
 import ReceivedAccounts from "./pages/ReceivedAccounts"
@@ -79,6 +80,8 @@ export default function MainLayout({ user, onLogout, orders, updateOrders }) {
         return <WetmanEntryPage {...pageProps} />
       case "Invoice":
         return <InvoicePage {...pageProps} />
+      case "Sale Form 3":
+        return <SaleForm3Page {...pageProps} />
       case "Fullkitting":
         return <FullkittingPage {...pageProps} />
       case "TC":

@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useMemo } from "react"
+import Portal from "@/components/ui/portal"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -916,15 +917,20 @@ export default function OrderPage({ user }) {
 
       {/* Order Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-auto shadow-2xl">
-            <OrderForm
-              onCancel={() => setShowForm(false)}
-              onSuccess={handleFormSuccess}
-              user={user}
-            />
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowForm(false) }}
+          >
+            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-auto shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
+              <OrderForm
+                onCancel={() => setShowForm(false)}
+                onSuccess={handleFormSuccess}
+                user={user}
+              />
+            </div>
           </div>
-        </div>
+        </Portal>
       )}
 
       {/* Orders Table */}
@@ -1181,8 +1187,12 @@ export default function OrderPage({ user }) {
 
       {/* Order Details Modal */}
       {showDetailModal && selectedOrder && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowDetailModal(false) }}
+          >
+          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b z-10">
               <div>
                 <CardTitle className="text-lg lg:text-xl">Order Details</CardTitle>
@@ -1402,12 +1412,17 @@ export default function OrderPage({ user }) {
             </CardContent>
           </Card>
         </div>
+        </Portal>
       )}
 
       {/* Cancel Order Modal */}
       {cancelOrderTarget && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <Card className="w-full max-w-md shadow-2xl">
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget) setCancelOrderTarget(null) }}
+          >
+          <Card className="w-full max-w-md shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-start justify-between border-b">
               <div>
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -1475,6 +1490,7 @@ export default function OrderPage({ user }) {
             </CardContent>
           </Card>
         </div>
+        </Portal>
       )}
     </div>
   )

@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState, useEffect, useMemo } from "react";
+import Portal from "@/components/ui/portal";
 import { supabase } from "@/lib/supabaseClient";
 import { getISTTimestamp } from "@/lib/dateUtils";
 import { useToast } from "@/hooks/use-toast";
@@ -625,23 +626,13 @@ export default function MakeInvoicePage({ user }) {
             billCopyUrl = publicUrl;
           }
 
-          const { error: updateErr } = await supabase
-            .from("DISPATCH")
-            .update({
-              Actual4: actualDateTime,
-              "Bill Number": line.invoiceNo.trim(),
-              "Bill Date": line.invoiceDate,
-              "Bill Copy": billCopyUrl,
-            })
-            .eq("id", line.id);
-          if (updateErr) throw updateErr;
-
-          // If TC is not required (or was never set), automatically move to DELIVERY.
-          // A blank/missing value must be treated the same as "No" — otherwise the DELIVERY
-          // row silently never gets created and the record gets stuck invisible downstream.
-          if (!line.tcRequired || line.tcRequired === "No" || line.tcRequired === "no") {
-            const { error: deliveryInsertError } = await supabase.from("DELIVERY").insert([
-              {
+          // If TC is not required (or was never set), the dispatch moves to DELIVERY — but only
+          // after Sale Form 3 approval. The DELIVERY row is saved as "Delivery Payload" and the
+          // Sale Form 3 page inserts it on approval. A blank/missing TC value must be treated the
+          // same as "No" — otherwise the DELIVERY row silently never gets created downstream.
+          const isTcNotRequired = !line.tcRequired || line.tcRequired === "No" || line.tcRequired === "no";
+          const deliveryPayload = isTcNotRequired
+            ? {
                 "Timestamp": actualDateTime,
                 "Bill Date": line.invoiceDate,
                 "Delivery Order No.": line.deliveryOrderNo,
@@ -658,9 +649,38 @@ export default function MakeInvoicePage({ user }) {
                 "Giving From Where": "",
                 "D-Sr Number": line.dSrNumber || line.lgstSrNumber || "",
               }
-            ]);
-            if (deliveryInsertError) throw deliveryInsertError;
-          }
+            : null;
+
+          // Written before DISPATCH so a missing SALE FORM 3 table (migration not run) fails the
+          // submit up-front instead of leaving an invoiced row that never reaches Sale Form 3.
+          const { error: saleForm3Err } = await supabase
+            .from("SALE FORM 3")
+            .upsert(
+              [
+                {
+                  dispatch_id: line.id,
+                  "Status": "Pending",
+                  "Planned": actualDateTime,
+                  "Actual": null,
+                  "Remarks": null,
+                  "Action By": null,
+                  "Delivery Payload": deliveryPayload,
+                },
+              ],
+              { onConflict: "dispatch_id" },
+            );
+          if (saleForm3Err) throw saleForm3Err;
+
+          const { error: updateErr } = await supabase
+            .from("DISPATCH")
+            .update({
+              Actual4: actualDateTime,
+              "Bill Number": line.invoiceNo.trim(),
+              "Bill Date": line.invoiceDate,
+              "Bill Copy": billCopyUrl,
+            })
+            .eq("id", line.id);
+          if (updateErr) throw updateErr;
         }),
       );
 
@@ -1350,8 +1370,12 @@ export default function MakeInvoicePage({ user }) {
 
       {/* ── Invoice Modal ─────────────────────────────────────────────────────── */}
       {selectedGroup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !submitting) handleClose() }}
+          >
+          <Card className="w-full max-w-6xl max-h-[90vh] overflow-y-auto shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b z-10">
               <CardTitle className="text-lg">Make Invoice</CardTitle>
               <Button
@@ -1792,12 +1816,17 @@ export default function MakeInvoicePage({ user }) {
             </CardContent>
           </Card>
         </div>
+        </Portal>
       )}
 
       {/* Admin Edit Bill Modal */}
       {adminEditBillModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-md shadow-2xl">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !adminEditSubmitting) setAdminEditBillModalOpen(false) }}
+          >
+          <Card className="w-full max-w-md shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50 rounded-t-xl">
               <CardTitle className="text-lg">Edit Bill Details (Admin)</CardTitle>
               <Button
@@ -1862,6 +1891,7 @@ export default function MakeInvoicePage({ user }) {
             </CardContent>
           </Card>
         </div>
+        </Portal>
       )}
     </div>
   );

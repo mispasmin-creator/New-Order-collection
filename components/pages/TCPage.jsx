@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useMemo } from "react"
+import Portal from "@/components/ui/portal"
 import { supabase } from "@/lib/supabaseClient"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
@@ -98,6 +99,25 @@ export default function TCPage({ user }) {
         supabase.from("DELIVERY").select('id, "D-Sr Number", "Delivery Order No.", Timestamp')
       )
 
+      // Sale Form 3 gate: a dispatch invoiced after Sale Form 3 went live has a SALE FORM 3 row
+      // and only reaches TC once that row is Approved. Older dispatches have no row and keep
+      // flowing exactly as before.
+      // If the SALE FORM 3 table hasn't been created yet, nothing can be gated (Invoice can't
+      // create Sale Form 3 rows either), so TC keeps working as before. Any other error still
+      // fails the load — skipping the gate silently would let unapproved rows through.
+      let saleForm3Data = []
+      try {
+        saleForm3Data = await fetchAllRows(() =>
+          supabase.from("SALE FORM 3").select('dispatch_id, "Status"')
+        )
+      } catch (saleForm3Error) {
+        const isMissingTable = saleForm3Error?.code === "42P01" || saleForm3Error?.code === "PGRST205"
+        if (!isMissingTable) throw saleForm3Error
+        console.warn("SALE FORM 3 table not found — run supabase/migrations/sale_form_3.sql")
+      }
+      const saleForm3StatusMap = new Map()
+      saleForm3Data.forEach(row => saleForm3StatusMap.set(row.dispatch_id, row["Status"]))
+
       const rateMap = new Map()
       const tcRequiredMap = new Map()
       const firmMap = new Map()
@@ -133,6 +153,7 @@ export default function TCPage({ user }) {
         const typeOfTransporting = row["Type Of Transporting  "] || row["Type Of Transporting"] || ""
         const isTCRequired = row["TC Required"] === "Yes"
         if (!isTCRequired) return
+        if (saleForm3StatusMap.has(row.id) && saleForm3StatusMap.get(row.id) !== "Approved") return
 
         const dispatchNumber = row["D-Sr Number"]
         const deliveryRow = deliveryMap.get(`${dispatchNumber}|${row["Delivery Order No."] || ""}`)
@@ -671,8 +692,12 @@ export default function TCPage({ user }) {
       </div>
 
       {selectedGroup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !submitting) handleCancel() }}
+          >
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
               <CardTitle className="text-lg">Upload Test Certificate</CardTitle>
               <Button variant="ghost" size="sm" onClick={handleCancel} disabled={submitting}>
@@ -752,6 +777,7 @@ export default function TCPage({ user }) {
             </CardContent>
           </Card>
         </div>
+        </Portal>
       )}
     </div>
   )

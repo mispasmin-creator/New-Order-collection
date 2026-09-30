@@ -1,6 +1,7 @@
 "use client"
 
 import { Fragment, useEffect, useMemo, useState } from "react"
+import Portal from "@/components/ui/portal"
 import { supabase } from "@/lib/supabaseClient"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
@@ -51,6 +52,27 @@ const getTransporterRateValue = (row) => {
   return 0
 }
 
+const fetchAllRows = async (buildQuery) => {
+  const pageSize = 1000
+  let from = 0
+  let all = []
+  while (true) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1)
+    if (error) throw error
+    all = all.concat(data || [])
+    if (!data || data.length < pageSize) break
+    from += pageSize
+  }
+  return all
+}
+
+// null/blank stays null so a missing qty shows as "—" instead of a misleading 0
+const toQty = (value) => {
+  if (value === null || value === undefined || String(value).trim() === "") return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
 const ORDER_RECEIPT_COLUMNS = `
   id,
   "PARTY PO NO (As Per Po Exact)",
@@ -78,6 +100,7 @@ const DISPATCH_COLUMNS = `
   "Product Name",
   "Qty To Be Dispatched",
   "Actual Truck Qty",
+  "Actual Qty As Per Weighment Slip",
   "Transporter Name",
   "Truck No.",
   "Bilty No.",
@@ -201,6 +224,28 @@ export default function FullkittingPage({ user }) {
         }
       })
 
+      // Receipt Qty is entered on the Material Receipt page and stored in POST DELIVERY, which is
+      // keyed by Bill No. + Party Name (or Order No. when there is no bill) — the same match the
+      // Material Receipt page itself uses, so both pages show the same Receipt Qty.
+      const postDeliveryData = await fetchAllRows(() =>
+        supabase
+          .from("POST DELIVERY")
+          .select('id, "Bill No.", "Order No.", "Party Name", "Receipt Qty"')
+          .order("id", { ascending: true }),
+      )
+      const receiptByBillParty = new Map()
+      const receiptByOrderNo = new Map()
+      postDeliveryData.forEach((pd) => {
+        const billNo = (pd["Bill No."] || "").toString().trim()
+        const party = (pd["Party Name"] || "").toString().trim().toLowerCase()
+        const orderNo = (pd["Order No."] || "").toString().trim()
+        if (billNo) {
+          const key = `${billNo}|${party}`
+          if (!receiptByBillParty.has(key)) receiptByBillParty.set(key, pd)
+        }
+        if (orderNo && !receiptByOrderNo.has(orderNo)) receiptByOrderNo.set(orderNo, pd)
+      })
+
       const pending = []
       const history = []
 
@@ -242,6 +287,16 @@ export default function FullkittingPage({ user }) {
         const biltyCopy = deliveryRow?.["Bilty Copy"] || row["Bilty Copy"] || ""
         const fullkittingStatus = row["Fullkitting Status"] || ""
 
+        const rowBillNo = (row["Bill Number"] || "").toString().trim()
+        const rowParty = (row["Party Name"] || po["Party Names"] || "").toString().trim().toLowerCase()
+        const rowDoNo = (row["Delivery Order No."] || "").toString().trim()
+        const receiptRow = rowBillNo
+          ? receiptByBillParty.get(`${rowBillNo}|${rowParty}`)
+          : (rowDoNo ? receiptByOrderNo.get(rowDoNo) : null)
+        const dispatchQty = toQty(row["Qty To Be Dispatched"])
+        const weighSlipQty = toQty(row["Actual Qty As Per Weighment Slip"])
+        const receiptQty = toQty(receiptRow?.["Receipt Qty"])
+
         const additionalDetails = [
           ...Object.entries(po)
             .filter(([key, value]) => !HIDDEN_DETAIL_FIELDS.has(key) && value !== null && value !== undefined && String(value).trim() !== "")
@@ -272,6 +327,9 @@ export default function FullkittingPage({ user }) {
           productName: row["Product Name"] || "",
           qtyToBeDispatched: Number(row["Qty To Be Dispatched"]) || 0,
           truckQty,
+          dispatchQty,
+          weighSlipQty,
+          receiptQty,
           transporter: row["Transporter Name"] || "",
           truckNo: row["Truck No."] || "",
           biltyNo,
@@ -336,6 +394,8 @@ export default function FullkittingPage({ user }) {
     if (!Number.isFinite(number)) return "0.00"
     return number.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
+
+  const fmtQty = (value) => (value === null || value === undefined ? "—" : fmt(value))
 
   const isFileUrl = (value) => /^https?:\/\//i.test(String(value || ""))
 
@@ -681,6 +741,9 @@ export default function FullkittingPage({ user }) {
                 <TableHead>DO Number</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead>Truck Qty</TableHead>
+                <TableHead className="text-right">Dispatch Qty</TableHead>
+                <TableHead className="text-right">Weighslip Qty</TableHead>
+                <TableHead className="text-right">Receipt Qty</TableHead>
                 <TableHead>Transporter Type</TableHead>
                 <TableHead>Transporter Name</TableHead>
                 <TableHead>Vehicle Number</TableHead>
@@ -697,7 +760,7 @@ export default function FullkittingPage({ user }) {
             <TableBody>
               {groupedRows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "history" ? 19 : 18} className="py-8 text-center text-gray-500">
+                  <TableCell colSpan={activeTab === "history" ? 22 : 21} className="py-8 text-center text-gray-500">
                     No {activeTab} Fullkitting entries found
                   </TableCell>
                 </TableRow>
@@ -705,7 +768,7 @@ export default function FullkittingPage({ user }) {
                 groupedRows.map((group) => (
                   <Fragment key={group.key}>
                     <TableRow className="bg-slate-50">
-                      <TableCell colSpan={activeTab === "history" ? 19 : 18} className="py-2 px-4">
+                      <TableCell colSpan={activeTab === "history" ? 22 : 21} className="py-2 px-4">
                         <div className="flex flex-wrap items-center gap-3 text-sm">
                           <span className="font-semibold text-slate-900">{group.poNumber}</span>
                           <span className="text-slate-500">{group.partyName}</span>
@@ -746,6 +809,9 @@ export default function FullkittingPage({ user }) {
                         <TableCell className="text-sm">{row.deliveryOrderNo || "N/A"}</TableCell>
                         <TableCell className="text-sm">{row.productName || "N/A"}</TableCell>
                         <TableCell className="text-sm font-medium">{fmt(row.truckQty)}</TableCell>
+                        <TableCell className="text-sm text-right">{fmtQty(row.dispatchQty)}</TableCell>
+                        <TableCell className="text-sm text-right">{fmtQty(row.weighSlipQty)}</TableCell>
+                        <TableCell className="text-sm text-right">{fmtQty(row.receiptQty)}</TableCell>
                         <TableCell className="text-sm">{row.typeOfTransporting || "N/A"}</TableCell>
                         <TableCell className="text-sm">{row.transporter || "N/A"}</TableCell>
                         <TableCell className="text-sm">{row.truckNo || "N/A"}</TableCell>
@@ -792,8 +858,12 @@ export default function FullkittingPage({ user }) {
       </div>
 
       {selectedRow && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !submitting) handleClose() }}
+          >
+          <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b z-10">
               <CardTitle className="text-lg">Fullkitting Process</CardTitle>
               <Button variant="ghost" size="sm" onClick={handleClose} disabled={submitting}>
@@ -984,6 +1054,7 @@ export default function FullkittingPage({ user }) {
             </CardContent>
           </Card>
         </div>
+        </Portal>
       )}
     </div>
   )

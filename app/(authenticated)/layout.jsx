@@ -28,6 +28,7 @@ export default function AuthenticatedLayout({ children }) {
         "/logistic": "Logistic",
         "/load-material": "Load Material",
         "/invoice": "Invoice",
+        "/sale-form-3": "Sale Form 3",
         "/fullkitting": "Fullkitting",
         "/tc": "TC",
         "/wetman-entry": "Wetman Entry",

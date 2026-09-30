@@ -38,6 +38,7 @@ const STAGE_META = {
   loadMaterial: { label: "Load Material", route: "/load-material", icon: Truck },
   wetmanEntry: { label: "Weighment Entry", route: "/wetman-entry", icon: Scale },
   invoice: { label: "Invoice", route: "/invoice", icon: Receipt },
+  saleForm3: { label: "Sale Form 3", route: "/sale-form-3", icon: CheckSquare },
   tc: { label: "TC", route: "/tc", icon: FileCheck2 },
   fullkitting: { label: "Fullkitting", route: "/fullkitting", icon: PackageCheck },
   biltyUpdate: { label: "Bilty Update", route: "/logistics-fulfillment", icon: PackageCheck },
@@ -54,7 +55,7 @@ const STAGE_META = {
 const STAGE_GROUPS = [
   { title: "Order Processing", stages: ["order", "checkPO", "receivedAccounts", "checkDelivery"] },
   { title: "Logistics", stages: ["arrangeLogistics", "logisticsApproval", "dispatchPlanning", "accountsApproval", "logistic", "loadMaterial"] },
-  { title: "Dispatch & Delivery", stages: ["wetmanEntry", "invoice", "tc", "fullkitting", "biltyUpdate", "materialReceipt"] },
+  { title: "Dispatch & Delivery", stages: ["wetmanEntry", "invoice", "saleForm3", "tc", "fullkitting", "biltyUpdate", "materialReceipt"] },
   { title: "Returns & Approvals", stages: ["materialReturn", "returnOfMaterial", "managementApproval", "debitNote"] },
   { title: "Finance", stages: ["retention", "makePI", "receivedPIPayment"] },
 ]
@@ -106,6 +107,8 @@ export default function ProcessDashboard({ user }) {
       let piQuery = supabase.from("po_pi_records").select("po_number, status, firm_name")
       if (shouldFilter) piQuery = piQuery.in("firm_name", userFirms)
 
+      const saleForm3Query = supabase.from("SALE FORM 3").select('dispatch_id, "Status"')
+
       const [
         { data: dispatch },
         { data: delivery },
@@ -114,7 +117,8 @@ export default function ProcessDashboard({ user }) {
         { data: materialReturn },
         { data: retentionRecords },
         { data: piRecords },
-      ] = await Promise.all([dispatchQuery, deliveryQuery, postDeliveryQuery, splitsQuery, materialReturnQuery, retentionQuery, piQuery])
+        { data: saleForm3 },
+      ] = await Promise.all([dispatchQuery, deliveryQuery, postDeliveryQuery, splitsQuery, materialReturnQuery, retentionQuery, piQuery, saleForm3Query])
 
       const dispatchRows = dispatch || []
       const deliveryRows = delivery || []
@@ -172,8 +176,15 @@ export default function ProcessDashboard({ user }) {
       const deliveryDSrDoKeys = new Set(
         deliveryRows.filter((d) => d["D-Sr Number"]).map((d) => dsrDoKey(d["D-Sr Number"], d["Delivery Order No."]))
       )
+      // Sale Form 3: invoiced dispatches whose Sale Form 3 approval is still pending.
+      // Dispatches with no SALE FORM 3 row (invoiced before this stage existed) are not gated.
+      const saleForm3StatusByDispatch = new Map((saleForm3 || []).map((s) => [s.dispatch_id, s.Status]))
+      const accessibleDispatchIds = new Set(dispatchRows.filter((d) => isFilled(d.Actual4)).map((d) => d.id))
+      newCounts.saleForm3 = (saleForm3 || []).filter((s) => s.Status === "Pending" && accessibleDispatchIds.has(s.dispatch_id)).length
+      const isSaleForm3Cleared = (d) => !saleForm3StatusByDispatch.has(d.id) || saleForm3StatusByDispatch.get(d.id) === "Approved"
+
       newCounts.tc = dispatchRows.filter((d) =>
-        isFilled(d.Actual4) && d["TC Required"] === "Yes" &&
+        isFilled(d.Actual4) && d["TC Required"] === "Yes" && isSaleForm3Cleared(d) &&
         d["D-Sr Number"] && !deliveryDSrDoKeys.has(dsrDoKey(d["D-Sr Number"], d["Delivery Order No."]))
       ).length
 

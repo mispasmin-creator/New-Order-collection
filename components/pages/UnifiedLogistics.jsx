@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, Fragment } from "react"
+import Portal from "@/components/ui/portal"
 import { supabase } from "@/lib/supabaseClient"
 import { useToast } from "@/hooks/use-toast"
 import { getISTDisplayDate, getISTTimestamp } from "@/lib/dateUtils"
@@ -69,7 +70,13 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
 
   // Single modal for combined Documentation + Receipt entry
   const [selectedGroup, setSelectedGroup] = useState(null) // { billNo, rows[] }
+  const [modalClosing, setModalClosing] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState({})
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   const [selectedOrder, setSelectedOrder] = useState(null) // kept for compat reference inside modal
   const [combinedForm, setCombinedForm] = useState({
     biltyNo: "",
@@ -79,6 +86,9 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
     receiptFile: null,
     receiptPreviewUrl: "",
   })
+  // Receipt Qty is entered per product/row (a group can hold multiple products on one bill),
+  // keyed by the DELIVERY row's id: { [rowId]: "12.5" }
+  const [receiptQtyByRow, setReceiptQtyByRow] = useState({})
 
   useEffect(() => {
     fetchEverything()
@@ -364,6 +374,7 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
         billDate: del["Bill Date"] || receipt?.["Bill Date"],
         plannedDate: del["Planned 3"] || receipt?.["Planned"],
         grnNumber: receipt?.["Grn Number"],
+        receiptQty: receipt?.["Receipt Qty"],
         receiptCopy: receipt?.["Image Of Received Bill / Audio"],
         receiptId: receipt?.id,
         isReceiptDone: !!receipt?.["Actual"],
@@ -514,6 +525,7 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
 
   // Open the combined modal
   const openModal = (group) => {
+    setModalClosing(false)
     setSelectedGroup(group)
     setSelectedOrder(group.rows[0]) // for backward compat in form
     setCombinedForm({
@@ -524,12 +536,23 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
       receiptFile: null,
       receiptPreviewUrl: "",
     })
+    const qtyByRow = {}
+    group.rows.forEach(row => {
+      if (row.receiptQty !== null && row.receiptQty !== undefined) qtyByRow[row.id] = String(row.receiptQty)
+    })
+    setReceiptQtyByRow(qtyByRow)
   }
 
   const closeModal = () => {
-    setSelectedGroup(null)
-    setSelectedOrder(null)
-    setCombinedForm({ biltyNo: "", biltyCopy: null, materialReceivedDate: "", grnNumber: "", receiptFile: null, receiptPreviewUrl: "" })
+    if (modalClosing) return
+    setModalClosing(true)
+    setTimeout(() => {
+      setSelectedGroup(null)
+      setSelectedOrder(null)
+      setCombinedForm({ biltyNo: "", biltyCopy: null, materialReceivedDate: "", grnNumber: "", receiptFile: null, receiptPreviewUrl: "" })
+      setReceiptQtyByRow({})
+      setModalClosing(false)
+    }, 200)
   }
 
   const handleExport = () => {
@@ -609,6 +632,9 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
           "Material Received Date": combinedForm.materialReceivedDate,
           "Grn Number": combinedForm.grnNumber,
           "Image Of Received Bill / Audio": receiptUrl,
+          "Receipt Qty": receiptQtyByRow[row.id] !== undefined && receiptQtyByRow[row.id] !== ""
+            ? Number(receiptQtyByRow[row.id])
+            : null,
         }
         if (row.receiptId) {
           // Admin edit of an already-completed receipt must not overwrite its original Planned/Actual
@@ -919,113 +945,221 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
 
       {/* Combined Documentation + Receipt Modal */}
       {selectedGroup && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg shadow-2xl max-h-[92vh] flex flex-col">
-            <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50 rounded-t-xl shrink-0">
-              <CardTitle className="text-lg">{isReceiptMode ? "Material Receipt" : "Bilty Update"}</CardTitle>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={closeModal} disabled={submitting}><X className="h-4 w-4" /></Button>
+        <Portal>
+          <div
+            className={`fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-2 sm:p-4 duration-200 ${
+              modalClosing ? "animate-out fade-out-0" : "animate-in fade-in-0"
+            }`}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !submitting) closeModal()
+          }}
+        >
+          <Card
+            className={`w-full max-w-lg shadow-2xl max-h-[94vh] sm:max-h-[90vh] flex flex-col rounded-xl overflow-hidden bg-white border border-gray-200/80 duration-200 ${
+              modalClosing
+                ? "animate-out fade-out-0 zoom-out-95 slide-out-to-bottom-2"
+                : "animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out"
+            }`}
+          >
+            <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50/80 px-4 py-3 sm:px-6 sm:py-4 shrink-0">
+              <CardTitle className="text-base sm:text-lg font-bold text-gray-900">{isReceiptMode ? "Material Receipt" : "Bilty Update"}</CardTitle>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={closeModal} disabled={submitting}><X className="h-4 w-4" /></Button>
             </CardHeader>
-            <CardContent className="p-6 space-y-6 overflow-y-auto flex-1">
+            <CardContent className="p-3.5 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto flex-1">
 
               {/* Shipment info */}
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-sm space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-gray-900">{selectedGroup.partyName}</span>
-                  {selectedGroup.billNo && <Badge className="bg-indigo-500 text-white text-xs">{selectedGroup.billNo}</Badge>}
+              <div className="bg-gray-50/80 p-3 sm:p-4 rounded-xl border border-gray-200/80 text-sm space-y-3">
+                <div className="flex items-start sm:items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="font-semibold text-gray-900 text-sm sm:text-base leading-tight block truncate">
+                      {selectedGroup.partyName}
+                    </span>
+                    {selectedGroup.firmName && (
+                      <span className="text-[11px] text-gray-500 font-medium block mt-0.5">
+                        {selectedGroup.firmName}
+                      </span>
+                    )}
+                  </div>
+                  {selectedGroup.billNo && (
+                    <Badge className="bg-indigo-600 text-white text-xs shrink-0 font-mono shadow-xs">
+                      {selectedGroup.billNo}
+                    </Badge>
+                  )}
                 </div>
-                <table className="w-full text-xs mt-1">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="text-left px-2 py-1 font-medium text-gray-600">Order No</th>
-                      <th className="text-left px-2 py-1 font-medium text-gray-600">Product</th>
-                      <th className="text-left px-2 py-1 font-medium text-gray-600">Test Certificate</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {selectedGroup.rows.map(row => (
-                      <tr key={row.id} className="bg-white">
-                        <td className="px-2 py-1 font-mono text-gray-600">{row.orderNo}</td>
-                        <td className="px-2 py-1 text-gray-700">{row.productName}</td>
-                        <td className="px-2 py-1">
+
+                {/* Desktop Table View (hidden on small screens) */}
+                <div className="hidden sm:block overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-100/80 border-b border-gray-200">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Order No</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Product</th>
+                        <th className="text-left px-3 py-2 font-medium text-gray-600">Test Certificate</th>
+                        {isReceiptMode && (
+                          <th className="text-left px-3 py-2 font-medium text-gray-600">Receipt Qty</th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {selectedGroup.rows.map(row => (
+                        <tr key={row.id} className="hover:bg-gray-50/50">
+                          <td className="px-3 py-2 font-mono text-gray-600 font-medium">{row.orderNo}</td>
+                          <td className="px-3 py-2 text-gray-800 font-medium">{row.productName}</td>
+                          <td className="px-3 py-2">
+                            {row.tcFileUrl ? (
+                              <button
+                                type="button"
+                                onClick={() => handleViewFile(row.tcFileUrl)}
+                                className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1 font-medium"
+                              >
+                                <Eye className="w-3 h-3" /> View TC
+                              </button>
+                            ) : (
+                              <span className="text-gray-400 italic">No TC uploaded</span>
+                            )}
+                          </td>
+                          {isReceiptMode && (
+                            <td className="px-3 py-2">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder={row.truckQty ? `Disp: ${row.truckQty}` : "Qty"}
+                                value={receiptQtyByRow[row.id] || ""}
+                                onChange={(e) => setReceiptQtyByRow(p => ({ ...p, [row.id]: e.target.value }))}
+                                disabled={submitting}
+                                className="h-7 w-28 text-xs bg-white"
+                              />
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Cards View (shown only on small screens) */}
+                <div className="sm:hidden space-y-2">
+                  {selectedGroup.rows.map(row => (
+                    <div key={row.id} className="bg-white p-2.5 rounded-lg border border-gray-200 shadow-xs space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="font-mono text-[11px] font-bold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded shrink-0">
+                            {row.orderNo}
+                          </span>
+                          <span className="text-xs font-semibold text-gray-800 truncate">
+                            {row.productName}
+                          </span>
+                        </div>
+                        <div className="shrink-0">
                           {row.tcFileUrl ? (
                             <button
+                              type="button"
                               onClick={() => handleViewFile(row.tcFileUrl)}
-                              className="text-blue-600 hover:text-blue-800 underline flex items-center gap-0.5"
+                              className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1 text-[11px] font-medium"
                             >
                               <Eye className="w-3 h-3" /> View TC
                             </button>
                           ) : (
-                            <span className="text-gray-400 italic">No TC uploaded</span>
+                            <span className="text-gray-400 italic text-[11px]">No TC</span>
                           )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+
+                      {isReceiptMode && (
+                        <div className="flex items-center justify-between pt-1.5 border-t border-gray-100 gap-2">
+                          <div className="text-xs text-gray-600 font-medium">
+                            Receipt Qty
+                            {row.truckQty && (
+                              <span className="block text-[10px] text-gray-400 font-normal">
+                                Dispatched: {row.truckQty}
+                              </span>
+                            )}
+                          </div>
+                          <div className="w-32">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder={row.truckQty ? `Disp: ${row.truckQty}` : "Qty"}
+                              value={receiptQtyByRow[row.id] || ""}
+                              onChange={(e) => setReceiptQtyByRow(p => ({ ...p, [row.id]: e.target.value }))}
+                              disabled={submitting}
+                              className="h-8 text-xs w-full bg-gray-50/50"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Bilty Update page: Documentation */}
               {!isReceiptMode && (
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <div className="space-y-3 sm:space-y-4">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
                   <span className="w-1 h-4 bg-amber-500 rounded-full" />Bilty Documentation
                 </h3>
-                <div className="space-y-2">
-                  <Label>Bilty Number <span className="text-red-500">*</span></Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-700">Bilty Number <span className="text-red-500">*</span></Label>
                   <Input
                     placeholder="Enter consignment/bilty no."
                     value={combinedForm.biltyNo}
                     onChange={(e) => setCombinedForm(p => ({ ...p, biltyNo: e.target.value }))}
                     disabled={submitting}
+                    className="h-9 text-xs sm:text-sm"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Bilty Copy <span className="text-red-500">*</span></Label>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-700">Bilty Copy <span className="text-red-500">*</span></Label>
                   <Input
                     type="file"
                     accept="image/*,.pdf"
                     onChange={(e) => setCombinedForm(p => ({ ...p, biltyCopy: e.target.files[0] }))}
                     disabled={submitting}
-                    className="h-10"
+                    className="h-9 text-xs cursor-pointer file:cursor-pointer file:text-xs"
                   />
-                  {combinedForm.biltyCopy && <p className="text-xs text-green-600">✓ {combinedForm.biltyCopy.name}</p>}
+                  {combinedForm.biltyCopy && <p className="text-xs text-green-600 font-medium">✓ {combinedForm.biltyCopy.name}</p>}
                 </div>
               </div>
               )}
 
               {/* Material Receipt page: Receipt */}
               {isReceiptMode && (
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <div className="space-y-3 sm:space-y-4">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
                   <span className="w-1 h-4 bg-blue-500 rounded-full" />Material Receipt
                 </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Receipt Date <span className="text-red-500">*</span></Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-700">Receipt Date <span className="text-red-500">*</span></Label>
                     <Input
                       type="date"
                       value={combinedForm.materialReceivedDate}
                       onChange={(e) => setCombinedForm(p => ({ ...p, materialReceivedDate: e.target.value }))}
                       disabled={submitting}
+                      className="h-9 text-xs sm:text-sm w-full"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>GRN Number <span className="text-red-500">*</span></Label>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-700">GRN Number <span className="text-red-500">*</span></Label>
                     <Input
                       placeholder="Enter GRN reference"
                       value={combinedForm.grnNumber}
                       onChange={(e) => setCombinedForm(p => ({ ...p, grnNumber: e.target.value }))}
                       disabled={submitting}
+                      className="h-9 text-xs sm:text-sm w-full"
                     />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Arrival Proof (optional)</Label>
-                  <div className="flex items-center gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-700">Arrival Proof (optional)</Label>
+                  <div className="flex items-center gap-3">
                     <Input
                       type="file"
                       accept="image/*,.pdf,.mp3,.wav"
-                      className="flex-1 h-10"
+                      className="flex-1 h-9 text-xs cursor-pointer file:cursor-pointer file:text-xs"
                       onChange={(e) => {
                         const file = e.target.files[0]
                         setCombinedForm(p => ({ ...p, receiptFile: file, receiptPreviewUrl: file?.type.startsWith('image/') ? URL.createObjectURL(file) : "" }))
@@ -1033,8 +1167,8 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
                       disabled={submitting}
                     />
                     {combinedForm.receiptPreviewUrl && (
-                      <div className="h-12 w-12 rounded border overflow-hidden shrink-0">
-                        <img src={combinedForm.receiptPreviewUrl} className="h-full w-full object-cover" />
+                      <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg border border-gray-200 overflow-hidden shrink-0 shadow-xs">
+                        <img src={combinedForm.receiptPreviewUrl} className="h-full w-full object-cover" alt="Arrival proof preview" />
                       </div>
                     )}
                   </div>
@@ -1043,10 +1177,10 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
               )}
             </CardContent>
 
-            <div className="flex gap-3 border-t p-4 shrink-0">
-              <Button variant="outline" className="flex-1" onClick={closeModal} disabled={submitting}>Cancel</Button>
+            <div className="flex gap-2.5 sm:gap-3 border-t bg-gray-50/50 p-3 sm:p-4 rounded-b-xl shrink-0">
+              <Button variant="outline" className="flex-1 h-9 sm:h-10 text-xs sm:text-sm" onClick={closeModal} disabled={submitting}>Cancel</Button>
               <Button
-                className="flex-1 bg-blue-600 hover:bg-blue-700 font-semibold"
+                className="flex-1 h-9 sm:h-10 text-xs sm:text-sm bg-blue-600 hover:bg-blue-700 font-semibold text-white shadow-xs"
                 onClick={handleCombinedSubmit}
                 disabled={
                   submitting ||
@@ -1061,7 +1195,8 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
               </Button>
             </div>
           </Card>
-        </div>
+          </div>
+        </Portal>
       )}
     </div>
   )

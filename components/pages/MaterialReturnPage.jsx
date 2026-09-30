@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, Fragment } from "react";
+import Portal from "@/components/ui/portal";
 import { getISTFullDisplayDateTime, getISTTimestamp } from "@/lib/dateUtils";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -3505,8 +3506,12 @@ export default function MaterialReturnPage({ user }) {
 
       {/* Logistic Modal */}
       {selectedLogisticEntry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg shadow-2xl">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !submitting) setSelectedLogisticEntry(null) }}
+          >
+          <Card className="w-full max-w-lg shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50">
               <div>
                 <CardTitle className="text-xl text-gray-800">
@@ -3643,12 +3648,17 @@ export default function MaterialReturnPage({ user }) {
             </form>
           </Card>
         </div>
+        </Portal>
       )}
 
       {/* Received Modal */}
       {selectedReceivedEntry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg shadow-2xl">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !submitting) setSelectedReceivedEntry(null) }}
+          >
+          <Card className="w-full max-w-lg shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50">
               <div>
                 <CardTitle className="text-xl text-gray-800">
@@ -3780,12 +3790,17 @@ export default function MaterialReturnPage({ user }) {
             </form>
           </Card>
         </div>
+        </Portal>
       )}
 
       {/* Issue Note Modal */}
       {selectedIssueEntry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg shadow-2xl">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !submitting) setSelectedIssueEntry(null) }}
+          >
+          <Card className="w-full max-w-lg shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50">
               <div>
                 <CardTitle className="text-xl text-gray-800">
@@ -3891,12 +3906,17 @@ export default function MaterialReturnPage({ user }) {
             </form>
           </Card>
         </div>
+        </Portal>
       )}
 
       {/* CRM Modal */}
       {selectedCrmEntry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg shadow-2xl">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !submitting) setSelectedCrmEntry(null) }}
+          >
+          <Card className="w-full max-w-lg shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50">
               <div>
                 <CardTitle className="text-xl text-gray-800">
@@ -3964,12 +3984,17 @@ export default function MaterialReturnPage({ user }) {
             </form>
           </Card>
         </div>
+        </Portal>
       )}
 
       {/* Management Approval Modal */}
       {selectedManagementEntry && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg shadow-2xl">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !submitting) setSelectedManagementEntry(null) }}
+          >
+          <Card className="w-full max-w-lg shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between border-b bg-gray-50">
               <div>
                 <CardTitle className="text-xl text-gray-800">
@@ -4106,6 +4131,7 @@ export default function MaterialReturnPage({ user }) {
             </form>
           </Card>
         </div>
+        </Portal>
       )}
     </div>
   );

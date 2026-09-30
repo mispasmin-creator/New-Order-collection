@@ -1,6 +1,7 @@
 "use client"
 
 import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from "react"
+import Portal from "@/components/ui/portal"
 import { supabase } from "@/lib/supabaseClient"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
@@ -647,8 +648,12 @@ export default function TestReportPage({ user }) {
 
       {/* ── Modal ─────────────────────────────────────────────────────────────── */}
       {selectedGroup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !submitting) handleClose() }}
+          >
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-white border-b">
               <CardTitle className="text-lg">Complete Load Material</CardTitle>
               <Button variant="ghost" size="sm" onClick={handleClose} disabled={submitting}>
@@ -839,6 +844,7 @@ export default function TestReportPage({ user }) {
             </CardContent>
           </Card>
         </div>
+        </Portal>
       )}
     </div>
   )

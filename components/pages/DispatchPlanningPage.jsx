@@ -1,6 +1,7 @@
 "use client"
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import Portal from "@/components/ui/portal"
 import { getISTTimestamp } from "@/lib/dateUtils"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
@@ -1468,8 +1469,12 @@ export default function DispatchPlanningPage({ user }) {
 
       {/* ── DISPATCH MODAL (Lift-style) ───────────────────────────────────────── */}
       {selectedGroup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !submitting) handleCloseModal() }}
+          >
+          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
 
             {/* Modal header */}
             <div className="px-6 py-5 border-b flex items-start justify-between shrink-0">
@@ -1667,12 +1672,17 @@ export default function DispatchPlanningPage({ user }) {
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {/* ── CANCEL ORDER MODAL ───────────────────────────────────────────────── */}
       {cancelGroup && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget && !cancelSubmitting) setCancelGroup(null) }}
+          >
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             <div className="px-6 py-5 border-b flex items-start justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
@@ -1720,6 +1730,7 @@ export default function DispatchPlanningPage({ user }) {
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   )

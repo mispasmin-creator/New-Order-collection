@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Portal from "@/components/ui/portal"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -843,11 +844,13 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
       </div>
 
       {loading && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl">
-            <p className="text-gray-700">Processing, please wait...</p>
+        <Portal>
+          <div className="fixed inset-0 z-[70] backdrop-blur-md bg-black/40 flex items-center justify-center duration-200 animate-in fade-in-0">
+            <div className="bg-white p-6 rounded-lg shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 ease-out">
+              <p className="text-gray-700">Processing, please wait...</p>
+            </div>
           </div>
-        </div>
+        </Portal>
       )}
 
       <div className="p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
@@ -1464,8 +1467,12 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
 
             {/* Product Form Modal */}
             {showProductForm && (
-              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                <Card className="w-full max-w-4xl max-h-[90vh] overflow-auto shadow-2xl border-0">
+              <Portal>
+                <div
+                  className="fixed inset-0 z-[60] backdrop-blur-md bg-black/40 flex items-center justify-center p-4 duration-200 animate-in fade-in-0"
+                  onClick={(e) => { if (e.target === e.currentTarget) setShowProductForm(false) }}
+                >
+                <Card className="w-full max-w-4xl max-h-[90vh] overflow-auto shadow-2xl border-0 duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
                   <CardHeader className="bg-gradient-to-r from-orange-50 to-orange-100 border-b">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-xl font-semibold text-gray-900">Add Product</CardTitle>
@@ -1620,6 +1627,7 @@ export default function OrderForm({ onSubmit, onCancel, onSuccess, user }) {
                   </CardContent>
                 </Card>
               </div>
+              </Portal>
             )}
           </div>
 

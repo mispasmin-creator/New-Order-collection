@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Search, Eye, X, Calendar, Building, FileText, User, IndianRupee, Package } from "lucide-react"
 import { useState } from "react"
+import Portal from "@/components/ui/portal"
 
 export default function OrderTable({ orders, showTabs = false, onSendToDispatch }) {
   const [searchTerm, setSearchTerm] = useState("")
@@ -73,8 +74,12 @@ export default function OrderTable({ orders, showTabs = false, onSendToDispatch 
     <div className="space-y-0">
       {/* Order Detail Modal - Fullscreen on Mobile */}
       {isDetailOpen && selectedOrder && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 lg:p-0">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-screen lg:max-h-[90vh] overflow-y-auto">
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 backdrop-blur-md bg-black/40 flex items-center justify-center p-4 lg:p-0 duration-200 animate-in fade-in-0"
+            onClick={(e) => { if (e.target === e.currentTarget) closeDetailModal() }}
+          >
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-screen lg:max-h-[90vh] overflow-y-auto shadow-2xl duration-200 animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 ease-out">
             {/* Header */}
             <div className="flex items-center justify-between p-4 lg:p-6 border-b border-gray-200 sticky top-0 bg-white">
               <h2 className="text-lg lg:text-xl font-semibold text-gray-900">Order Details</h2>
@@ -259,6 +264,7 @@ export default function OrderTable({ orders, showTabs = false, onSendToDispatch 
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {/* Tabs - matching the image style */}
