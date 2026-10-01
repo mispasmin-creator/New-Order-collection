@@ -47,7 +47,10 @@ const fetchAllRows = async (buildQuery) => {
 const NO_BILTY_TYPES = new Set(["owned truck", "direct supply"])
 const normalizeType = (t) => (t || "").toLowerCase().trim()
 const isExFactoryType = (t) => normalizeType(t) === "ex-factory" || normalizeType(t) === "ex factory"
-const skipsBiltyType = (t) => NO_BILTY_TYPES.has(normalizeType(t))
+// Either the Type Of Transporting or the Transporter Name (exact match) can mark a shipment as no-bilty.
+const skipsBilty = (del) =>
+  NO_BILTY_TYPES.has(normalizeType(del["Type Of Transporting"])) ||
+  NO_BILTY_TYPES.has(normalizeType(del["Transporter Name"]))
 
 export default function UnifiedLogistics({ user, mode = "bilty" }) {
   const isReceiptMode = mode === "receipt"
@@ -269,7 +272,7 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
         .filter(del => {
           const type = del["Type Of Transporting"] || "";
           if (isExFactoryType(type)) return false
-          if (!isReceiptMode && skipsBiltyType(type)) return false
+          if (!isReceiptMode && skipsBilty(del)) return false
           return true
         })
         .map(del => {
@@ -284,7 +287,7 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
           return {
             billNo: del["Bill No."],
             isBiltyDone: !!del.Actual3,
-            skipsBiltyStep: skipsBiltyType(del["Type Of Transporting"]),
+            skipsBiltyStep: skipsBilty(del),
             isReceiptDone: !!receipt?.["Actual"]
           }
         })
@@ -334,7 +337,7 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
         const type = del["Type Of Transporting"] || "";
         if (isExFactoryType(type)) return false
         // Owned Truck / Direct Supply skip Bilty Update entirely and go straight to Material Receipt.
-        if (!isReceiptMode && skipsBiltyType(type)) return false
+        if (!isReceiptMode && skipsBilty(del)) return false
         return true
       })
       .map(del => {
@@ -367,7 +370,7 @@ export default function UnifiedLogistics({ user, mode = "bilty" }) {
         biltyNo: del["Bilty No."],
         biltyCopy: del["Bilty Copy"],
         isBiltyDone: !!del.Actual3,
-        skipsBiltyStep: skipsBiltyType(del["Type Of Transporting"]),
+        skipsBiltyStep: skipsBilty(del),
         receiptActual: receipt?.["Actual"],
         receiptPlanned: receipt?.["Planned"],
         amount: receipt?.["Total Bill Amount"] || 0,
