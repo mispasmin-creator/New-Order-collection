@@ -334,8 +334,9 @@ export default function DebitNotePage({ user }) {
         "Debit Note Amount": Number(amount),
         "Debit Note Issued At": getISTTimestamp(),
       }
+      // "Debit Note Copy" is the image uploaded at Material Return — keep it as-is so History can
+      // show it next to the credit note copy.
       if (fileUrl) {
-        payload["Debit Note Copy"] = fileUrl
         payload["Credit Note Copy"] = fileUrl
       }
       if (noteRemarks.trim()) payload["Remarks"] = (selectedEntry["Remarks"] ? selectedEntry["Remarks"] + "\n" : "") + `[Debit/Credit Note] ${noteRemarks.trim()}`
@@ -405,7 +406,6 @@ export default function DebitNotePage({ user }) {
       const { data: { publicUrl } } = supabase.storage.from("images").getPublicUrl(path)
 
       const updatePayload = {
-        "Debit Note Copy": publicUrl,
         "Credit Note Copy": publicUrl,
       }
 
@@ -579,7 +579,8 @@ export default function DebitNotePage({ user }) {
                     <TableHead>Type</TableHead>
                     <TableHead>Note No.</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="text-center">Note Copy</TableHead>
+                    <TableHead className="text-center">Debit Note</TableHead>
+                    <TableHead className="text-center">Credit Note Copy</TableHead>
                   </>
                 )}
               </TableRow>
@@ -587,7 +588,7 @@ export default function DebitNotePage({ user }) {
             <TableBody>
               {displayList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={activeTab === "pending" ? 7 : 10} className="text-center py-12 text-gray-500">
+                  <TableCell colSpan={activeTab === "pending" ? 7 : 11} className="text-center py-12 text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <FileText className="w-8 h-8 text-gray-300" />
                       <span>No {activeTab} records found</span>
@@ -644,7 +645,23 @@ export default function DebitNotePage({ user }) {
                             {entry["Debit Note Amount"] ? fmt(entry["Debit Note Amount"]) : "—"}
                           </TableCell>
                           <TableCell className="text-center">
-                            {entry["Debit Note Copy"] || entry["Credit Note Copy"] ? (
+                            {entry["Debit Note Copy"] ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                                title="View Debit Note"
+                                onClick={() => handleViewFile(entry["Debit Note Copy"])}
+                              >
+                                <Eye className="w-3.5 h-3.5 mr-1" /> View
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {entry["Credit Note Copy"] ? (
                               <div className="flex items-center justify-center gap-1">
                                 <Button
                                   type="button"
@@ -652,7 +669,7 @@ export default function DebitNotePage({ user }) {
                                   size="sm"
                                   className="h-7 px-2 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50"
                                   title="View Document"
-                                  onClick={() => handleViewFile(entry["Debit Note Copy"] || entry["Credit Note Copy"])}
+                                  onClick={() => handleViewFile(entry["Credit Note Copy"])}
                                 >
                                   <Eye className="w-3.5 h-3.5 mr-1" /> View
                                 </Button>
@@ -685,7 +702,7 @@ export default function DebitNotePage({ user }) {
 
                     {expandedRows[entry.id] && (
                       <TableRow>
-                        <TableCell colSpan={10} className="p-0 bg-gray-50/50 border-b border-gray-200">
+                        <TableCell colSpan={11} className="p-0 bg-gray-50/50 border-b border-gray-200">
                           <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm">
                             {entry["Invoice Number"] && (
                               <div className="col-span-2">
@@ -730,13 +747,25 @@ export default function DebitNotePage({ user }) {
                             )}
                             {entry["Debit Note Number"] && <div><p className="text-gray-500 text-xs mb-0.5">Note Number</p><p className="font-mono font-medium">{entry["Debit Note Number"]}</p></div>}
                             {entry["Debit Note Amount"] && <div><p className="text-gray-500 text-xs mb-0.5">Amount</p><p className="font-bold text-purple-700">{fmt(entry["Debit Note Amount"])}</p></div>}
+                            {entry["Debit Note Copy"] && (
+                              <div>
+                                <p className="text-gray-500 text-xs mb-0.5">Debit Note</p>
+                                <button
+                                  type="button"
+                                  onClick={() => handleViewFile(entry["Debit Note Copy"])}
+                                  className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1 font-medium"
+                                >
+                                  <Eye className="w-3.5 h-3.5" /> View Debit Note
+                                </button>
+                              </div>
+                            )}
                             <div>
-                              <p className="text-gray-500 text-xs mb-0.5">Note Copy</p>
-                              {entry["Debit Note Copy"] || entry["Credit Note Copy"] ? (
+                              <p className="text-gray-500 text-xs mb-0.5">Credit Note Copy</p>
+                              {entry["Credit Note Copy"] ? (
                                 <div className="flex items-center gap-2">
                                   <button
                                     type="button"
-                                    onClick={() => handleViewFile(entry["Debit Note Copy"] || entry["Credit Note Copy"])}
+                                    onClick={() => handleViewFile(entry["Credit Note Copy"])}
                                     className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1 font-medium"
                                   >
                                     <Eye className="w-3.5 h-3.5" /> View Document
@@ -970,17 +999,17 @@ export default function DebitNotePage({ user }) {
             {/* Current File Section */}
             <div className="rounded-lg border bg-gray-50 p-3 space-y-2 text-xs">
               <span className="font-semibold text-gray-700">Current Document:</span>
-              {editCopyEntry && (editCopyEntry["Debit Note Copy"] || editCopyEntry["Credit Note Copy"]) ? (
+              {editCopyEntry && editCopyEntry["Credit Note Copy"] ? (
                 <div className="flex items-center justify-between bg-white p-2 rounded border">
                   <span className="truncate max-w-[200px] text-gray-600 font-mono">
-                    {(editCopyEntry["Debit Note Copy"] || editCopyEntry["Credit Note Copy"]).split("/").pop()}
+                    {editCopyEntry["Credit Note Copy"].split("/").pop()}
                   </span>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
-                    onClick={() => handleViewFile(editCopyEntry["Debit Note Copy"] || editCopyEntry["Credit Note Copy"])}
+                    onClick={() => handleViewFile(editCopyEntry["Credit Note Copy"])}
                   >
                     <Eye className="w-3.5 h-3.5 mr-1" /> View Current
                   </Button>
