@@ -24,7 +24,7 @@ import { exportToExcel } from "@/lib/exportUtils"
 import { getSignedUrl } from "@/lib/storageUtils"
 
 const REASONS = {
-  "Damage Done": {
+  "Damage": {
     docType: "Debit Note",
     description: "Party is charged for goods damaged during handling.",
     amountBasis: "custom",
@@ -62,6 +62,9 @@ const REASONS = {
   },
 }
 
+// Older records were saved with the reason "Damage Done"
+REASONS["Damage Done"] = REASONS["Damage"]
+
 const fmt = (n) =>
   `₹${Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
@@ -76,6 +79,7 @@ const formatDate = (val) => {
 
 const reasonBadgeClass = (reason) => {
   const map = {
+    "Damage": "bg-red-50 text-red-700 border-red-200",
     "Damage Done": "bg-red-50 text-red-700 border-red-200",
     "Wrong Product": "bg-blue-50 text-blue-700 border-blue-200",
     "Quality Issue": "bg-amber-50 text-amber-700 border-amber-200",

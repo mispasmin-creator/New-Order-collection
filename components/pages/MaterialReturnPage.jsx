@@ -1237,9 +1237,7 @@ export default function MaterialReturnPage({ user }) {
                                 <SelectValue placeholder="Select reason" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="Damage Done">
-                                  Damage Done
-                                </SelectItem>
+                                <SelectItem value="Damage">Damage</SelectItem>
                                 <SelectItem value="Quality Issue">
                                   Quality Issue
                                 </SelectItem>
@@ -1255,7 +1253,7 @@ export default function MaterialReturnPage({ user }) {
                                 <SelectItem value="Material Reject">
                                   Material Reject
                                 </SelectItem>
-                                <SelectItem value="Material Reject">
+                                <SelectItem value="Rate Difference">
                                   Rate Difference
                                 </SelectItem>
                                 <SelectItem value="Other">Other</SelectItem>
