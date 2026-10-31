@@ -104,6 +104,7 @@ function onOpen() {
     .addItem('Generate Management Approval Report (Pending + Actioned)', 'generateManagementApprovalReport')
     .addItem('Generate Credit Note Report (Pending + Issued)', 'generateCreditNoteReport')
     .addItem('Generate Arrange Logistics Report (Pending + History)', 'generateArrangeLogisticsReport')
+    .addItem('Generate Load Material Report (Pending + History)', 'generateLoadMaterialReport')
     .addItem('Generate Sale Form 3 Report (Pending + Approved + Rejected)', 'generateSaleForm3Report')
     .addToUi();
 }
@@ -1076,5 +1077,58 @@ function generateArrangeLogisticsReport() {
     'Arrange Logistics (matching the app):\n' +
     '  Pending (rows): ' + pendingRows + '  (' + Object.keys(pendingPos).length + ' POs in the list)\n' +
     '  History (rows): ' + (rows.length - pendingRows)
+  );
+}
+
+// TestReportPage.jsx (Load Material page) logic, one row per DISPATCH row:
+//   Filter:  Planned2 IS NOT NULL
+//   Pending: Actual2 blank; History: Actual2 filled
+// The main Delay Report only keeps the LATEST DISPATCH row per order, so its
+// Load Material counts differ whenever an order has several dispatches.
+function generateLoadMaterialReport() {
+  const props = PropertiesService.getScriptProperties();
+  const baseUrl = props.getProperty('SUPABASE_URL');
+  const apiKey = props.getProperty('SUPABASE_KEY');
+  if (!baseUrl || !apiKey) {
+    SpreadsheetApp.getUi().alert('Set Supabase credentials first (Supabase Tools > Set Supabase Credentials).');
+    return;
+  }
+
+  const orders = fetchTable(baseUrl, apiKey, 'ORDER RECEIPT');
+  const dispatches = fetchTable(baseUrl, apiKey, 'DISPATCH');
+  const orderById = {};
+  orders.forEach((o) => { orderById[o.id] = o; });
+
+  const rows = [];
+  let pendingCount = 0;
+  dispatches.forEach((d) => {
+    if (!d.Planned2) return;
+    const order = d.po_id ? orderById[d.po_id] : null;
+    const isPending = !isFilled_(d.Actual2);
+    if (isPending) pendingCount++;
+    rows.push([
+      d.id, d['D-Sr Number'] || '', d['LGST-Sr Number'] || '',
+      d['Delivery Order No.'] || (order ? order['DO-Delivery Order No.'] : '') || '',
+      order ? order['PARTY PO NO (As Per Po Exact)'] || '' : '',
+      d['Party Name'] || (order ? order['Party Names'] : '') || '',
+      d['Product Name'] || (order ? order['Product Name'] : '') || '',
+      order ? order['Firm Name'] || '' : '',
+      d['Actual Truck Qty'] || '', d['Transporter Name'] || '', d['Truck No.'] || '',
+      toDate(d.Planned2), toDate(d.Actual2), delayInDays(d.Planned2, d.Actual2),
+      isPending ? 'Pending' : 'Completed',
+    ]);
+  });
+
+  writeSimpleSheet('Load Material',
+    ['DISPATCH id', 'D-Sr Number', 'LGST-Sr Number', 'DO Number', 'PO Number', 'Party Name', 'Product Name', 'Firm Name',
+     'Truck Qty', 'Transporter', 'Truck No.', 'Load Material Planned', 'Load Material Actual', 'Load Material Delay (Days)', 'Status'],
+    rows,
+    { delayCol: 14 }
+  );
+
+  SpreadsheetApp.getUi().alert(
+    'Load Material (per DISPATCH row, matching the app):\n' +
+    '  Pending: ' + pendingCount + '\n' +
+    '  History: ' + (rows.length - pendingCount)
   );
 }
