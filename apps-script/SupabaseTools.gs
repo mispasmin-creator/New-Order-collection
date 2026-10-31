@@ -566,8 +566,17 @@ function generateTCReport() {
   );
 }
 
-// UnifiedLogistics.jsx Bilty Update logic: deduplicated by Bill No.
-// Filter: DELIVERY."Planned 3" set and Type Of Transporting not Ex-Factory.
+// UnifiedLogistics.jsx (mode = "bilty") logic:
+//   Shipments: DELIVERY rows with "Planned 3" set, EXCLUDING Ex-Factory AND
+//              Owned Truck / Direct Supply (matched on Type Of Transporting OR
+//              Transporter Name) — those skip Bilty Update entirely.
+//   Done:      DELIVERY.Actual3 filled (bilty done) OR a matching POST DELIVERY
+//              receipt has Actual filled. Pending = not done.
+//   Receipt:   Bill No. + same firm + same party, or Order No. = DO if no Bill No.
+//   Firm:      resolved like the app (DISPATCH D-Sr+party, D-Sr+DO, DO+party, single-firm DO).
+//   Cards:     distinct Bill No. + one per bill-less ("stray") row.
+// Output = one row per (Firm + Bill No.) group, split into Pending / Completed
+// like the app's list (a bill with some rows pending and some done shows in both).
 function generateBiltyUpdateReport() {
   const props = PropertiesService.getScriptProperties();
   const baseUrl = props.getProperty('SUPABASE_URL');
@@ -580,86 +589,145 @@ function generateBiltyUpdateReport() {
   const orders = fetchTable(baseUrl, apiKey, 'ORDER RECEIPT');
   const deliveries = fetchTable(baseUrl, apiKey, 'DELIVERY');
   const postDeliveries = fetchTable(baseUrl, apiKey, 'POST DELIVERY');
+  const dispatches = fetchTable(baseUrl, apiKey, 'DISPATCH');
 
+  const low = (v) => String(v || '').trim().toLowerCase();
+  const trim = (v) => String(v === null || v === undefined ? '' : v).trim();
+
+  const poIdFirm = {};
   const firmByDoParty = {};
+  const doPartyList = {};
   const firmsByDo = {};
   orders.forEach((o) => {
-    const doNo = (o['DO-Delivery Order No.'] || '').trim();
+    const firm = o['Firm Name'];
+    if (o.id && firm) poIdFirm[o.id] = firm;
+    const doNo = trim(o['DO-Delivery Order No.']);
     if (!doNo) return;
-    const party = (o['Party Names'] || '').trim().toLowerCase();
-    const firm = o['Firm Name'] || '';
-    if (party && firm) firmByDoParty[doNo + '|' + party] = firm;
+    const party = trim(o['Party Names']);
+    if (party && firm) {
+      firmByDoParty[doNo + '|' + party.toLowerCase()] = firm;
+      if (!doPartyList[doNo]) doPartyList[doNo] = [];
+      doPartyList[doNo].push({ party: party.toLowerCase(), firm: firm });
+    }
     if (!firmsByDo[doNo]) firmsByDo[doNo] = {};
     if (firm) firmsByDo[doNo][firm] = true;
   });
   const firmByDoOnly = {};
   Object.keys(firmsByDo).forEach((doNo) => {
-    const firms = Object.keys(firmsByDo[doNo]);
-    if (firms.length === 1) firmByDoOnly[doNo] = firms[0];
+    const f = Object.keys(firmsByDo[doNo]);
+    if (f.length === 1) firmByDoOnly[doNo] = f[0];
   });
-  function resolveFirm(doNo, partyName) {
-    const cleanDo = (doNo || '').trim();
-    const cleanParty = (partyName || '').trim().toLowerCase();
-    if (cleanDo && cleanParty && firmByDoParty[cleanDo + '|' + cleanParty]) return firmByDoParty[cleanDo + '|' + cleanParty];
+
+  const dispFirmByDSrParty = {};
+  const dispFirmByDSrDo = {};
+  dispatches.forEach((d) => {
+    const dSr = trim(d['D-Sr Number']);
+    if (!dSr || !d.po_id || !poIdFirm[d.po_id]) return;
+    const firm = poIdFirm[d.po_id];
+    const party = low(d['Party Name']);
+    const doNo = trim(d['Delivery Order No.']);
+    if (party) dispFirmByDSrParty[dSr + '|' + party] = firm;
+    if (doNo) dispFirmByDSrDo[dSr + '|' + doNo] = firm;
+  });
+
+  function resolveFirm(poId, doNo, partyName, dSrNo) {
+    if (poId && poIdFirm[poId]) return poIdFirm[poId];
+    const dSr = trim(dSrNo), cleanDo = trim(doNo), party = low(partyName);
+    if (dSr && party && dispFirmByDSrParty[dSr + '|' + party]) return dispFirmByDSrParty[dSr + '|' + party];
+    if (dSr && cleanDo && dispFirmByDSrDo[dSr + '|' + cleanDo]) return dispFirmByDSrDo[dSr + '|' + cleanDo];
+    if (cleanDo && party) {
+      if (firmByDoParty[cleanDo + '|' + party]) return firmByDoParty[cleanDo + '|' + party];
+      const list = doPartyList[cleanDo] || [];
+      for (let k = 0; k < list.length; k++) {
+        if (list[k].party.indexOf(party) !== -1 || party.indexOf(list[k].party) !== -1) return list[k].firm;
+      }
+    }
     return (cleanDo && firmByDoOnly[cleanDo]) || '';
   }
 
-  const postByOrderNo = {};
-  postDeliveries.forEach((pd) => {
-    if (pd['Order No.'] && !postByOrderNo[pd['Order No.']]) postByOrderNo[pd['Order No.']] = pd;
-  });
-  const postByFirmBill = {};
-  postDeliveries.forEach((pd) => {
-    if (!pd['Bill No.']) return;
-    const firm = pd['Order No.'] ? resolveFirm(pd['Order No.'], pd['Party Name'], '') : '';
-    const key = firm + '::' + pd['Bill No.'];
-    if (!postByFirmBill[key]) postByFirmBill[key] = pd;
+  const NO_BILTY = { 'owned truck': true, 'direct supply': true };
+  function skipsBilty(del) {
+    return !!NO_BILTY[low(del['Type Of Transporting'])] || !!NO_BILTY[low(del['Transporter Name'])];
+  }
+  function isExFactory(t) { const x = low(t); return x === 'ex-factory' || x === 'ex factory'; }
+
+  const billToFirm = {};
+  const tagged = deliveries
+    .filter((del) => del['Planned 3'])
+    .map((del) => {
+      const poId = del.po_id || del['Order Receipt id'];
+      const dSr = del['D-Sr Number'] || del['Losgistic no.'] || '';
+      const firm = resolveFirm(poId, del['Delivery Order No.'], del['Party Name'], dSr);
+      if (del['Bill No.'] && firm) billToFirm[del['Bill No.']] = firm;
+      return Object.assign({}, del, { firmName: firm });
+    });
+
+  const taggedPost = postDeliveries.map((pd) => {
+    let firm = resolveFirm(pd.po_id, pd['Order No.'], pd['Party Name'], '');
+    if (!firm && pd['Bill No.'] && billToFirm[pd['Bill No.']]) firm = billToFirm[pd['Bill No.']];
+    return Object.assign({}, pd, { firmName: firm });
   });
 
-  const eligible = deliveries.filter((d) => {
-    if (!d['Planned 3']) return false;
-    const type = String(d['Type Of Transporting'] || '').toLowerCase().trim();
-    return type !== 'ex-factory' && type !== 'ex factory';
-  });
+  const shipments = tagged
+    .filter((del) => !isExFactory(del['Type Of Transporting']) && !skipsBilty(del))
+    .map((del) => {
+      let receipt = null;
+      for (let k = 0; k < taggedPost.length; k++) {
+        const pd = taggedPost[k];
+        const hit = del['Bill No.']
+          ? (pd['Bill No.'] === del['Bill No.'] && pd.firmName === del.firmName && low(pd['Party Name']) === low(del['Party Name']))
+          : (pd['Order No.'] && pd['Order No.'] === del['Delivery Order No.']);
+        if (hit) { receipt = pd; break; }
+      }
+      const isDone = !!del.Actual3 || !!(receipt && receipt['Actual']);
+      return { del: del, receipt: receipt, isDone: isDone };
+    });
 
-  const pendingGroups = {}, completedGroups = {};
-  eligible.forEach((d) => {
-    const firmName = resolveFirm(d['Delivery Order No.'], d['Party Name']);
-    const billNo = d['Bill No.'] || '';
-    const receipt = billNo ? postByFirmBill[firmName + '::' + billNo] : postByOrderNo[d['Delivery Order No.']];
-    const isDone = !!(receipt && receipt['Actual']);
-    const key = billNo || ('stray_' + d.id);
-    const bucket = isDone ? completedGroups : pendingGroups;
-    if (!bucket[key] || (d.id || 0) > (bucket[key].delivery.id || 0)) {
-      bucket[key] = { delivery: d, receipt: isDone ? receipt : null, firmName };
-    }
+  const groups = { pending: {}, completed: {} };
+  const cardSet = { pending: {}, completed: {} };
+  const cardStray = { pending: 0, completed: 0 };
+  shipments.forEach((sh) => {
+    const bucketName = sh.isDone ? 'completed' : 'pending';
+    const d = sh.del;
+    if (d['Bill No.']) cardSet[bucketName][d['Bill No.']] = true; else cardStray[bucketName]++;
+    const key = d['Bill No.'] ? (d.firmName || '') + '::' + d['Bill No.'] : 'stray_' + d.id;
+    const g = groups[bucketName][key] || (groups[bucketName][key] = { rows: [], first: sh });
+    g.rows.push(sh);
   });
 
   const rows = [];
-  function pushGroup(key, group, isDone) {
-    const d = group.delivery;
-    rows.push([
-      d.id, d['Delivery Order No.'] || '', d['Bill No.'] || '(no bill no. — stray)',
-      d['Party Name'] || '', d['Product Name'] || '', group.firmName,
-      d['Transporter Name'] || '', d['Type Of Transporting'] || '',
-      toDate(d['Planned 3']), toDate(group.receipt ? group.receipt['Actual'] : null),
-      delayInDays(d['Planned 3'], group.receipt ? group.receipt['Actual'] : null),
-      isDone ? 'Completed' : 'Pending',
-    ]);
+  function pushGroups(bucketName, label) {
+    Object.keys(groups[bucketName]).forEach((key) => {
+      const g = groups[bucketName][key];
+      const d = g.first.del;
+      const doneRow = g.rows.filter((r) => r.del.Actual3)[0];
+      const actual = bucketName === 'completed'
+        ? (doneRow ? doneRow.del.Actual3 : (g.first.receipt ? g.first.receipt['Actual'] : null))
+        : null;
+      rows.push([
+        d.id, g.rows.length, d['Delivery Order No.'] || '', d['Bill No.'] || '(no bill no. — stray)',
+        d['Party Name'] || '', d['Product Name'] || '', d.firmName || '',
+        d['Transporter Name'] || '', d['Type Of Transporting'] || '',
+        toDate(d['Planned 3']), toDate(actual), delayInDays(d['Planned 3'], actual),
+        label,
+      ]);
+    });
   }
-  Object.keys(pendingGroups).forEach((k) => pushGroup(k, pendingGroups[k], false));
-  Object.keys(completedGroups).forEach((k) => pushGroup(k, completedGroups[k], true));
+  pushGroups('pending', 'Pending');
+  pushGroups('completed', 'Completed');
 
   writeSimpleSheet('Bilty Update',
-    ['DELIVERY id', 'DO Number', 'Bill No.', 'Party Name', 'Product Name', 'Firm Name', 'Transporter', 'Transporter Type', 'Bilty Update Planned', 'Bilty Update Actual', 'Bilty Update Delay (Days)', 'Status'],
+    ['DELIVERY id', 'Products in Bill', 'DO Number', 'Bill No.', 'Party Name', 'Product Name', 'Firm Name', 'Transporter', 'Transporter Type',
+     'Bilty Update Planned (Planned 3)', 'Bilty Update Actual (Actual3)', 'Bilty Update Delay (Days)', 'Status'],
     rows,
-    { delayCol: 11 }
+    { delayCol: 12 }
   );
 
   SpreadsheetApp.getUi().alert(
-    'Bilty Update (grouped by Bill No., matching the app\'s cards):\n' +
-    '  Pending: ' + Object.keys(pendingGroups).length + '\n' +
-    '  Completed: ' + Object.keys(completedGroups).length
+    'Bilty Update (matching the app\'s cards):\n' +
+    '  Pending: ' + (Object.keys(cardSet.pending).length + cardStray.pending) + '\n' +
+    '  Completed: ' + (Object.keys(cardSet.completed).length + cardStray.completed) + '\n' +
+    '  (Sheet rows are per Firm+Bill group, so can be slightly more than the card count.)'
   );
 }
 
