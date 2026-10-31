@@ -99,6 +99,7 @@ function onOpen() {
     .addItem('Generate Invoice Report (per DISPATCH row)', 'generateInvoiceReport')
     .addItem('Generate TC Report (per DISPATCH row)', 'generateTCReport')
     .addItem('Generate Bilty Update Report (Pending + Completed)', 'generateBiltyUpdateReport')
+    .addItem('Generate Material Receipt Report (Pending + Completed)', 'generateMaterialReceiptReport')
     .addItem('Generate Fullkitting Report (Pending + Completed)', 'generateFullkittingReport')
     .addItem('Generate Accounts Approval Report (Pending + History)', 'generateAccountsApprovalReport')
     .addItem('Generate Management Approval Report (Pending + Actioned)', 'generateManagementApprovalReport')
@@ -577,7 +578,17 @@ function generateTCReport() {
 //   Cards:     distinct Bill No. + one per bill-less ("stray") row.
 // Output = one row per (Firm + Bill No.) group, split into Pending / Completed
 // like the app's list (a bill with some rows pending and some done shows in both).
-function generateBiltyUpdateReport() {
+function generateBiltyUpdateReport() { generateBiltyOrReceiptReport_('bilty'); }
+
+// Material Receipt page = same UnifiedLogistics.jsx in mode "receipt":
+//   Shipments: same DELIVERY set (Planned 3 set, no Ex-Factory) but Owned Truck /
+//              Direct Supply are INCLUDED (they skip Bilty and land here directly).
+//   Pending:   (Actual3 filled OR skips bilty) AND receipt Actual blank
+//   Completed: matching POST DELIVERY receipt Actual filled
+function generateMaterialReceiptReport() { generateBiltyOrReceiptReport_('receipt'); }
+
+function generateBiltyOrReceiptReport_(mode) {
+  const isReceipt = mode === 'receipt';
   const props = PropertiesService.getScriptProperties();
   const baseUrl = props.getProperty('SUPABASE_URL');
   const apiKey = props.getProperty('SUPABASE_KEY');
@@ -669,7 +680,7 @@ function generateBiltyUpdateReport() {
   });
 
   const shipments = tagged
-    .filter((del) => !isExFactory(del['Type Of Transporting']) && !skipsBilty(del))
+    .filter((del) => !isExFactory(del['Type Of Transporting']) && (isReceipt || !skipsBilty(del)))
     .map((del) => {
       let receipt = null;
       for (let k = 0; k < taggedPost.length; k++) {
@@ -679,14 +690,17 @@ function generateBiltyUpdateReport() {
           : (pd['Order No.'] && pd['Order No.'] === del['Delivery Order No.']);
         if (hit) { receipt = pd; break; }
       }
-      const isDone = !!del.Actual3 || !!(receipt && receipt['Actual']);
-      return { del: del, receipt: receipt, isDone: isDone };
+      const receiptDone = !!(receipt && receipt['Actual']);
+      const isDone = isReceipt ? receiptDone : (!!del.Actual3 || receiptDone);
+      const isPendingRow = isReceipt ? ((!!del.Actual3 || skipsBilty(del)) && !receiptDone) : !isDone;
+      return { del: del, receipt: receipt, isDone: isDone, isPendingRow: isPendingRow };
     });
 
   const groups = { pending: {}, completed: {} };
   const cardSet = { pending: {}, completed: {} };
   const cardStray = { pending: 0, completed: 0 };
   shipments.forEach((sh) => {
+    if (!sh.isDone && !sh.isPendingRow) return; // receipt mode: bilty not done yet -> not on this page
     const bucketName = sh.isDone ? 'completed' : 'pending';
     const d = sh.del;
     if (d['Bill No.']) cardSet[bucketName][d['Bill No.']] = true; else cardStray[bucketName]++;
@@ -701,14 +715,17 @@ function generateBiltyUpdateReport() {
       const g = groups[bucketName][key];
       const d = g.first.del;
       const doneRow = g.rows.filter((r) => r.del.Actual3)[0];
+      const receiptRow = g.rows.filter((r) => r.receipt && r.receipt['Actual'])[0];
       const actual = bucketName === 'completed'
-        ? (doneRow ? doneRow.del.Actual3 : (g.first.receipt ? g.first.receipt['Actual'] : null))
+        ? (isReceipt ? (receiptRow ? receiptRow.receipt['Actual'] : null)
+                     : (doneRow ? doneRow.del.Actual3 : (receiptRow ? receiptRow.receipt['Actual'] : null)))
         : null;
+      const plannedVal = isReceipt ? (g.rows.filter((r) => r.del.Actual3)[0] ? g.rows.filter((r) => r.del.Actual3)[0].del.Actual3 : d['Planned 3']) : d['Planned 3'];
       rows.push([
         d.id, g.rows.length, d['Delivery Order No.'] || '', d['Bill No.'] || '(no bill no. — stray)',
         d['Party Name'] || '', d['Product Name'] || '', d.firmName || '',
         d['Transporter Name'] || '', d['Type Of Transporting'] || '',
-        toDate(d['Planned 3']), toDate(actual), delayInDays(d['Planned 3'], actual),
+        toDate(plannedVal), toDate(actual), delayInDays(plannedVal, actual),
         label,
       ]);
     });
@@ -716,15 +733,16 @@ function generateBiltyUpdateReport() {
   pushGroups('pending', 'Pending');
   pushGroups('completed', 'Completed');
 
-  writeSimpleSheet('Bilty Update',
+  const stepName = isReceipt ? 'Material Receipt' : 'Bilty Update';
+  writeSimpleSheet(stepName,
     ['DELIVERY id', 'Products in Bill', 'DO Number', 'Bill No.', 'Party Name', 'Product Name', 'Firm Name', 'Transporter', 'Transporter Type',
-     'Bilty Update Planned (Planned 3)', 'Bilty Update Actual (Actual3)', 'Bilty Update Delay (Days)', 'Status'],
+     stepName + (isReceipt ? ' Planned (Bilty Actual3)' : ' Planned (Planned 3)'), stepName + (isReceipt ? ' Actual (Receipt)' : ' Actual (Actual3)'), stepName + ' Delay (Days)', 'Status'],
     rows,
     { delayCol: 12 }
   );
 
   SpreadsheetApp.getUi().alert(
-    'Bilty Update (matching the app\'s cards):\n' +
+    stepName + ' (matching the app\'s cards):\n' +
     '  Pending: ' + (Object.keys(cardSet.pending).length + cardStray.pending) + '\n' +
     '  Completed: ' + (Object.keys(cardSet.completed).length + cardStray.completed) + '\n' +
     '  (Sheet rows are per Firm+Bill group, so can be slightly more than the card count.)'
