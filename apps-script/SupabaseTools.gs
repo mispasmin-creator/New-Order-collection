@@ -65,7 +65,7 @@ const TABLE_JOINS = {
 const STEPS = [
   { label: 'Check PO', plannedTable: 'ORDER RECEIPT', plannedCol: 'Planned 1', actualTable: 'ORDER RECEIPT', actualCol: 'Actual 1' },
   { label: 'Check for Delivery', plannedTable: 'ORDER RECEIPT', plannedCol: 'Actual 2', actualTable: 'ORDER RECEIPT', actualCol: 'check_delivery_actual' },
-  { label: 'Arrange Logistics', plannedTable: 'ORDER RECEIPT', plannedCol: 'check_delivery_actual', actualTable: 'po_logistics_plans', actualCol: 'created_at', statusTable: 'ORDER RECEIPT', statusCol: 'logistics_status' },
+  { label: 'Arrange Logistics', plannedTable: 'ORDER RECEIPT', plannedCol: 'check_delivery_actual', actualTable: 'po_logistics_plans', actualCol: 'created_at', actualCondition: (r, plannedRecord, order) => order && !!order.logistics_status && order.logistics_status !== 'Pending Arrangement', statusTable: 'ORDER RECEIPT', statusCol: 'logistics_status' },
   { label: 'Logistics Approval', plannedTable: 'po_logistics_plans', plannedCol: 'created_at', actualTable: 'po_logistics_plans', actualCol: 'updated_at', actualCondition: (r, plannedRecord, order) => order && (order.logistics_status === 'Approved' || order.logistics_status === 'Logistics Rejected'), statusTable: 'ORDER RECEIPT', statusCol: 'logistics_status' },
   { label: 'Logistic', plannedTable: 'DISPATCH', plannedCol: 'Planned1', actualTable: 'DISPATCH', actualCol: 'Actual1' },
   { label: 'Load Material', plannedTable: 'DISPATCH', plannedCol: 'Planned2', actualTable: 'DISPATCH', actualCol: 'Actual2' },
@@ -103,6 +103,7 @@ function onOpen() {
     .addItem('Generate Accounts Approval Report (Pending + History)', 'generateAccountsApprovalReport')
     .addItem('Generate Management Approval Report (Pending + Actioned)', 'generateManagementApprovalReport')
     .addItem('Generate Credit Note Report (Pending + Issued)', 'generateCreditNoteReport')
+    .addItem('Generate Arrange Logistics Report (Pending + History)', 'generateArrangeLogisticsReport')
     .addItem('Generate Sale Form 3 Report (Pending + Approved + Rejected)', 'generateSaleForm3Report')
     .addToUi();
 }
@@ -1004,5 +1005,76 @@ function generateSaleForm3Report() {
     '  Pending: ' + counts.Pending + '\n' +
     '  Approved: ' + counts.Approved + '\n' +
     '  Rejected: ' + counts.Rejected
+  );
+}
+
+// ArrangeLogistics.jsx fetchOrders() logic, one row per ORDER RECEIPT row
+// (the app's Pending/History badges count rows, even though the list is
+// grouped by PO):
+//   Filter:  "Actual 2" IS NOT NULL AND check_delivery_actual IS NOT NULL
+//   Pending: logistics_status is blank or 'Pending Arrangement'
+//   History: anything else (Pending Approval, Approved, Logistics Rejected,
+//            Order Cancelled)
+// NOTE: some Pending rows already have po_logistics_splits (e.g. reset
+// plans) — those must NOT count as arranged, so Actual stays blank for
+// Pending rows regardless of any plan/split that exists.
+function generateArrangeLogisticsReport() {
+  const props = PropertiesService.getScriptProperties();
+  const baseUrl = props.getProperty('SUPABASE_URL');
+  const apiKey = props.getProperty('SUPABASE_KEY');
+  if (!baseUrl || !apiKey) {
+    SpreadsheetApp.getUi().alert('Set Supabase credentials first (Supabase Tools > Set Supabase Credentials).');
+    return;
+  }
+
+  const orders = fetchTable(baseUrl, apiKey, 'ORDER RECEIPT');
+  const splits = fetchTable(baseUrl, apiKey, 'po_logistics_splits');
+  const plans = fetchTable(baseUrl, apiKey, 'po_logistics_plans');
+
+  const planById = {};
+  plans.forEach((p) => { planById[p.id] = p; });
+  const splitByOrder = indexLatestByKey(splits, (row) => row.po_id || null);
+
+  const rows = [];
+  let pendingRows = 0;
+  const pendingPos = {};
+  orders.forEach((o) => {
+    if (!o['Actual 2'] || !o['check_delivery_actual']) return;
+    const status = o.logistics_status || '';
+    const isPending = !status || status === 'Pending Arrangement';
+
+    const split = splitByOrder[o.id];
+    const plan = split && split.plan_id ? planById[split.plan_id] : null;
+    let actual = null;
+    if (!isPending) {
+      actual = plan ? plan.created_at : (status === 'Order Cancelled' ? o.order_cancelled_at : null);
+    }
+    if (isPending) {
+      pendingRows++;
+      pendingPos[o['PARTY PO NO (As Per Po Exact)'] || ('row_' + o.id)] = true;
+    }
+
+    rows.push([
+      o.id, o['PARTY PO NO (As Per Po Exact)'] || '', o['DO-Delivery Order No.'] || '',
+      o['Party Names'] || '', o['Product Name'] || '', o['Firm Name'] || '',
+      split ? (split.transporter_name || '') : '',
+      toDate(o.check_delivery_actual), toDate(actual), delayInDays(o.check_delivery_actual, actual),
+      status || 'Pending Arrangement',
+      isPending ? 'Pending' : 'Completed',
+    ]);
+  });
+
+  writeSimpleSheet('Arrange Logistics',
+    ['ORDER RECEIPT id', 'PO Number', 'DO Number', 'Party Name', 'Product Name', 'Firm Name', 'Transporter',
+     'Arrange Logistics Planned (check_delivery_actual)', 'Arrange Logistics Actual', 'Arrange Logistics Delay (Days)',
+     'Logistics Status', 'Status'],
+    rows,
+    { delayCol: 10 }
+  );
+
+  SpreadsheetApp.getUi().alert(
+    'Arrange Logistics (matching the app):\n' +
+    '  Pending (rows): ' + pendingRows + '  (' + Object.keys(pendingPos).length + ' POs in the list)\n' +
+    '  History (rows): ' + (rows.length - pendingRows)
   );
 }
