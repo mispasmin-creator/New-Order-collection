@@ -103,6 +103,7 @@ function onOpen() {
     .addItem('Generate Accounts Approval Report (Pending + History)', 'generateAccountsApprovalReport')
     .addItem('Generate Management Approval Report (Pending + Actioned)', 'generateManagementApprovalReport')
     .addItem('Generate Credit Note Report (Pending + Issued)', 'generateCreditNoteReport')
+    .addItem('Generate Sale Form 3 Report (Pending + Approved + Rejected)', 'generateSaleForm3Report')
     .addToUi();
 }
 
@@ -941,5 +942,67 @@ function generateCreditNoteReport() {
     'Credit Note (per Material Return row, matching the app):\n' +
     '  Pending Note Issuance: ' + pendingCount + '\n' +
     '  Notes Issued: ' + (rows.length - pendingCount)
+  );
+}
+
+// SaleForm3Page.jsx logic, one row per "SALE FORM 3" record whose DISPATCH row
+// has Actual4 set. Status comes straight from SALE FORM 3."Status"
+// (Pending / Approved / Rejected). Planned = SALE FORM 3."Planned",
+// Actual = SALE FORM 3."Actual" (stays blank only while Pending).
+function generateSaleForm3Report() {
+  const props = PropertiesService.getScriptProperties();
+  const baseUrl = props.getProperty('SUPABASE_URL');
+  const apiKey = props.getProperty('SUPABASE_KEY');
+  if (!baseUrl || !apiKey) {
+    SpreadsheetApp.getUi().alert('Set Supabase credentials first (Supabase Tools > Set Supabase Credentials).');
+    return;
+  }
+
+  const orders = fetchTable(baseUrl, apiKey, 'ORDER RECEIPT');
+  const dispatches = fetchTable(baseUrl, apiKey, 'DISPATCH');
+  const sf3 = fetchTable(baseUrl, apiKey, 'SALE FORM 3');
+
+  const orderById = {};
+  orders.forEach((o) => { orderById[o.id] = o; });
+  const dispatchById = {};
+  dispatches.forEach((d) => { if (d.Actual4) dispatchById[d.id] = d; });
+
+  const counts = { Pending: 0, Approved: 0, Rejected: 0 };
+  const rows = [];
+  sf3.forEach((sf) => {
+    const d = dispatchById[sf.dispatch_id];
+    if (!d) return;
+    const order = d.po_id ? orderById[d.po_id] : null;
+    const status = sf['Status'] || 'Pending';
+    counts[status] = (counts[status] || 0) + 1;
+    const planned = sf['Planned'] || d.Actual4;
+    const actual = status === 'Pending' ? null : sf['Actual'];
+    rows.push([
+      d.id, d['D-Sr Number'] || '',
+      order ? order['PARTY PO NO (As Per Po Exact)'] || '' : '',
+      d['Party Name'] || (order ? order['Party Names'] : '') || '',
+      d['Delivery Order No.'] || (order ? order['DO-Delivery Order No.'] : '') || '',
+      d['Product Name'] || (order ? order['Product Name'] : '') || '',
+      order ? order['Firm Name'] || '' : '',
+      d['Bill Number'] || '', toDate(d['Bill Date']),
+      d['Qty To Be Dispatched'] || '', d['Actual Truck Qty'] || '', d['TC Required'] || 'No',
+      toDate(planned), toDate(actual), delayInDays(planned, actual),
+      sf['Remarks'] || '', sf['Action By'] || '', status,
+    ]);
+  });
+
+  writeSimpleSheet('Sale Form 3',
+    ['DISPATCH id', 'D-Sr Number', 'PO Number', 'Party Name', 'DO Number', 'Product Name', 'Firm Name', 'Invoice No.', 'Invoice Date',
+     'Dispatch Qty', 'Truck Qty', 'TC Required', 'Sale Form 3 Planned', 'Sale Form 3 Actual', 'Sale Form 3 Delay (Days)',
+     'Remarks', 'Action By', 'Status'],
+    rows,
+    { delayCol: 15 }
+  );
+
+  SpreadsheetApp.getUi().alert(
+    'Sale Form 3 (matching the app):\n' +
+    '  Pending: ' + counts.Pending + '\n' +
+    '  Approved: ' + counts.Approved + '\n' +
+    '  Rejected: ' + counts.Rejected
   );
 }
