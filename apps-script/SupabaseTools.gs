@@ -508,6 +508,13 @@ function generateTCReport() {
   const dispatches = fetchTable(baseUrl, apiKey, 'DISPATCH');
   const deliveries = fetchTable(baseUrl, apiKey, 'DELIVERY');
 
+  // Sale Form 3 gate (same as TCPage.jsx): a dispatch with a SALE FORM 3 row
+  // reaches TC only once that row is Approved. Dispatches with no row flow as before.
+  let sf3StatusByDispatch = {};
+  try {
+    fetchTable(baseUrl, apiKey, 'SALE FORM 3').forEach((r) => { sf3StatusByDispatch[r.dispatch_id] = r['Status']; });
+  } catch (e) { sf3StatusByDispatch = {}; }
+
   const orderById = {};
   orders.forEach((o) => { orderById[o.id] = o; });
 
@@ -522,6 +529,7 @@ function generateTCReport() {
   dispatches.forEach((d) => {
     if (!d.Actual4) return;
     if (d['TC Required'] !== 'Yes') return;
+    if (sf3StatusByDispatch[d.id] !== undefined && sf3StatusByDispatch[d.id] !== 'Approved') return;
     const order = d.po_id ? orderById[d.po_id] : null;
 
     const deliveryRow = deliveryByKey[d['D-Sr Number'] + '|' + (d['Delivery Order No.'] || '')] || null;
