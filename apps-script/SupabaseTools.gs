@@ -106,6 +106,7 @@ function onOpen() {
     .addItem('Generate Credit Note Report (Pending + Issued)', 'generateCreditNoteReport')
     .addItem('Generate Arrange Logistics Report (Pending + History)', 'generateArrangeLogisticsReport')
     .addItem('Generate Load Material Report (Pending + History)', 'generateLoadMaterialReport')
+    .addItem('Generate Return of Material Report (Pending + Dispatched)', 'generateReturnOfMaterialReport')
     .addItem('Generate Sale Form 3 Report (Pending + Approved + Rejected)', 'generateSaleForm3Report')
     .addToUi();
 }
@@ -1224,5 +1225,55 @@ function generateLoadMaterialReport() {
     'Load Material (per DISPATCH row, matching the app):\n' +
     '  Pending: ' + pendingCount + '\n' +
     '  History: ' + (rows.length - pendingCount)
+  );
+}
+
+// ReturnOfMaterialPage.jsx fetchData() logic, one row per "Material Return":
+//   Filter:  Actual5 filled (management approved) AND "Debit Note Issued At" filled
+//   History: "Return Dispatched At" filled; Pending: blank
+// Planned = Debit Note Issued At, Actual = Return Dispatched At.
+function generateReturnOfMaterialReport() {
+  const props = PropertiesService.getScriptProperties();
+  const baseUrl = props.getProperty('SUPABASE_URL');
+  const apiKey = props.getProperty('SUPABASE_KEY');
+  if (!baseUrl || !apiKey) {
+    SpreadsheetApp.getUi().alert('Set Supabase credentials first (Supabase Tools > Set Supabase Credentials).');
+    return;
+  }
+
+  const orders = fetchTable(baseUrl, apiKey, 'ORDER RECEIPT');
+  const returns = fetchTable(baseUrl, apiKey, 'Material Return');
+  const resolveFirm = buildMaterialReturnFirmResolver_(orders);
+
+  const rows = [];
+  let pendingCount = 0;
+  returns.forEach((r) => {
+    if (!isFilled_(r['Actual5']) || !isFilled_(r['Debit Note Issued At'])) return;
+    const isDone = isFilled_(r['Return Dispatched At']);
+    if (!isDone) pendingCount++;
+    rows.push([
+      r.id, r['Return No.'] || '', r['D.O Number'] || '', r['Party Name'] || '', r['Product Name'] || '',
+      resolveFirm(r['D.O Number'], r['Party Name']),
+      r['Qty Of Return Material'] || r['Qty'] || '', r['Reason Of Material Return'] || '',
+      r['Debit Note Number'] || '', r['Return Transporter Name'] || '',
+      toDate(r['Debit Note Issued At']), toDate(r['Return Dispatched At']),
+      delayInDays(r['Debit Note Issued At'], r['Return Dispatched At']),
+      isDone ? 'Dispatched' : 'Pending',
+    ]);
+  });
+
+  writeSimpleSheet('Return of Material',
+    ['Material Return id', 'Return No.', 'DO Number', 'Party Name', 'Product Name', 'Firm Name', 'Qty', 'Reason',
+     'Credit Note No.', 'Return Transporter',
+     'Return of Material Planned (Debit Note Issued At)', 'Return of Material Actual (Return Dispatched At)',
+     'Return of Material Delay (Days)', 'Status'],
+    rows,
+    { delayCol: 13 }
+  );
+
+  SpreadsheetApp.getUi().alert(
+    'Return of Material (per Material Return row, matching the app):\n' +
+    '  Pending Return Dispatch: ' + pendingCount + '\n' +
+    '  Returns Dispatched: ' + (rows.length - pendingCount)
   );
 }
