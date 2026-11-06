@@ -455,8 +455,16 @@ export default function ReturnOfMaterialPage({ user }) {
                 {activeTab === "history" && (
                   <>
                     <TableHead>Transporter Name</TableHead>
+                    <TableHead>Transporter Mobile</TableHead>
                     <TableHead>Vehicle No.</TableHead>
                     <TableHead>Dispatched On</TableHead>
+                    <TableHead>Received Date</TableHead>
+                    <TableHead>Freight Paid By</TableHead>
+                    <TableHead>Transporter Type</TableHead>
+                    <TableHead>Transport Rate</TableHead>
+                    <TableHead>Bilty No.</TableHead>
+                    <TableHead>Bilty Image</TableHead>
+                    <TableHead>Remarks</TableHead>
                   </>
                 )}
               </TableRow>
@@ -464,7 +472,7 @@ export default function ReturnOfMaterialPage({ user }) {
             <TableBody>
               {displayList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="text-center py-12 text-gray-500">
+                  <TableCell colSpan={19} className="text-center py-12 text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <PackageCheck className="w-8 h-8 text-gray-300" />
                       <span>No {activeTab} records found</span>
@@ -508,15 +516,41 @@ export default function ReturnOfMaterialPage({ user }) {
                       {activeTab === "history" && (
                         <>
                           <TableCell className="text-sm">{entry["Return Transporter Name"] || "—"}</TableCell>
+                          <TableCell className="text-sm">{entry["Return Transporter Mobile"] || "—"}</TableCell>
                           <TableCell className="text-sm font-mono">{entry["Return Vehicle No"] || "—"}</TableCell>
                           <TableCell className="text-sm text-gray-600">{formatDate(entry["Return Dispatched At"])}</TableCell>
+                          <TableCell className="text-sm text-gray-600">{formatDate(entry["Return Received At"])}</TableCell>
+                          <TableCell className="text-sm">{entry["Return Freight Paid By"] || "—"}</TableCell>
+                          <TableCell className="text-sm">{entry["Return Transporter Type"] || "—"}</TableCell>
+                          <TableCell className="text-sm font-semibold text-green-700">
+                            {entry["Return Transport Rate"] !== null && entry["Return Transport Rate"] !== undefined && entry["Return Transport Rate"] !== ""
+                              ? fmt(entry["Return Transport Rate"])
+                              : "—"}
+                          </TableCell>
+                          <TableCell className="text-sm font-mono">{entry["Return Bilty No"] || "—"}</TableCell>
+                          <TableCell>
+                            {entry["Return Bilty Copy"] ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50"
+                                onClick={() => handleViewFile(entry["Return Bilty Copy"])}
+                              >
+                                <Eye className="w-3.5 h-3.5 mr-1" /> View
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm max-w-[220px] whitespace-pre-wrap">{entry["Remarks"] || "—"}</TableCell>
                         </>
                       )}
                     </TableRow>
 
                     {expandedRows[entry.id] && (
                       <TableRow>
-                        <TableCell colSpan={13} className="p-0 bg-gray-50/50 border-b border-gray-200">
+                        <TableCell colSpan={19} className="p-0 bg-gray-50/50 border-b border-gray-200">
                           <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm">
                             {entry["Invoice Number"] && (
                               <div className="col-span-2">
