@@ -1,0 +1,406 @@
+<title>Campaign Life FMS UI</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: sticky top bar with 3 sample tabs; each sample is a working screen of the kiln campaign workflow */
+:root{
+  --bg:#f3f1ee; --surface:#ffffff; --surface2:#ebe8e4; --line:#d8d3cc;
+  --fg:#23201d; --muted:#6c655e;
+  --ember:#c4471b; --ember-soft:#f7e1d7; --steel:#3d5a6c;
+  --good:#2f7d4f; --good-soft:#dcefe3; --warn:#a96a00; --warn-soft:#f8ecd0; --bad:#b3261e; --bad-soft:#f6dcda;
+  --f-display:'Barlow Condensed','Arial Narrow',sans-serif;
+  --f-body:'IBM Plex Sans',system-ui,sans-serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#171513; --surface:#211e1b; --surface2:#2b2723; --line:#3a352f;
+  --fg:#efebe6; --muted:#a29a91;
+  --ember:#ef7a47; --ember-soft:#3b2318; --steel:#8db4c9;
+  --good:#6cc590; --good-soft:#1c3025; --warn:#e5ae4a; --warn-soft:#38290f; --bad:#f08a82; --bad-soft:#3a1d1b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#171513; --surface:#211e1b; --surface2:#2b2723; --line:#3a352f;
+  --fg:#efebe6; --muted:#a29a91;
+  --ember:#ef7a47; --ember-soft:#3b2318; --steel:#8db4c9;
+  --good:#6cc590; --good-soft:#1c3025; --warn:#e5ae4a; --warn-soft:#38290f; --bad:#f08a82; --bad-soft:#3a1d1b; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 40px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1180px;margin:0 auto}
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:14px 0 0;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.brand h1{font-family:var(--f-display);font-size:26px;letter-spacing:.02em;margin:0;text-transform:uppercase}
+.brand span{color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:4px;margin-top:10px;overflow-x:auto}
+.tab{appearance:none;border:0;background:none;color:var(--muted);font:600 13px var(--f-body);padding:10px 14px;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--ember)}
+:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
+.screen{padding-top:20px}
+.note{color:var(--muted);font-size:12px;margin:0 0 16px}
+h2{font-family:var(--f-display);font-size:22px;text-transform:uppercase;letter-spacing:.03em;margin:0}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font:500 11px var(--f-mono);padding:2px 8px;border-radius:99px;background:var(--surface2);color:var(--muted);white-space:nowrap}
+.pill.bad{background:var(--bad-soft);color:var(--bad)} .pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.good{background:var(--good-soft);color:var(--good)}
+.btn{appearance:none;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:600 13px var(--f-body);padding:9px 14px;border-radius:6px;cursor:pointer}
+.btn.primary{background:var(--ember);border-color:var(--ember);color:#fff}
+.btn.small{padding:5px 10px;font-size:12px}
+
+/* summary strip */
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:18px}
+.strip div{background:var(--surface);padding:12px 14px}
+.strip b{display:block;font:700 30px/1 var(--f-display)}
+.strip small{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.strip .r b{color:var(--bad)}
+
+/* screen 1 board */
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.toolbar select,.toolbar input,.field select,.field input{font:inherit;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;min-width:0}
+.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.col{background:var(--surface2);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.col h3{margin:0;display:flex;justify-content:space-between;align-items:baseline;font:600 12px var(--f-body);text-transform:uppercase;letter-spacing:.06em}
+.col h3 em{font:normal 11px var(--f-mono);color:var(--muted);text-transform:none;letter-spacing:0}
+.col .rule{font-size:11px;color:var(--muted);margin-top:-4px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 11px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.card.late{border-left:4px solid var(--bad)}
+.card.soon{border-left:4px solid var(--warn)}
+.card .row{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.card .co{font-weight:600;overflow-wrap:anywhere}
+.card .meta{font-size:12px;color:var(--muted)}
+.cn{font:500 12px var(--f-mono);color:var(--ember)}
+.below{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;margin-top:18px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
+.panel h2{margin-bottom:10px}
+.call{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.call:first-of-type{border-top:0}
+.tl{display:flex;flex-direction:column;gap:0}
+.tl div{display:grid;grid-template-columns:70px 1fr auto;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13px;align-items:center}
+.tl div:first-child{border-top:0}
+
+/* screen 2 form */
+.split{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:24px;align-items:start}
+.phone{border:1px solid var(--line);background:var(--surface);border-radius:22px;padding:14px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+.phone .bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.seg{display:flex;background:var(--surface2);border-radius:8px;padding:3px;margin-bottom:12px}
+.seg button{flex:1;appearance:none;border:0;background:none;color:var(--muted);font:600 12px var(--f-body);padding:7px 4px;border-radius:6px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.field label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.fieldrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.zones{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.zones .field{margin:0}
+.zones input{width:100%;font-family:var(--f-mono);text-align:center}
+.avg{display:flex;justify-content:space-between;align-items:baseline;background:var(--ember-soft);border-radius:8px;padding:10px 12px;margin-bottom:12px}
+.avg b{font:700 30px/1 var(--f-display);color:var(--ember)}
+.photo{border:1.5px dashed var(--line);border-radius:8px;padding:14px;text-align:center;color:var(--muted);font-size:12px;margin-bottom:12px}
+.explain h2{margin-bottom:8px}
+.explain ul{padding-left:18px;margin:0 0 14px;color:var(--muted)}
+.explain li{margin-bottom:4px}
+.autos{display:grid;gap:8px}
+.autos div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 12px;font-size:13px}
+.autos b{font-family:var(--f-mono);font-weight:500;color:var(--steel)}
+
+/* screen 3 dashboard */
+.dhead{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:16px}
+.dhead .field{margin:0}
+.charts{display:grid;grid-template-columns:1.4fr 1fr;gap:14px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 0;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:6px;border-radius:2px}
+svg text{font-family:var(--f-mono);font-size:10px;fill:var(--muted)}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td.n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
+
+@media (max-width:900px){
+  .board{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .below,.split,.charts{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:520px){ .board{grid-template-columns:minmax(0,1fr)} }
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><h1>Campaign Life FMS</h1><span>UI samples. All names, numbers and dates are examples.</span></div>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="t-board" data-s="board">1 · Task board</button>
+      <button class="tab" role="tab" id="t-form" data-s="inspection">2 · Inspector form</button>
+      <button class="tab" role="tab" id="t-dash" data-s="campaign">3 · Campaign dashboard</button>
+    </div>
+  </header>
+
+  <!-- SAMPLE 1 -->
+  <section class="screen" id="s-board" hidden>
+    <p class="note">Sample 1. Every order (CN no.) sits in the column of its next pending step. Late cards are marked red, based on Planned minus Actual.</p>
+    <div class="strip">
+      <div><b>24</b><small>Open orders</small></div>
+      <div><b>9</b><small>Due today</small></div>
+      <div class="r"><b>5</b><small>Delayed</small></div>
+      <div><b>3.2 d</b><small>Avg delay</small></div>
+      <div><b>11</b><small>Calls pending</small></div>
+    </div>
+    <div class="toolbar">
+      <select id="f-who" aria-label="Owner"><option value="">All owners</option><option>Sanjay</option><option>CRM</option><option>Sales</option></select>
+      <select id="f-state" aria-label="State"><option value="">All states</option><option value="late">Delayed only</option><option value="soon">Due soon</option></select>
+      <input id="f-q" type="search" placeholder="Search company or CN no.">
+    </div>
+    <div class="board" id="board"></div>
+
+    <div class="below">
+      <div class="panel">
+        <h2>Calls due today</h2>
+        <div id="calls"></div>
+      </div>
+      <div class="panel">
+        <h2>Timeline rule for CN-05</h2>
+        <div class="tl">
+          <div><span class="mono">28 Apr</span><span>Campaign start, Company Visit</span><span class="pill good">Done</span></div>
+          <div><span class="mono">05 May</span><span>Running kiln inspection (start + 7)</span><span class="pill good">Done</span></div>
+          <div><span class="mono">01 Jun</span><span>Take shutdown date (N − 3)</span><span class="pill warn">Today</span></div>
+          <div><span class="mono">04 Jun</span><span>Shutdown inspection (N)</span><span class="pill">Planned</span></div>
+          <div><span class="mono">06 Jun</span><span>Restart, CRM (N + 2)</span><span class="pill">Planned</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SAMPLE 2 -->
+  <section class="screen" id="s-inspection" hidden>
+    <p class="note">Sample 2. Phone view for the inspector. The same form pattern serves both the running kiln check and the shutdown check, with the average computed on screen.</p>
+    <div class="split">
+      <div class="phone">
+        <div class="bar"><h2 id="fTitle">Running kiln inspection</h2><span class="pill warn">Due today</span></div>
+        <div class="seg" role="group" aria-label="Form type">
+          <button id="m-run" aria-pressed="true">Running kiln</button>
+          <button id="m-shut" aria-pressed="false">Shutdown</button>
+        </div>
+        <div class="field"><label for="so">Service order</label>
+          <select id="so"><option>CN-05 · Agrawal Sponge Pvt Ltd · Kiln 1</option><option>CN-01 · Action Ispat And Power · Kiln 2</option><option>CN-39 · Aarti Sponge &amp; Power · Kiln 1</option></select></div>
+        <div class="fieldrow">
+          <div class="field"><label for="dt">Date of visit</label><input id="dt" type="date" value="2026-11-06"></div>
+          <div class="field"><label for="ins">Inspector</label><input id="ins" value="Sanjay Singh"></div>
+        </div>
+        <div class="field" id="innerWrap"><label for="inner">Inner temp. of kiln (°C)</label><input id="inner" type="number" value="1100" inputmode="numeric"></div>
+        <div class="field"><label id="zlabel">Outer temp. per zone (°C)</label></div>
+        <div class="zones" id="zones"></div>
+        <div class="avg"><span id="avgLabel">Average outer temp.</span><b id="avg" class="mono">0</b></div>
+        <div class="photo" id="photoNote">Tap to add photo of inner temperature reading</div>
+        <div class="field" id="expWrap"><label for="exp">Expected date of shutdown</label><input id="exp" type="date" value="2026-12-04"></div>
+        <button class="btn primary" style="width:100%" id="submit">Submit inspection</button>
+      </div>
+      <div class="explain">
+        <h2>What happens after submit</h2>
+        <ul>
+          <li>The task disappears from Sanjay's list and the Actual date is filled in the FMS.</li>
+          <li>Delay is calculated against Planned and shown on the board.</li>
+          <li>The next step is scheduled automatically from this form's data.</li>
+        </ul>
+        <div class="autos" id="autos"></div>
+        <p class="note" style="margin-top:14px">Zones with no reading can stay blank. The average only counts filled zones.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SAMPLE 3 -->
+  <section class="screen" id="s-campaign" hidden>
+    <p class="note">Sample 3. Pick a company and kiln to see the full campaign history: how long each campaign ran and how the lining wore down per zone.</p>
+    <div class="dhead">
+      <div class="field"><label for="dCo">Company</label>
+        <select id="dCo"><option value="0">Agrawal Sponge Pvt Ltd</option><option value="1">Action Ispat And Power Pvt Ltd</option></select></div>
+      <div class="field"><label for="dKiln">Kiln no.</label>
+        <select id="dKiln"><option>1</option><option>2</option></select></div>
+      <div class="field"><label for="dMode">Show</label>
+        <select id="dMode"><option value="thick">Refractory thickness (mm)</option><option value="temp">Outer temperature (°C)</option></select></div>
+    </div>
+    <div class="strip" id="dStrip"></div>
+    <div class="charts">
+      <div class="panel">
+        <h2 id="cTitle">Thickness by zone</h2>
+        <svg id="chart" viewBox="0 0 560 280" role="img" aria-label="Line chart by zone for each campaign" style="width:100%;height:auto;max-width:100%"></svg>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="panel">
+        <h2>Zone readings, latest</h2>
+        <div id="zbars"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h2>Campaign history</h2>
+      <div class="tablewrap"><table id="hist"></table></div>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ---------- tabs ---------- */
+var screens={board:'s-board',inspection:'s-inspection',campaign:'s-campaign'};
+function show(name){
+  if(!screens[name]) name='board';
+  Object.keys(screens).forEach(function(k){
+    document.getElementById(screens[k]).hidden = k!==name;
+  });
+  document.querySelectorAll('.tab').forEach(function(t){t.setAttribute('aria-selected', t.dataset.s===name)});
+  try{history.replaceState(null,'','#'+name)}catch(e){}
+}
+document.querySelectorAll('.tab').forEach(function(t){t.addEventListener('click',function(){show(t.dataset.s)})});
+window.addEventListener('hashchange',function(){show(location.hash.slice(1))});
+
+/* ---------- sample 1: board ---------- */
+var steps=[
+  {k:'run',name:'Running kiln inspection',who:'Sanjay',rule:'Start date + 7 days'},
+  {k:'call',name:'Take shutdown date',who:'Sanjay',rule:'Call party, 3 days before shutdown'},
+  {k:'shut',name:'Shutdown inspection',who:'Sanjay',rule:'On shutdown date'},
+  {k:'rest',name:'Restart the process',who:'CRM',rule:'Shutdown + 2 days'}
+];
+var orders=[
+  ['run','CN-05','Agrawal Sponge Pvt Ltd','Kiln 1 · Camp. 4','06 Nov',0],
+  ['run','CN-12','Aarti Sponge & Power Ltd','Kiln 1 · Camp. 2','03 Nov',3],
+  ['run','CN-18','Alankar Alloys Pvt Ltd','Kiln 2 · Camp. 1','08 Nov',-2],
+  ['call','CN-01','Action Ispat And Power','Kiln 2 · Camp. 3','04 Nov',2],
+  ['call','CN-03','Amalgam Steel & Power','Kiln 1 · Camp. 5','07 Nov',-1],
+  ['shut','CN-39','Animesh Ispat Pvt Ltd','Kiln 1 · Camp. 2','05 Nov',1],
+  ['shut','CN-40','Agrasen Re-Rollers','Kiln 3 · Camp. 6','10 Nov',-4],
+  ['rest','CN-47','AIC Iron Industries','Kiln 1 · Camp. 3','02 Nov',4],
+  ['rest','CN-22','Ambica Minerals','Kiln 2 · Camp. 1','09 Nov',-3]
+];
+var owners={Sanjay:'Sanjay',CRM:'CRM'};
+function renderBoard(){
+  var who=document.getElementById('f-who').value, st=document.getElementById('f-state').value,
+      q=document.getElementById('f-q').value.toLowerCase();
+  var html='';
+  steps.forEach(function(s){
+    var items=orders.filter(function(o){
+      if(o[0]!==s.k) return false;
+      var d=o[5];
+      if(who && (who==='Sales'? true : s.who!==who)) return false;
+      if(who==='Sales') return false;
+      if(st==='late' && d<=0) return false;
+      if(st==='soon' && !(d<=0 && d>=-2)) return false;
+      if(q && (o[1]+' '+o[2]).toLowerCase().indexOf(q)<0) return false;
+      return true;
+    });
+    html+='<div class="col"><h3>'+s.name+'<em>'+items.length+'</em></h3><div class="rule">'+s.who+' · '+s.rule+'</div>';
+    items.forEach(function(o){
+      var d=o[5], cls=d>0?'late':(d>=-2?'soon':''), pill=d>0?'<span class="pill bad">'+d+' d late</span>':(d===0?'<span class="pill warn">today</span>':'<span class="pill">in '+(-d)+' d</span>');
+      html+='<div class="card '+cls+'"><div class="row"><span class="cn">'+o[1]+'</span>'+pill+'</div><div class="co">'+o[2]+'</div><div class="meta">'+o[3]+'</div><div class="row"><span class="meta mono">Planned '+o[4]+'</span><button class="btn small">Open form</button></div></div>';
+    });
+    if(!items.length) html+='<div class="meta" style="padding:8px 2px">Nothing here.</div>';
+    html+='</div>';
+  });
+  document.getElementById('board').innerHTML=html;
+}
+['f-who','f-state','f-q'].forEach(function(id){document.getElementById(id).addEventListener('input',renderBoard)});
+renderBoard();
+var calls=[
+  ['CN-01','Manish Chobey Ji (GM)','Calls made: 3','Call'],
+  ['CN-03','Tilak Verma','Calls made: 2','Call'],
+  ['CN-04','Satish Gupta','Calls made: 1','Call']
+];
+document.getElementById('calls').innerHTML=calls.map(function(c){
+  return '<div class="call"><span class="cn">'+c[0]+'</span><div><div class="co">'+c[1]+'</div><div class="meta">'+c[2]+' · Shutdown date not given</div></div><button class="btn small">Log call</button></div>';
+}).join('');
+
+/* ---------- sample 2: form ---------- */
+var mode='run';
+var zonesEl=document.getElementById('zones');
+for(var z=1;z<=9;z++){
+  var d=document.createElement('div');d.className='field';
+  d.innerHTML='<label for="z'+z+'">Zone '+z+'</label><input id="z'+z+'" type="number" inputmode="numeric">';
+  zonesEl.appendChild(d);
+}
+var runVals=[159,208,205,244,248,263,295,224,''], shutVals=[200,200,190,180,160,170,'','',''];
+function setVals(a){for(var i=0;i<9;i++)document.getElementById('z'+(i+1)).value=a[i]}
+function calcAvg(){
+  var s=0,n=0;
+  for(var i=1;i<=9;i++){var v=parseFloat(document.getElementById('z'+i).value);if(!isNaN(v)){s+=v;n++}}
+  document.getElementById('avg').textContent=n?(s/n).toFixed(1):'0';
+}
+zonesEl.addEventListener('input',calcAvg);
+function autos(){
+  var rows=mode==='run'
+   ?['Actual date saved as <b>06 Nov</b>. Delay vs planned: <b>0 days</b>','Next task: <b>Take shutdown date</b>, planned <b>N − 3</b>, owner <b>Sanjay</b>','Dashboard row added for CN-05, campaign day <b>' + 192 + '</b>']
+   :['Actual date saved. Shutdown inspection closed for this order','Average thickness stored and added to campaign history','Next task: <b>Restart the process</b>, planned <b>+2 days</b>, owner <b>CRM</b>'];
+  document.getElementById('autos').innerHTML=rows.map(function(r){return '<div>'+r+'</div>'}).join('');
+}
+function setMode(m){
+  mode=m;
+  document.getElementById('m-run').setAttribute('aria-pressed',m==='run');
+  document.getElementById('m-shut').setAttribute('aria-pressed',m==='shut');
+  var run=m==='run';
+  document.getElementById('fTitle').textContent=run?'Running kiln inspection':'Shutdown inspection';
+  document.getElementById('zlabel').textContent=run?'Outer temp. per zone (°C)':'Refractory distance per zone (mm)';
+  document.getElementById('avgLabel').textContent=run?'Average outer temp.':'Average thickness';
+  document.getElementById('innerWrap').hidden=!run;
+  document.getElementById('expWrap').hidden=!run;
+  document.getElementById('photoNote').textContent=run?'Tap to add photo of inner temperature reading':'Tap to add one photo per zone (up to 9)';
+  setVals(run?runVals:shutVals);calcAvg();autos();
+}
+document.getElementById('m-run').addEventListener('click',function(){setMode('run')});
+document.getElementById('m-shut').addEventListener('click',function(){setMode('shut')});
+document.getElementById('submit').addEventListener('click',function(){
+  var b=this;b.textContent='Submitted';b.disabled=true;
+  setTimeout(function(){b.textContent='Submit inspection';b.disabled=false},1800);
+});
+setMode('run');
+
+/* ---------- sample 3: dashboard ---------- */
+var data=[
+ {name:'Agrawal Sponge Pvt Ltd',camps:[
+  {no:1,start:'12 Jan',days:168,thick:[200,200,195,190,185,180,190,195,200],temp:[150,190,185,215,225,240,265,210,180]},
+  {no:2,start:'02 Jul',days:181,thick:[200,198,190,182,170,165,178,188,196],temp:[160,200,195,225,235,255,280,215,185]},
+  {no:3,start:'03 Jan',days:192,thick:[198,194,184,172,158,150,166,180,192],temp:[170,208,205,244,248,263,295,224,190]}]},
+ {name:'Action Ispat And Power Pvt Ltd',camps:[
+  {no:1,start:'20 Feb',days:140,thick:[200,196,190,184,176,170,180,190,198],temp:[155,195,190,220,232,248,270,212,182]},
+  {no:2,start:'15 Jul',days:155,thick:[199,194,186,176,166,158,170,184,194],temp:[165,204,198,232,240,258,286,220,188]}]}
+];
+var colors=['--steel','--warn','--ember'];
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+function renderDash(){
+  var co=data[+document.getElementById('dCo').value], mode=document.getElementById('dMode').value;
+  var key=mode, last=co.camps[co.camps.length-1];
+  var all=[].concat.apply([],co.camps.map(function(c){return c[key]}));
+  var lo=Math.floor(Math.min.apply(null,all)/10)*10-10, hi=Math.ceil(Math.max.apply(null,all)/10)*10+10;
+  var W=560,H=280,L=40,R=14,T=14,B=30;
+  function x(i){return L+i*(W-L-R)/8}
+  function y(v){return T+(hi-v)*(H-T-B)/(hi-lo)}
+  var s='';
+  for(var g=0;g<=4;g++){
+    var v=lo+g*(hi-lo)/4, yy=y(v);
+    s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+yy+'" y2="'+yy+'" stroke="'+css('--line')+'" stroke-width="1"/><text x="'+(L-6)+'" y="'+(yy+3)+'" text-anchor="end">'+Math.round(v)+'</text>';
+  }
+  for(var i=0;i<9;i++) s+='<text x="'+x(i)+'" y="'+(H-10)+'" text-anchor="middle">Z'+(i+1)+'</text>';
+  co.camps.forEach(function(c,ci){
+    var col=css(colors[(ci+3-co.camps.length)%3]), pts=c[key].map(function(v,i){return x(i)+','+y(v)}).join(' ');
+    var isLast=ci===co.camps.length-1;
+    s+='<polyline fill="none" stroke="'+col+'" stroke-width="'+(isLast?3:2)+'" stroke-linejoin="round" points="'+pts+'"'+(isLast?'':' opacity=".75"')+'/>';
+    if(isLast) c[key].forEach(function(v,i){s+='<circle cx="'+x(i)+'" cy="'+y(v)+'" r="3.5" fill="'+col+'"/>'});
+  });
+  document.getElementById('chart').innerHTML=s;
+  document.getElementById('cTitle').textContent=mode==='thick'?'Thickness by zone (mm)':'Outer temperature by zone (°C)';
+  document.getElementById('legend').innerHTML=co.camps.map(function(c,ci){
+    return '<span><i style="background:'+css(colors[(ci+3-co.camps.length)%3])+'"></i>Campaign '+c.no+'</span>';
+  }).join('');
+  var avgT=last.thick.reduce(function(a,b){return a+b},0)/9, worst=Math.min.apply(null,last.thick);
+  document.getElementById('dStrip').innerHTML=
+   '<div><b>'+co.camps.length+'</b><small>Campaigns</small></div><div><b>'+last.days+' d</b><small>Latest campaign</small></div>'+
+   '<div><b>'+avgT.toFixed(0)+' mm</b><small>Avg thickness</small></div><div class="r"><b>'+worst+' mm</b><small>Thinnest zone (Z'+(last.thick.indexOf(worst)+1)+')</small></div>';
+  var max=Math.max.apply(null,last[key]);
+  document.getElementById('zbars').innerHTML=last[key].map(function(v,i){
+    var pct=Math.round(v/ (mode==='thick'?200:Math.max(300,max)) *100);
+    var bad=mode==='thick'&&v<160;
+    return '<div style="display:grid;grid-template-columns:34px 1fr 40px;gap:8px;align-items:center;margin:7px 0"><span class="mono" style="color:var(--muted)">Z'+(i+1)+'</span><div style="background:var(--surface2);height:10px;border-radius:5px"><div style="width:'+pct+'%;height:100%;border-radius:5px;background:'+(bad?css('--bad'):css('--steel'))+'"></div></div><span class="mono" style="text-align:right">'+v+'</span></div>';
+  }).join('');
+  document.getElementById('hist').innerHTML='<thead><tr><th>Campaign</th><th>Start date</th><th style="text-align:right">Days run</th><th style="text-align:right">Avg thickness</th><th>Status</th></tr></thead><tbody>'+
+   co.camps.map(function(c,i){
+     var a=c.thick.reduce(function(p,q){return p+q},0)/9, cur=i===co.camps.length-1;
+     return '<tr><td>#'+c.no+'</td><td>'+c.start+'</td><td class="n">'+c.days+'</td><td class="n">'+a.toFixed(1)+' mm</td><td>'+(cur?'<span class="pill warn">Shutdown due</span>':'<span class="pill good">Closed</span>')+'</td></tr>';
+   }).join('')+'</tbody>';
+}
+['dCo','dKiln','dMode'].forEach(function(id){document.getElementById(id).addEventListener('change',renderDash)});
+renderDash();
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',renderDash);
+
+show(location.hash.slice(1));
+</script>
