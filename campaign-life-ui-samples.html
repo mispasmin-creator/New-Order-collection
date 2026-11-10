@@ -113,6 +113,13 @@ th{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.06em;col
 td{padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
 td.n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
 
+.ctgrid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:16px;align-items:start}
+#ctTable tr.sel td{background:var(--ember-soft)}
+#ctTable td.date-bad{color:var(--bad);font-weight:600}
+#ctTable td.date-today{color:var(--warn);font-weight:600}
+.hist-row{display:grid;grid-template-columns:62px 1fr;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:12px}
+.hist-row:first-child{border-top:0}
+@media (max-width:900px){ .ctgrid{grid-template-columns:minmax(0,1fr)} }
 @media (max-width:1100px){ .board{grid-template-columns:repeat(3,minmax(0,1fr))} }
 @media (max-width:900px){
   .board{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -129,6 +136,7 @@ td.n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-num
       <button class="tab" role="tab" id="t-board" data-s="board">1 · Task board</button>
       <button class="tab" role="tab" id="t-form" data-s="inspection">2 · Step forms</button>
       <button class="tab" role="tab" id="t-dash" data-s="campaign">3 · Campaign dashboard</button>
+      <button class="tab" role="tab" id="t-calls" data-s="calls">4 · Call tracker</button>
     </div>
   </header>
 
@@ -247,11 +255,45 @@ td.n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-num
       <div class="tablewrap"><table id="hist"></table></div>
     </div>
   </section>
+
+  <!-- SAMPLE 4 -->
+  <section class="screen" id="s-calls" hidden>
+    <p class="note">Sample 4. Step 3, Take shut down date. An order stays in this list until the party gives a shutdown date (or the call is marked "Forget to take"). Each call is one log entry with one of three results.</p>
+    <div class="strip" id="ctStrip"></div>
+    <div class="ctgrid">
+      <div class="panel">
+        <h2>Orders waiting for a shutdown date</h2>
+        <div class="tablewrap"><table id="ctTable"></table></div>
+        <p class="note" style="margin:10px 0 0">Sorted by expected shutdown date. Next call in red means the call is overdue.</p>
+      </div>
+      <div class="panel" id="ctForm">
+        <h2>Log a call</h2>
+        <div class="field"><label for="cCn">Service order</label><select id="cCn"></select></div>
+        <div class="fieldrow">
+          <div class="field"><label for="cPerson">Person called</label><input id="cPerson" placeholder="Name"></div>
+          <div class="field"><label for="cDesig">Designation</label>
+            <select id="cDesig"><option>Processor</option><option>GM</option><option>Plant head</option><option>Owner</option><option>Purchase</option></select></div>
+        </div>
+        <div class="field"><label for="cMobile">Mobile no.</label><input id="cMobile" inputmode="numeric" placeholder="10 digit number"></div>
+        <div class="field"><label for="cStatus">Shut down date given</label>
+          <select id="cStatus">
+            <option value="no">No, shut down date not taken</option>
+            <option value="yes">Yes, shut down date taken</option>
+            <option value="forgot">Forget to take</option>
+          </select></div>
+        <div class="field" id="cExpWrap" hidden><label for="cExp">Expected shut down date</label><input id="cExp" type="date"></div>
+        <div class="field" id="cNextWrap"><label for="cNext">Next date for call</label><input id="cNext" type="date"></div>
+        <button class="btn primary" style="width:100%" id="cSave">Save call</button>
+        <div class="autos" id="cResult" style="margin-top:12px"></div>
+        <div id="cHist" style="margin-top:14px"></div>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script>
 /* ---------- tabs ---------- */
-var screens={board:'s-board',inspection:'s-inspection',campaign:'s-campaign'};
+var screens={board:'s-board',inspection:'s-inspection',campaign:'s-campaign',calls:'s-calls'};
 function show(name){
   if(!screens[name]) name='board';
   Object.keys(screens).forEach(function(k){
@@ -427,6 +469,100 @@ function renderDash(){
 ['dCo','dKiln','dMode'].forEach(function(id){document.getElementById(id).addEventListener('change',renderDash)});
 renderDash();
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',renderDash);
+
+/* ---------- sample 4: call tracker ---------- */
+var TODAY='2026-11-10';
+var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmt(s){if(!s)return '-';var p=s.split('-');return +p[2]+' '+MON[+p[1]-1]}
+function addDays(s,n){var d=new Date(s+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)}
+/* same idea as WORKDAY.INTL(date, n, "0000001"): count n working days, Sunday is the only day off */
+function addWorkdays(s,n){var d=s,c=0;while(c<n){d=addDays(d,1);if(new Date(d+'T00:00:00Z').getUTCDay()!==0)c++}return d}
+var STATUS_TXT={yes:'Yes, shut down date taken',no:'No, shut down date not taken',forgot:'Forget to take'};
+var ct=[
+ {cn:'CN-01',co:'Action Ispat And Power',exp:'2026-11-14',camp:3,size:'100 TPD',kiln:2,
+  log:[{d:'2026-11-03',who:'Manish Chobey Ji (GM)',st:'no',next:'2026-11-06'},{d:'2026-11-06',who:'Manish Chobey Ji (GM)',st:'no',next:'2026-11-09'}]},
+ {cn:'CN-03',co:'Amalgam Steel & Power',exp:'2026-11-12',camp:5,size:'150 TPD',kiln:1,
+  log:[{d:'2026-11-07',who:'Tilak Verma',st:'no',next:'2026-11-10'}]},
+ {cn:'CN-04',co:'Aarti Sponge & Power Ltd',exp:'2026-11-18',camp:2,size:'100 TPD',kiln:1,
+  log:[{d:'2026-11-08',who:'Satish Gupta',st:'no',next:'2026-11-12'}]},
+ {cn:'CN-12',co:'Alankar Alloys Pvt Ltd',exp:'2026-11-20',camp:2,size:'120 TPD',kiln:1,log:[]},
+ {cn:'CN-22',co:'Ambica Minerals',exp:'2026-11-25',camp:1,size:'80 TPD',kiln:2,log:[]}
+];
+var ctSel=ct[0].cn, ctDone=0;
+function ctLast(o){return o.log.length?o.log[o.log.length-1]:null}
+function renderCt(){
+  var rows=ct.slice().sort(function(a,b){return a.exp<b.exp?-1:1});
+  var overdue=rows.filter(function(o){var l=ctLast(o);return l&&l.next&&l.next<TODAY}).length;
+  var today=rows.filter(function(o){var l=ctLast(o);return l&&l.next===TODAY}).length;
+  document.getElementById('ctStrip').innerHTML=
+    '<div><b>'+rows.length+'</b><small>Waiting for date</small></div><div class="r"><b>'+overdue+'</b><small>Call overdue</small></div>'+
+    '<div><b>'+today+'</b><small>Call today</small></div><div><b>'+rows.filter(function(o){return !o.log.length}).length+'</b><small>Not called yet</small></div>'+
+    '<div><b>'+ctDone+'</b><small>Resolved this session</small></div>';
+  var h='<thead><tr><th>Service order</th><th>Company</th><th>Expected shutdown</th><th>Camp.</th><th>Size</th><th>Kiln</th><th>Last call</th><th>Next call</th><th style="text-align:right">Calls</th><th>Shutdown given</th><th></th></tr></thead><tbody>';
+  rows.forEach(function(o){
+    var l=ctLast(o), nx=l&&l.next, cls=nx?(nx<TODAY?'date-bad':(nx===TODAY?'date-today':'')):'';
+    var pill=l?'<span class="pill warn">No date yet</span>':'<span class="pill">Not called</span>';
+    h+='<tr class="'+(o.cn===ctSel?'sel':'')+'"><td class="cn">'+o.cn+'</td><td>'+o.co+'</td><td class="n">'+fmt(o.exp)+'</td><td class="n">'+o.camp+'</td><td>'+o.size+'</td><td class="n">'+o.kiln+'</td>'+
+       '<td class="n">'+(l?fmt(l.d):'-')+'</td><td class="n '+cls+'">'+(nx?fmt(nx):'-')+'</td><td class="n">'+o.log.length+'</td><td>'+pill+'</td>'+
+       '<td><button class="btn small" data-cn="'+o.cn+'">Log call</button></td></tr>';
+  });
+  if(!rows.length) h+='<tr><td colspan="11" style="padding:18px;color:var(--muted)">Every order has a shutdown date. Nothing to call.</td></tr>';
+  document.getElementById('ctTable').innerHTML=h+'</tbody>';
+  var sel=document.getElementById('cCn');
+  sel.innerHTML=rows.map(function(o){return '<option value="'+o.cn+'"'+(o.cn===ctSel?' selected':'')+'>'+o.cn+' · '+o.co+'</option>'}).join('');
+  renderCtHist();
+}
+function renderCtHist(){
+  var o=ct.filter(function(x){return x.cn===ctSel})[0], el=document.getElementById('cHist');
+  if(!o){el.innerHTML='';return}
+  el.innerHTML='<div class="meta" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px">Call history, '+o.cn+'</div>'+
+    (o.log.length?o.log.slice().reverse().map(function(c){
+      return '<div class="hist-row"><span class="mono">'+fmt(c.d)+'</span><span>'+c.who+' · '+STATUS_TXT[c.st]+(c.next?' · next call '+fmt(c.next):'')+'</span></div>';
+    }).join(''):'<div class="meta">No calls yet.</div>');
+}
+function ctMode(){
+  var v=document.getElementById('cStatus').value;
+  document.getElementById('cExpWrap').hidden=v!=='yes';
+  document.getElementById('cNextWrap').hidden=v!=='no';
+}
+document.getElementById('cStatus').addEventListener('change',ctMode);
+document.getElementById('cCn').addEventListener('change',function(){ctSel=this.value;renderCt()});
+document.getElementById('ctTable').addEventListener('click',function(e){
+  var b=e.target.closest('button[data-cn]');if(!b)return;
+  ctSel=b.dataset.cn;renderCt();
+  document.getElementById('ctForm').scrollIntoView({behavior:'smooth',block:'nearest'});
+});
+document.getElementById('cNext').value=addDays(TODAY,2);
+document.getElementById('cExp').value=addDays(TODAY,6);
+document.getElementById('cSave').addEventListener('click',function(){
+  var o=ct.filter(function(x){return x.cn===ctSel})[0], res=document.getElementById('cResult');
+  if(!o){return}
+  var st=document.getElementById('cStatus').value, who=document.getElementById('cPerson').value.trim();
+  var exp=document.getElementById('cExp').value, nxt=document.getElementById('cNext').value, err='';
+  if(!who) err='Enter the name of the person called.';
+  else if(st==='yes'&&!exp) err='Enter the expected shut down date.';
+  else if(st==='no'&&!nxt) err='Enter the next date for call.';
+  else if(st==='no'&&nxt<=TODAY) err='Next call date must be after today.';
+  if(err){res.innerHTML='<div style="border-color:var(--bad);color:var(--bad)">'+err+'</div>';return}
+  var msgs=[];
+  if(st==='no'){
+    o.log.push({d:TODAY,who:who,st:'no',next:nxt});
+    msgs.push('Call saved. '+o.cn+' stays in the list.','Next call planned for <b>'+fmt(nxt)+'</b>. Calls made: <b>'+o.log.length+'</b>');
+  }else{
+    var date=st==='yes'?exp:TODAY;
+    o.log.push({d:TODAY,who:who,st:st,next:''});
+    ct=ct.filter(function(x){return x.cn!==o.cn});ctDone++;
+    msgs.push(o.cn+' removed from this list. Shut down date: <b>'+fmt(date)+'</b>');
+    if(st==='yes') msgs.push('Shutdown inspection planned: <b>'+fmt(addWorkdays(date,0))+'</b> (Sanjay)');
+    else msgs.push('Shutdown inspection is <b>not planned</b>, because the date was not taken');
+    msgs.push('Restart planned: <b>'+fmt(addWorkdays(date,2))+'</b> (CRM), 2 working days later, Sunday off');
+    ctSel=ct.length?ct[0].cn:'';
+  }
+  res.innerHTML=msgs.map(function(m){return '<div>'+m+'</div>'}).join('');
+  document.getElementById('cPerson').value='';
+  renderCt();
+});
+ctMode();renderCt();
 
 show(location.hash.slice(1));
 </script>
