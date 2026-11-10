@@ -56,7 +56,7 @@ h2{font-family:var(--f-display);font-size:22px;text-transform:uppercase;letter-s
 /* screen 1 board */
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 .toolbar select,.toolbar input,.field select,.field input{font:inherit;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;min-width:0}
-.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.board{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
 .col{background:var(--surface2);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .col h3{margin:0;display:flex;justify-content:space-between;align-items:baseline;font:600 12px var(--f-body);text-transform:uppercase;letter-spacing:.06em}
 .col h3 em{font:normal 11px var(--f-mono);color:var(--muted);text-transform:none;letter-spacing:0}
@@ -113,6 +113,7 @@ th{font:600 11px var(--f-body);text-transform:uppercase;letter-spacing:.06em;col
 td{padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
 td.n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
 
+@media (max-width:1100px){ .board{grid-template-columns:repeat(3,minmax(0,1fr))} }
 @media (max-width:900px){
   .board{grid-template-columns:repeat(2,minmax(0,1fr))}
   .below,.split,.charts{grid-template-columns:minmax(0,1fr)}
@@ -126,14 +127,14 @@ td.n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-num
     <div class="brand"><h1>Campaign Life FMS</h1><span>UI samples. All names, numbers and dates are examples.</span></div>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" id="t-board" data-s="board">1 · Task board</button>
-      <button class="tab" role="tab" id="t-form" data-s="inspection">2 · Inspector form</button>
+      <button class="tab" role="tab" id="t-form" data-s="inspection">2 · Step forms</button>
       <button class="tab" role="tab" id="t-dash" data-s="campaign">3 · Campaign dashboard</button>
     </div>
   </header>
 
   <!-- SAMPLE 1 -->
   <section class="screen" id="s-board" hidden>
-    <p class="note">Sample 1. Every order (CN no.) sits in the column of its next pending step. Late cards are marked red, based on Planned minus Actual.</p>
+    <p class="note">Sample 1. Every order (CN no.) sits in the column of its next pending step, in the workflow order: Company visit, Running kiln inspection, Take shut down date, Shutdown inspection, Restart. Late cards are marked red.</p>
     <div class="strip">
       <div><b>24</b><small>Open orders</small></div>
       <div><b>9</b><small>Due today</small></div>
@@ -156,7 +157,7 @@ td.n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-num
       <div class="panel">
         <h2>Timeline rule for CN-05</h2>
         <div class="tl">
-          <div><span class="mono">28 Apr</span><span>Campaign start, Company Visit</span><span class="pill good">Done</span></div>
+          <div><span class="mono">28 Apr</span><span>Company visit form (Sales), campaign starts</span><span class="pill good">Done</span></div>
           <div><span class="mono">05 May</span><span>Running kiln inspection (start + 7)</span><span class="pill good">Done</span></div>
           <div><span class="mono">01 Jun</span><span>Take shutdown date (N − 3)</span><span class="pill warn">Today</span></div>
           <div><span class="mono">04 Jun</span><span>Shutdown inspection (N)</span><span class="pill">Planned</span></div>
@@ -171,24 +172,39 @@ td.n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-num
     <p class="note">Sample 2. Phone view for the inspector. The same form pattern serves both the running kiln check and the shutdown check, with the average computed on screen.</p>
     <div class="split">
       <div class="phone">
-        <div class="bar"><h2 id="fTitle">Running kiln inspection</h2><span class="pill warn">Due today</span></div>
+        <div class="bar"><h2 id="fTitle">Company visit</h2><span class="pill warn">Due today</span></div>
         <div class="seg" role="group" aria-label="Form type">
-          <button id="m-run" aria-pressed="true">Running kiln</button>
+          <button id="m-visit" aria-pressed="true">Visit</button>
+          <button id="m-run" aria-pressed="false">Running</button>
           <button id="m-shut" aria-pressed="false">Shutdown</button>
         </div>
-        <div class="field"><label for="so">Service order</label>
+        <div id="visitBlock">
+          <div class="field"><label for="vCo">Company</label>
+            <select id="vCo"><option>Alankar Alloys Pvt Ltd</option><option>Agrawal Sponge Pvt Ltd</option><option>Amalgam Steel &amp; Power Ltd</option></select></div>
+          <div class="fieldrow">
+            <div class="field"><label for="vKiln">Kiln no.</label><input id="vKiln" type="number" value="3"></div>
+            <div class="field"><label for="vSize">Size of kiln</label><input id="vSize" value="100 TPD"></div>
+          </div>
+          <div class="fieldrow">
+            <div class="field"><label for="vCamp">Campaign no.</label><input id="vCamp" type="number" value="1"></div>
+            <div class="field"><label for="vStart">Date of campaign starting</label><input id="vStart" type="date" value="2026-11-01"></div>
+          </div>
+          <div class="field"><label for="vWho">Visited by</label><input id="vWho" value="Sales Co-ordinator"></div>
+          <p class="note">Restart (step 5) uses this same form. CRM picks the company again and enters the next campaign no.</p>
+        </div>
+        <div class="field" id="soWrap"><label for="so">Service order</label>
           <select id="so"><option>CN-05 · Agrawal Sponge Pvt Ltd · Kiln 1</option><option>CN-01 · Action Ispat And Power · Kiln 2</option><option>CN-39 · Aarti Sponge &amp; Power · Kiln 1</option></select></div>
-        <div class="fieldrow">
+        <div class="fieldrow" id="rowWrap">
           <div class="field"><label for="dt">Date of visit</label><input id="dt" type="date" value="2026-11-06"></div>
           <div class="field"><label for="ins">Inspector</label><input id="ins" value="Sanjay Singh"></div>
         </div>
         <div class="field" id="innerWrap"><label for="inner">Inner temp. of kiln (°C)</label><input id="inner" type="number" value="1100" inputmode="numeric"></div>
-        <div class="field"><label id="zlabel">Outer temp. per zone (°C)</label></div>
+        <div class="field" id="zlabelWrap"><label id="zlabel">Outer temp. per zone (°C)</label></div>
         <div class="zones" id="zones"></div>
-        <div class="avg"><span id="avgLabel">Average outer temp.</span><b id="avg" class="mono">0</b></div>
+        <div class="avg" id="avgBox"><span id="avgLabel">Average outer temp.</span><b id="avg" class="mono">0</b></div>
         <div class="photo" id="photoNote">Tap to add photo of inner temperature reading</div>
         <div class="field" id="expWrap"><label for="exp">Expected date of shutdown</label><input id="exp" type="date" value="2026-12-04"></div>
-        <button class="btn primary" style="width:100%" id="submit">Submit inspection</button>
+        <button class="btn primary" style="width:100%" id="submit">Save visit and create order</button>
       </div>
       <div class="explain">
         <h2>What happens after submit</h2>
@@ -249,12 +265,15 @@ window.addEventListener('hashchange',function(){show(location.hash.slice(1))});
 
 /* ---------- sample 1: board ---------- */
 var steps=[
-  {k:'run',name:'Running kiln inspection',who:'Sanjay',rule:'Start date + 7 days'},
-  {k:'call',name:'Take shutdown date',who:'Sanjay',rule:'Call party, 3 days before shutdown'},
-  {k:'shut',name:'Shutdown inspection',who:'Sanjay',rule:'On shutdown date'},
-  {k:'rest',name:'Restart the process',who:'CRM',rule:'Shutdown + 2 days'}
+  {k:'visit',name:'1 Company visit',who:'Sales',rule:'Sales Co-ordinator · as per the form'},
+  {k:'run',name:'2 Running kiln inspection',who:'Sanjay',rule:'Campaign start + 7 days'},
+  {k:'call',name:'3 Take shut down date',who:'Sanjay',rule:'Call party, N − 3 days'},
+  {k:'shut',name:'4 Shutdown inspection',who:'Sanjay',rule:'On shutdown date (N)'},
+  {k:'rest',name:'5 Restart the process',who:'CRM',rule:'Shutdown + 2 days'}
 ];
 var orders=[
+  ['visit','CN-48','Alankar Alloys Pvt Ltd','Kiln 3 · Camp. 1','07 Nov',1],
+  ['visit','CN-49','Amalgam Steel & Power','Kiln 2 · Camp. 4','12 Nov',-2],
   ['run','CN-05','Agrawal Sponge Pvt Ltd','Kiln 1 · Camp. 4','06 Nov',0],
   ['run','CN-12','Aarti Sponge & Power Ltd','Kiln 1 · Camp. 2','03 Nov',3],
   ['run','CN-18','Alankar Alloys Pvt Ltd','Kiln 2 · Camp. 1','08 Nov',-2],
@@ -274,8 +293,7 @@ function renderBoard(){
     var items=orders.filter(function(o){
       if(o[0]!==s.k) return false;
       var d=o[5];
-      if(who && (who==='Sales'? true : s.who!==who)) return false;
-      if(who==='Sales') return false;
+      if(who && s.who!==who) return false;
       if(st==='late' && d<=0) return false;
       if(st==='soon' && !(d<=0 && d>=-2)) return false;
       if(q && (o[1]+' '+o[2]).toLowerCase().indexOf(q)<0) return false;
@@ -303,7 +321,7 @@ document.getElementById('calls').innerHTML=calls.map(function(c){
 }).join('');
 
 /* ---------- sample 2: form ---------- */
-var mode='run';
+var mode='visit';
 var zonesEl=document.getElementById('zones');
 for(var z=1;z<=9;z++){
   var d=document.createElement('div');d.className='field';
@@ -319,31 +337,39 @@ function calcAvg(){
 }
 zonesEl.addEventListener('input',calcAvg);
 function autos(){
-  var rows=mode==='run'
-   ?['Actual date saved as <b>06 Nov</b>. Delay vs planned: <b>0 days</b>','Next task: <b>Take shutdown date</b>, planned <b>N − 3</b>, owner <b>Sanjay</b>','Dashboard row added for CN-05, campaign day <b>' + 192 + '</b>']
-   :['Actual date saved. Shutdown inspection closed for this order','Average thickness stored and added to campaign history','Next task: <b>Restart the process</b>, planned <b>+2 days</b>, owner <b>CRM</b>'];
+  var rows=mode==='visit'
+   ?['New order <b>CN-48</b> created with company, kiln, campaign no. and start date','Company visit marked done. Actual date saved','Next task: <b>Running kiln inspection</b>, planned <b>start + 7 days</b> (08 Nov), owner <b>Sanjay</b>']
+   :mode==='run'
+   ?['Actual date saved as <b>06 Nov</b>. Delay vs planned: <b>0 days</b>','Next task: <b>Take shut down date</b>, planned <b>N − 3</b>, owner <b>Sanjay</b>','Dashboard row added for CN-05, campaign day <b>192</b>']
+   :['Actual date saved. Shutdown inspection closed for this order','Average thickness stored and added to campaign history','Next task: <b>Restart the process</b> (company visit form, CRM), planned <b>+2 days</b>'];
   document.getElementById('autos').innerHTML=rows.map(function(r){return '<div>'+r+'</div>'}).join('');
 }
 function setMode(m){
   mode=m;
-  document.getElementById('m-run').setAttribute('aria-pressed',m==='run');
+  var run=m==='run', vis=m==='visit';
+  document.getElementById('m-visit').setAttribute('aria-pressed',vis);
+  document.getElementById('m-run').setAttribute('aria-pressed',run);
   document.getElementById('m-shut').setAttribute('aria-pressed',m==='shut');
-  var run=m==='run';
-  document.getElementById('fTitle').textContent=run?'Running kiln inspection':'Shutdown inspection';
+  document.getElementById('fTitle').textContent=vis?'Company visit':(run?'Running kiln inspection':'Shutdown inspection');
   document.getElementById('zlabel').textContent=run?'Outer temp. per zone (°C)':'Refractory distance per zone (mm)';
   document.getElementById('avgLabel').textContent=run?'Average outer temp.':'Average thickness';
+  document.getElementById('photoNote').textContent=run?'Tap to add photo of inner temperature reading':'Tap to add one photo per zone (up to 9)';
+  document.getElementById('visitBlock').hidden=!vis;
+  ['soWrap','rowWrap','zlabelWrap','zones','avgBox','photoNote'].forEach(function(id){document.getElementById(id).hidden=vis});
   document.getElementById('innerWrap').hidden=!run;
   document.getElementById('expWrap').hidden=!run;
-  document.getElementById('photoNote').textContent=run?'Tap to add photo of inner temperature reading':'Tap to add one photo per zone (up to 9)';
-  setVals(run?runVals:shutVals);calcAvg();autos();
+  document.getElementById('submit').textContent=vis?'Save visit and create order':'Submit inspection';
+  if(!vis){setVals(run?runVals:shutVals);calcAvg()}
+  autos();
 }
+document.getElementById('m-visit').addEventListener('click',function(){setMode('visit')});
 document.getElementById('m-run').addEventListener('click',function(){setMode('run')});
 document.getElementById('m-shut').addEventListener('click',function(){setMode('shut')});
 document.getElementById('submit').addEventListener('click',function(){
   var b=this;b.textContent='Submitted';b.disabled=true;
-  setTimeout(function(){b.textContent='Submit inspection';b.disabled=false},1800);
+  setTimeout(function(){b.textContent=mode==='visit'?'Save visit and create order':'Submit inspection';b.disabled=false},1800);
 });
-setMode('run');
+setMode('visit');
 
 /* ---------- sample 3: dashboard ---------- */
 var data=[
