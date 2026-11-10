@@ -137,6 +137,7 @@ td.n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-num
       <button class="tab" role="tab" id="t-form" data-s="inspection">2 · Step forms</button>
       <button class="tab" role="tab" id="t-dash" data-s="campaign">3 · Campaign dashboard</button>
       <button class="tab" role="tab" id="t-calls" data-s="calls">4 · Call tracker</button>
+      <button class="tab" role="tab" id="t-kyc" data-s="kyc">5 · KYC</button>
     </div>
   </header>
 
@@ -289,11 +290,35 @@ td.n{font-family:var(--f-mono);text-align:right;font-variant-numeric:tabular-num
       </div>
     </div>
   </section>
+
+  <!-- SAMPLE 5 -->
+  <section class="screen" id="s-kyc" hidden>
+    <p class="note">Sample 5. KYC of customer. The contact belongs to the service order (CN no.), so a company with two orders shows two contacts. Company names and kiln sizes come from the orders.</p>
+    <div class="ctgrid">
+      <div class="panel">
+        <h2>KYC of customer</h2>
+        <div class="toolbar" style="margin-top:8px"><input id="kSearch" type="search" placeholder="Search CN, company or name"></div>
+        <div class="tablewrap"><table id="kTable"></table></div>
+      </div>
+      <div class="panel">
+        <h2>Add KYC</h2>
+        <div class="field"><label for="kCn">KYC no. (service order)</label><select id="kCn"></select></div>
+        <div class="field"><label for="kName">Shift incharge name</label><input id="kName" placeholder="Name"></div>
+        <div class="field"><label for="kMob">Mobile no.</label><input id="kMob" inputmode="numeric" placeholder="10 digit number"></div>
+        <button class="btn primary" style="width:100%" id="kSave">Save KYC</button>
+        <div class="autos" id="kRes" style="margin-top:12px"></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h2>Kiln size by company</h2>
+      <div class="tablewrap"><table id="kKiln"></table></div>
+    </div>
+  </section>
 </div>
 
 <script>
 /* ---------- tabs ---------- */
-var screens={board:'s-board',inspection:'s-inspection',campaign:'s-campaign',calls:'s-calls'};
+var screens={board:'s-board',inspection:'s-inspection',campaign:'s-campaign',calls:'s-calls',kyc:'s-kyc'};
 function show(name){
   if(!screens[name]) name='board';
   Object.keys(screens).forEach(function(k){
@@ -563,6 +588,49 @@ document.getElementById('cSave').addEventListener('click',function(){
   renderCt();
 });
 ctMode();renderCt();
+
+/* ---------- sample 5: KYC ---------- */
+var kOrders=[
+  ['CN-01','Aarti Sponge & Power Ltd'],['CN-02','Action Ispat And Power'],['CN-03','Amalgam Steel & Power'],
+  ['CN-04','Aarti Sponge & Power Ltd'],['CN-05','Agrawal Sponge Pvt Ltd'],['CN-06','Alankar Alloys Pvt Ltd']
+];
+var kyc={
+  'CN-01':['Shravan Yadav','9753779531'],'CN-02':['Harish Dewangan','9755521321'],
+  'CN-03':['Tilak Verma','9669186207'],'CN-04':['Satish Gupta','9229273149']
+};
+var kKilns=[
+  ['Aarti Sponge & Power Ltd','100 TPD','100 TPD','','','',''],
+  ['Action Ispat And Power','','100 TPD','150 TPD','','',''],
+  ['Agrawal Sponge Pvt Ltd','120 TPD','','','','',''],
+  ['Alankar Alloys Pvt Ltd','','','80 TPD','','',''],
+  ['Amalgam Steel & Power','150 TPD','','','','','']
+];
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function renderKyc(){
+  var q=document.getElementById('kSearch').value.toLowerCase();
+  var h='<thead><tr><th>KYC no.</th><th>Name of company</th><th>Shift incharge</th><th>Mobile no.</th><th>Status</th></tr></thead><tbody>';
+  kOrders.forEach(function(o){
+    var c=kyc[o[0]], txt=(o[0]+' '+o[1]+' '+(c?c[0]:'')).toLowerCase();
+    if(q&&txt.indexOf(q)<0) return;
+    h+='<tr><td class="cn">'+o[0]+'</td><td>'+esc(o[1])+'</td><td>'+(c?esc(c[0]):'-')+'</td><td class="n">'+(c?c[1]:'-')+'</td><td>'+(c?'<span class="pill good">Done</span>':'<span class="pill warn">KYC pending</span>')+'</td></tr>';
+  });
+  document.getElementById('kTable').innerHTML=h+'</tbody>';
+  document.getElementById('kCn').innerHTML=kOrders.map(function(o){return '<option value="'+o[0]+'">'+o[0]+' · '+esc(o[1])+(kyc[o[0]]?' (update)':'')+'</option>'}).join('');
+  var kh='<thead><tr><th>Company</th>'+[1,2,3,4,5,6].map(function(n){return '<th style="text-align:right">Kiln '+n+'</th>'}).join('')+'</tr></thead><tbody>';
+  kKilns.forEach(function(r){kh+='<tr><td>'+esc(r[0])+'</td>'+r.slice(1).map(function(v){return '<td class="n">'+(v||'-')+'</td>'}).join('')+'</tr>'});
+  document.getElementById('kKiln').innerHTML=kh+'</tbody>';
+}
+document.getElementById('kSearch').addEventListener('input',renderKyc);
+document.getElementById('kSave').addEventListener('click',function(){
+  var cn=document.getElementById('kCn').value, nm=document.getElementById('kName').value.trim(), mb=document.getElementById('kMob').value.replace(/\s/g,''), res=document.getElementById('kRes');
+  var err=!nm?'Enter the shift incharge name.':(!/^\d{10}$/.test(mb)?'Mobile number must be 10 digits.':'');
+  if(err){res.innerHTML='<div style="border-color:var(--bad);color:var(--bad)">'+err+'</div>';return}
+  var upd=!!kyc[cn]; kyc[cn]=[nm,mb];
+  res.innerHTML='<div>KYC '+(upd?'updated':'saved')+' for <b>'+cn+'</b>. It shows in the list now.</div>';
+  document.getElementById('kName').value='';document.getElementById('kMob').value='';
+  renderKyc();
+});
+renderKyc();
 
 show(location.hash.slice(1));
 </script>
